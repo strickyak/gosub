@@ -14,7 +14,7 @@ func NewParser(r io.Reader, filename string) *Parser {
 	}
 }
 
-func (o *Parser) ParsePrim() Tree {
+func (o *Parser) ParsePrim() TExpr {
 	if o.Kind == L_Int {
 		z := &T_Int{o.Num}
 		o.Next()
@@ -38,60 +38,66 @@ func (o *Parser) ParsePrim() Tree {
 	panic("bad ParsePrim")
 }
 
-func (o *Parser) ParseProduct() Tree {
+func (o *Parser) ParseProduct() TExpr {
 	a := o.ParsePrim()
-	for o.Word == "*" || o.Word == "/" || o.Word == "%" || o.Word == "<<" || o.Word == ">>" || o.Word == "&" || o.Word == "&^" {
+	op := o.Word
+	for op == "*" || op == "/" || op == "%" || op == "<<" || op == ">>" || op == "&" || op == "&^" {
 		o.Next()
 		b := o.ParseProduct()
-		a = &T_BinOp{a, o.Word, b}
+		a = &T_BinOp{a, op, b}
+		op = o.Word
 	}
 	return a
 }
 
-func (o *Parser) ParseSum() Tree {
+func (o *Parser) ParseSum() TExpr {
 	a := o.ParseProduct()
-	for o.Word == "+" || o.Word == "-" || o.Word == "|" || o.Word == "^" {
+	op := o.Word
+	for op == "+" || op == "-" || op == "|" || op == "^" {
 		o.Next()
 		b := o.ParseSum()
-		a = &T_BinOp{a, o.Word, b}
+		a = &T_BinOp{a, op, b}
+		op = o.Word
 	}
 	return a
 }
 
-func (o *Parser) ParseRelational() Tree {
+func (o *Parser) ParseRelational() TExpr {
 	a := o.ParseSum()
+	op := o.Word
 	for o.Word == "==" || o.Word == "!=" || o.Word == "<" || o.Word == ">" || o.Word == "<=" || o.Word == ">=" {
 		o.Next()
 		b := o.ParseRelational()
-		a = &T_BinOp{a, o.Word, b}
+		a = &T_BinOp{a, op, b}
+		op = o.Word
 	}
 	return a
 }
 
-func (o *Parser) ParseAnd() Tree {
+func (o *Parser) ParseAnd() TExpr {
 	a := o.ParseRelational()
 	for o.Word == "&&" {
 		o.Next()
 		b := o.ParseAnd()
-		a = &T_BinOp{a, o.Word, b}
+		a = &T_BinOp{a, "&&", b}
 	}
 	return a
 }
 
-func (o *Parser) ParseOr() Tree {
+func (o *Parser) ParseOr() TExpr {
 	a := o.ParseAnd()
 	for o.Word == "||" {
 		o.Next()
 		b := o.ParseOr()
-		a = &T_BinOp{a, o.Word, b}
+		a = &T_BinOp{a, "||", b}
 	}
 	return a
 }
 
-func (o *Parser) ParseList() Tree {
+func (o *Parser) ParseList() TExpr {
 	a := o.ParseOr()
 	if o.Word == "," {
-		v := []Tree{a}
+		v := []TExpr{a}
 		for o.Word == "," {
 			o.Next()
 			b := o.ParseOr()
@@ -102,12 +108,13 @@ func (o *Parser) ParseList() Tree {
 	return a
 }
 
-func (o *Parser) ParseAssignment() Tree {
+func (o *Parser) ParseAssignment() TStmt {
 	a := o.ParseList()
-	if o.Word == "=" {
+	op := o.Word
+	if op == "=" || len(op) == 2 && op[1] == '=' {
 		o.Next()
 		b := o.ParseList()
-		a = &T_BinOp{a, o.Word, b}
+		return &T_Assign{a, op, b}
 	}
-	return a
+	return &T_Assign{nil, "", a}
 }

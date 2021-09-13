@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-type Tree interface {
+type TExpr interface {
 	String() string
 }
 
@@ -42,17 +42,17 @@ func (o *T_Ident) String() string {
 }
 
 type T_BinOp struct {
-	A  Tree
+	A  TExpr
 	Op string
-	B  Tree
+	B  TExpr
 }
 
 func (o *T_BinOp) String() string {
-	return fmt.Sprintf("Bin(%v %s %v)", o.A, o.Op, o.B)
+	return fmt.Sprintf("Bin(%v %q %v)", o.A, o.Op, o.B)
 }
 
 type T_List struct {
-	V []Tree
+	V []TExpr
 }
 
 func (o *T_List) String() string {
@@ -63,4 +63,18 @@ func (o *T_List) String() string {
 	}
 	buf.WriteString(")")
 	return buf.String()
+}
+
+type TStmt interface {
+	String() string
+}
+
+type T_Assign struct {
+	A  TExpr
+	Op string
+	B  TExpr
+}
+
+func (o *T_Assign) String() string {
+	return fmt.Sprintf("\nAssign(%v %q %v)\n", o.A, o.Op, o.B)
 }

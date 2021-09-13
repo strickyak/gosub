@@ -21,7 +21,7 @@ type Lex struct {
 	Col      int
 	Filename string
 
-	Pending  byte // holds UnReadByte
+	Pending  byte // holds UnReadChar
 	PrevLine int
 	PrevCol  int
 
@@ -42,12 +42,12 @@ func NewLex(r io.Reader, filename string) *Lex {
 	return z
 }
 
-func (o *Lex) UnReadByte(ch byte) {
+func (o *Lex) UnReadChar(ch byte) {
 	o.Pending = ch
 	o.Line, o.Col = o.PrevLine, o.PrevCol
 }
 
-func (o *Lex) ReadByte() byte {
+func (o *Lex) ReadChar() byte {
 	if o.Pending > 0 {
 		z := o.Pending
 		o.Pending = 0
@@ -74,59 +74,59 @@ func (o *Lex) ReadByte() byte {
 }
 
 func (o *Lex) Next() {
-	o.Next1()
+	o._Next_()
 	log.Printf("--------- (%d)  %d  %q", o.Kind, o.Num, o.Word)
 }
-func (o *Lex) Next1() {
+func (o *Lex) _Next_() {
 	o.Num, o.Word = 0, ""
-	c := o.ReadByte()
+	c := o.ReadChar()
 	for 0 < c && c <= 32 {
 		if c == '\n' {
 			o.Kind, o.Word = L_EOL, "--EOL--"
 			return
 		}
-		c = o.ReadByte()
+		c = o.ReadChar()
 	}
 	if c == 0 {
 		o.Kind, o.Word = L_EOF, "<EOF>"
 		return
 	}
 	if c == '/' {
-		c2 := o.ReadByte()
+		c2 := o.ReadChar()
 		if c2 == '/' {
 			for {
-				z := o.ReadByte()
+				z := o.ReadChar()
 				if z < 32 {
 					o.Kind, o.Word = L_EOL, "//EOL//"
 					return
 				}
 			}
 		} else {
-			o.UnReadByte(c2)
+			o.UnReadChar(c2)
 		}
 	}
 	neg := false
 	if c == '-' {
 		prevC := c
-		c = o.ReadByte()
+		c = o.ReadChar()
 		if '0' <= c && c <= '9' {
 			neg = true
 		} else {
-			o.UnReadByte(c)
+			o.UnReadChar(c)
 			c = prevC
 		}
 	}
 	if '0' <= c && c <= '9' {
 		x := int(c - '0')
-		c = o.ReadByte()
+		c = o.ReadChar()
 		for '0' <= c && c <= '9' {
 			if x == 0 {
 				panic("no octal")
 			}
 			x = 10*x + int(c-'0')
-			c = o.ReadByte()
+			c = o.ReadChar()
 		}
-		o.UnReadByte(c)
+		o.UnReadChar(c)
 		if neg {
 			o.Kind, o.Num = L_Int, -x
 		} else {
@@ -137,26 +137,26 @@ func (o *Lex) Next1() {
 	if 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || c == '_' {
 		var s []byte
 		s = append(s, c)
-		c = o.ReadByte()
+		c = o.ReadChar()
 		for 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || c == '_' {
 			s = append(s, c)
-			c = o.ReadByte()
+			c = o.ReadChar()
 		}
-		o.UnReadByte(c)
+		o.UnReadChar(c)
 		o.Kind, o.Word = L_Ident, string(s)
 		return
 	}
 	if c == '"' {
 		var s []byte
-		c = o.ReadByte()
+		c = o.ReadChar()
 		for c != '"' {
 			if c == '\\' {
-				c = o.ReadByte()
+				c = o.ReadChar()
 				if c == 'n' {
 					c = '\n'
 				} else if '0' <= c && c <= '7' {
-					c2 := o.ReadByte()
-					c3 := o.ReadByte()
+					c2 := o.ReadChar()
+					c3 := o.ReadChar()
 					if !('0' <= c2 && c2 <= '7') || !('0' <= c3 && c3 <= '7') {
 						panic("bad octal in str")
 					}
@@ -164,22 +164,22 @@ func (o *Lex) Next1() {
 				}
 			}
 			s = append(s, c)
-			c = o.ReadByte()
+			c = o.ReadChar()
 		}
 		o.Kind, o.Word = L_String, string(s)
 		return
 	}
 	if c == '\047' { // 047 is single quote
 		var s []byte
-		c = o.ReadByte()
+		c = o.ReadChar()
 		for c != '\047' {
 			if c == '\\' {
-				c = o.ReadByte()
+				c = o.ReadChar()
 				if c == 'n' {
 					c = '\n'
 				} else if '0' <= c && c <= '7' {
-					c2 := o.ReadByte()
-					c3 := o.ReadByte()
+					c2 := o.ReadChar()
+					c3 := o.ReadChar()
 					if !('0' <= c2 && c2 <= '7') || !('0' <= c3 && c3 <= '7') {
 						panic("bad octal in char literal")
 					}
@@ -187,7 +187,7 @@ func (o *Lex) Next1() {
 				}
 			}
 			s = append(s, c)
-			c = o.ReadByte()
+			c = o.ReadChar()
 		}
 		if len(s) != 1 {
 			log.Panicf("bad char literal: %q", s)
@@ -195,6 +195,16 @@ func (o *Lex) Next1() {
 		o.Kind, o.Word = L_Char, string(s)
 		return
 	}
+
+	d := o.ReadChar()
+	for _, digraph := range []string{
+		":=", "<=", "<<", ">=", ">>", "==", "!=", "+=", "-=", "*="} {
+		if c == digraph[0] && d == digraph[1] {
+			o.Kind, o.Word = L_Punc, digraph
+			return
+		}
+	}
+	o.UnReadChar(d)
 
 	o.Kind, o.Word = L_Punc, string(c)
 	return
