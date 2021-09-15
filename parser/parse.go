@@ -183,11 +183,16 @@ BLOCK:
 		case L_Ident:
 			switch o.Word {
 			case "var":
+				o.Next()
 				s := o.TakeIdent()
 				t := o.ParseType()
 				b.Locals = append(b.Locals, NameAndType{s, t})
 			case "return":
-				xx := o.ParseList()
+				o.Next()
+				var xx TExpr
+				if o.Kind != L_EOL {
+					xx = o.ParseList()
+				}
 				b.Body = append(b.Body, &T_Return{xx})
 			default:
 				a := o.ParseAssignment()
@@ -214,7 +219,6 @@ func (o *Parser) ParseFunc(fn *DefFunc) {
 		t := o.ParseType()
 		fn.Outs = append(fn.Outs, NameAndType{"", t})
 	}
-	o.TakeEOL()
 	b := &Block{Fn: fn}
 	o.ParseBlock(b)
 	fn.Body = b
