@@ -78,3 +78,35 @@ type T_Assign struct {
 func (o *T_Assign) String() string {
 	return fmt.Sprintf("\nAssign(%v %q %v)\n", o.A, o.Op, o.B)
 }
+
+////////////////////////
+
+type TDef interface {
+}
+
+type D_Package struct {
+	Name string
+}
+type D_Import struct {
+	Name string
+	Path string
+}
+type D_Const struct {
+	Name  string
+	Value interface{}
+}
+type D_Var struct {
+	Name string
+	Type string
+}
+type D_Type struct {
+	Name string
+	Type string
+}
+type D_Func struct {
+	Name    string
+	Type    string
+	Args    []string
+	Results []string
+	Body    []TStmt
+}

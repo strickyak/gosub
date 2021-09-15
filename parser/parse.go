@@ -2,15 +2,27 @@ package parser
 
 import (
 	"io"
+	"log"
 )
 
 type Parser struct {
 	*Lex
+	Package *D_Package
+	Imports map[string]*D_Import
+	Consts  map[string]*D_Const
+	Vars    map[string]*D_Var
+	Types   map[string]*D_Type
+	Funcs   map[string]*D_Func
 }
 
 func NewParser(r io.Reader, filename string) *Parser {
 	return &Parser{
-		Lex: NewLex(r, filename),
+		Lex:     NewLex(r, filename),
+		Imports: make(map[string]*D_Import),
+		Consts:  make(map[string]*D_Const),
+		Vars:    make(map[string]*D_Var),
+		Types:   make(map[string]*D_Type),
+		Funcs:   make(map[string]*D_Func),
 	}
 }
 
@@ -117,4 +129,58 @@ func (o *Parser) ParseAssignment() TStmt {
 		return &T_Assign{a, op, b}
 	}
 	return &T_Assign{nil, "", a}
+}
+
+func (o *Parser) TakeIdent() string {
+	if o.Kind != L_Ident {
+		log.Panicf("expected Ident, got (%d) %q", o.Kind, o.Word)
+	}
+	s := o.Word
+	o.Next()
+	return s
+}
+
+func (o *Parser) TakeEOL() {
+	if o.Kind != L_EOL {
+		log.Panicf("expected EOL, got (%d) %q", o.Kind, o.Word)
+	}
+	o.Next()
+}
+
+func (o *Parser) ParseTop() {
+LOOP:
+	for {
+		switch o.Kind {
+		case L_Ident:
+			d := o.TakeIdent()
+			switch d {
+			case "package":
+				s := o.TakeIdent()
+				o.Package = &D_Package{Name: s}
+			case "import":
+				s := o.TakeIdent()
+				o.Imports[s] = &D_Import{Name: s}
+			case "const":
+				s := o.TakeIdent()
+				o.Consts[s] = &D_Const{Name: s}
+			case "var":
+				s := o.TakeIdent()
+				o.Vars[s] = &D_Var{Name: s}
+			case "type":
+				s := o.TakeIdent()
+				o.Types[s] = &D_Type{Name: s}
+			case "func":
+				s := o.TakeIdent()
+				o.Funcs[s] = &D_Func{Name: s}
+			}
+			o.TakeEOL()
+		case L_EOL:
+			o.TakeEOL()
+			continue LOOP
+		case L_EOF:
+			break LOOP
+		default:
+			log.Panicf("expected toplevel decl; got (%d) %q", o.Kind, o.Word)
+		}
+	}
 }
