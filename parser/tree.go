@@ -79,34 +79,64 @@ func (o *T_Assign) String() string {
 	return fmt.Sprintf("\nAssign(%v %q %v)\n", o.A, o.Op, o.B)
 }
 
+type T_Return struct {
+	X TExpr
+}
+
+func (o *T_Return) String() string {
+	return fmt.Sprintf("\nReturn(%v)\n", o.X)
+}
+
 ////////////////////////
 
 type TDef interface {
 }
 
-type D_Package struct {
+type DefPackage struct {
 	Name string
 }
-type D_Import struct {
+type DefImport struct {
 	Name string
 	Path string
 }
-type D_Const struct {
-	Name  string
-	Value interface{}
-}
-type D_Var struct {
+type DefConst struct {
 	Name string
-	Type string
+	Expr TExpr
 }
-type D_Type struct {
+type DefVar struct {
 	Name string
-	Type string
+	Type TType
 }
-type D_Func struct {
-	Name    string
-	Type    string
-	Args    []string
-	Results []string
-	Body    []TStmt
+type DefType struct {
+	Name string
+	Type TType
 }
+type NameAndType struct {
+	Name string
+	Type TType
+}
+type Block struct {
+	Locals []NameAndType
+	Body   []TStmt
+	Parent *Block
+	Fn     *DefFunc
+}
+type DefFunc struct {
+	Name string
+	Type TType
+	Ins  []NameAndType
+	Outs []NameAndType
+	Body *Block
+}
+
+type TType interface {
+}
+
+type IntType struct {
+	Size   int
+	Signed bool
+}
+
+var Byte = &IntType{Size: 1, Signed: false}
+var Int = &IntType{Size: 2, Signed: true}
+var UInt = &IntType{Size: 2, Signed: false}

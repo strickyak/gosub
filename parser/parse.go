@@ -7,22 +7,22 @@ import (
 
 type Parser struct {
 	*Lex
-	Package *D_Package
-	Imports map[string]*D_Import
-	Consts  map[string]*D_Const
-	Vars    map[string]*D_Var
-	Types   map[string]*D_Type
-	Funcs   map[string]*D_Func
+	Package *DefPackage
+	Imports map[string]*DefImport
+	Consts  map[string]*DefConst
+	Vars    map[string]*DefVar
+	Types   map[string]*DefType
+	Funcs   map[string]*DefFunc
 }
 
 func NewParser(r io.Reader, filename string) *Parser {
 	return &Parser{
 		Lex:     NewLex(r, filename),
-		Imports: make(map[string]*D_Import),
-		Consts:  make(map[string]*D_Const),
-		Vars:    make(map[string]*D_Var),
-		Types:   make(map[string]*D_Type),
-		Funcs:   make(map[string]*D_Func),
+		Imports: make(map[string]*DefImport),
+		Consts:  make(map[string]*DefConst),
+		Vars:    make(map[string]*DefVar),
+		Types:   make(map[string]*DefType),
+		Funcs:   make(map[string]*DefFunc),
 	}
 }
 
@@ -106,13 +106,31 @@ func (o *Parser) ParseOr() TExpr {
 	return a
 }
 
+func (o *Parser) ParseExpr() TExpr {
+	return o.ParseOr()
+}
+
+func (o *Parser) ParseType() TType {
+	w := o.TakeIdent()
+	switch w {
+	case "byte":
+		return Byte
+	case "int":
+		return Int
+	case "uint":
+		return UInt
+	}
+	log.Panicf("expected a type, got %q", w)
+	return nil
+}
+
 func (o *Parser) ParseList() TExpr {
-	a := o.ParseOr()
+	a := o.ParseExpr()
 	if o.Word == "," {
 		v := []TExpr{a}
 		for o.Word == "," {
 			o.Next()
-			b := o.ParseOr()
+			b := o.ParseExpr()
 			v = append(v, b)
 		}
 		return &T_List{v}
@@ -131,13 +149,20 @@ func (o *Parser) ParseAssignment() TStmt {
 	return &T_Assign{nil, "", a}
 }
 
+func (o *Parser) TakePunc(s string) {
+	if o.Kind != L_Punc || s != o.Word {
+		log.Panicf("expected %q, got (%d) %q", s, o.Kind, o.Word)
+	}
+	o.Next()
+}
+
 func (o *Parser) TakeIdent() string {
 	if o.Kind != L_Ident {
 		log.Panicf("expected Ident, got (%d) %q", o.Kind, o.Word)
 	}
-	s := o.Word
+	w := o.Word
 	o.Next()
-	return s
+	return w
 }
 
 func (o *Parser) TakeEOL() {
@@ -145,6 +170,54 @@ func (o *Parser) TakeEOL() {
 		log.Panicf("expected EOL, got (%d) %q", o.Kind, o.Word)
 	}
 	o.Next()
+}
+
+func (o *Parser) ParseBlock(b *Block) {
+	o.TakePunc("{")
+BLOCK:
+	for o.Word != "}" {
+		switch o.Kind {
+		case L_EOL:
+			o.TakeEOL()
+			continue BLOCK
+		case L_Ident:
+			switch o.Word {
+			case "var":
+				s := o.TakeIdent()
+				t := o.ParseType()
+				b.Locals = append(b.Locals, NameAndType{s, t})
+			case "return":
+				xx := o.ParseList()
+				b.Body = append(b.Body, &T_Return{xx})
+			default:
+				a := o.ParseAssignment()
+				b.Body = append(b.Body, a)
+			}
+			o.TakeEOL()
+		}
+	}
+	o.TakePunc("}")
+}
+
+func (o *Parser) ParseFunc(fn *DefFunc) {
+	o.TakePunc("(")
+	for o.Word != ")" {
+		s := o.TakeIdent()
+		t := o.ParseType()
+		fn.Ins = append(fn.Ins, NameAndType{s, t})
+		if o.Word == "," {
+			o.TakePunc(",")
+		}
+	}
+	o.TakePunc(")")
+	if o.Word != "{" {
+		t := o.ParseType()
+		fn.Outs = append(fn.Outs, NameAndType{"", t})
+	}
+	o.TakeEOL()
+	b := &Block{Fn: fn}
+	o.ParseBlock(b)
+	fn.Body = b
 }
 
 func (o *Parser) ParseTop() {
@@ -155,23 +228,30 @@ LOOP:
 			d := o.TakeIdent()
 			switch d {
 			case "package":
-				s := o.TakeIdent()
-				o.Package = &D_Package{Name: s}
+				w := o.TakeIdent()
+				o.Package = &DefPackage{Name: w}
 			case "import":
-				s := o.TakeIdent()
-				o.Imports[s] = &D_Import{Name: s}
+				w := o.TakeIdent()
+				o.Imports[w] = &DefImport{Name: w}
 			case "const":
-				s := o.TakeIdent()
-				o.Consts[s] = &D_Const{Name: s}
+				w := o.TakeIdent()
+				o.TakePunc("=")
+				x := o.ParseExpr()
+				o.Consts[w] = &DefConst{Name: w, Expr: x}
 			case "var":
-				s := o.TakeIdent()
-				o.Vars[s] = &D_Var{Name: s}
+				w := o.TakeIdent()
+				t := o.ParseType()
+				o.Vars[w] = &DefVar{Name: w, Type: t}
 			case "type":
-				s := o.TakeIdent()
-				o.Types[s] = &D_Type{Name: s}
+				w := o.TakeIdent()
+				o.Types[w] = &DefType{Name: w}
 			case "func":
-				s := o.TakeIdent()
-				o.Funcs[s] = &D_Func{Name: s}
+				w := o.TakeIdent()
+				fn := &DefFunc{Name: w}
+				o.ParseFunc(fn)
+				o.Funcs[w] = fn
+			default:
+				log.Panicf("Expected top level decl, got %q", d)
 			}
 			o.TakeEOL()
 		case L_EOL:
