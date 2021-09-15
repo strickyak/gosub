@@ -5,57 +5,72 @@ import (
 	"fmt"
 )
 
-type TExpr interface {
-	String() string
+//////// Expr
+
+type ExprVisitor interface {
+    VisitInt(*IntX)
+    VisitString(*StringX)
+    VisitIdent(*IdentX)
+    VisitBinOp(*BinOpX)
+    VisitList(*ListX)
 }
 
-type T_Int struct {
+type Expr interface {
+	String() string
+    VisitExpr(ExprVisitor)
+}
+
+type IntX struct {
 	X int
 }
 
-func (o *T_Int) String() string {
+func (o *IntX) String() string {
 	return fmt.Sprintf("Int(%d)", o.X)
 }
+func (o *IntX) VisitExpr(v ExprVisitor) {
+    v.VisitInt(o)
+}
 
-type T_String struct {
+type StringX struct {
 	X string
 }
 
-func (o *T_String) String() string {
+func (o *StringX) String() string {
 	return fmt.Sprintf("String(%q)", o.X)
 }
-
-type T_Char struct {
-	X byte
+func (o *StringX) VisitExpr(v ExprVisitor) {
+    v.VisitString(o)
 }
 
-func (o *T_Char) String() string {
-	return fmt.Sprintf("Char(%q)", string(o.X))
-}
-
-type T_Ident struct {
+type IdentX struct {
 	X string
 }
 
-func (o *T_Ident) String() string {
+func (o *IdentX) String() string {
 	return fmt.Sprintf("Ident(%s)", o.X)
 }
-
-type T_BinOp struct {
-	A  TExpr
-	Op string
-	B  TExpr
+func (o *IdentX) VisitExpr(v ExprVisitor) {
+    v.VisitIdent(o)
 }
 
-func (o *T_BinOp) String() string {
+type BinOpX struct {
+	A  Expr
+	Op string
+	B  Expr
+}
+
+func (o *BinOpX) String() string {
 	return fmt.Sprintf("Bin(%v %q %v)", o.A, o.Op, o.B)
 }
-
-type T_List struct {
-	V []TExpr
+func (o *BinOpX) VisitExpr(v ExprVisitor) {
+    v.VisitBinOp(o)
 }
 
-func (o *T_List) String() string {
+type ListX struct {
+	V []Expr
+}
+
+func (o *ListX) String() string {
 	var buf bytes.Buffer
 	buf.WriteString("List(")
 	for i, e := range o.V {
@@ -64,26 +79,31 @@ func (o *T_List) String() string {
 	buf.WriteString(")")
 	return buf.String()
 }
+func (o *ListX) VisitExpr(v ExprVisitor) {
+    v.VisitList(o)
+}
 
-type TStmt interface {
+/////////// Stmt
+
+type Stmt interface {
 	String() string
 }
 
-type T_Assign struct {
-	A  TExpr
+type AssignS struct {
+	A  Expr
 	Op string
-	B  TExpr
+	B  Expr
 }
 
-func (o *T_Assign) String() string {
+func (o *AssignS) String() string {
 	return fmt.Sprintf("\nAssign(%v %q %v)\n", o.A, o.Op, o.B)
 }
 
-type T_Return struct {
-	X TExpr
+type ReturnS struct {
+	X Expr
 }
 
-func (o *T_Return) String() string {
+func (o *ReturnS) String() string {
 	return fmt.Sprintf("\nReturn(%v)\n", o.X)
 }
 
@@ -101,35 +121,35 @@ type DefImport struct {
 }
 type DefConst struct {
 	Name string
-	Expr TExpr
+	Expr Expr
 }
 type DefVar struct {
 	Name string
-	Type TType
+	Type Type
 }
 type DefType struct {
 	Name string
-	Type TType
+	Type Type
 }
 type NameAndType struct {
 	Name string
-	Type TType
+	Type Type
 }
 type Block struct {
 	Locals []NameAndType
-	Body   []TStmt
+	Body   []Stmt
 	Parent *Block
 	Fn     *DefFunc
 }
 type DefFunc struct {
 	Name string
-	Type TType
+	Type Type
 	Ins  []NameAndType
 	Outs []NameAndType
 	Body *Block
 }
 
-type TType interface {
+type Type interface {
 }
 
 type IntType struct {

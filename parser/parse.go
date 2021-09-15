@@ -26,91 +26,91 @@ func NewParser(r io.Reader, filename string) *Parser {
 	}
 }
 
-func (o *Parser) ParsePrim() TExpr {
+func (o *Parser) ParsePrim() Expr {
 	if o.Kind == L_Int {
-		z := &T_Int{o.Num}
+		z := &IntX{o.Num}
 		o.Next()
 		return z
 	}
 	if o.Kind == L_String {
-		z := &T_String{o.Word}
+		z := &StringX{o.Word}
 		o.Next()
 		return z
 	}
 	if o.Kind == L_Char {
-		z := &T_Char{o.Word[0]}
+		z := &IntX{int(o.Word[0])}
 		o.Next()
 		return z
 	}
 	if o.Kind == L_Ident {
-		z := &T_Ident{o.Word}
+		z := &IdentX{o.Word}
 		o.Next()
 		return z
 	}
 	panic("bad ParsePrim")
 }
 
-func (o *Parser) ParseProduct() TExpr {
+func (o *Parser) ParseProduct() Expr {
 	a := o.ParsePrim()
 	op := o.Word
 	for op == "*" || op == "/" || op == "%" || op == "<<" || op == ">>" || op == "&" || op == "&^" {
 		o.Next()
 		b := o.ParseProduct()
-		a = &T_BinOp{a, op, b}
+		a = &BinOpX{a, op, b}
 		op = o.Word
 	}
 	return a
 }
 
-func (o *Parser) ParseSum() TExpr {
+func (o *Parser) ParseSum() Expr {
 	a := o.ParseProduct()
 	op := o.Word
 	for op == "+" || op == "-" || op == "|" || op == "^" {
 		o.Next()
 		b := o.ParseSum()
-		a = &T_BinOp{a, op, b}
+		a = &BinOpX{a, op, b}
 		op = o.Word
 	}
 	return a
 }
 
-func (o *Parser) ParseRelational() TExpr {
+func (o *Parser) ParseRelational() Expr {
 	a := o.ParseSum()
 	op := o.Word
 	for o.Word == "==" || o.Word == "!=" || o.Word == "<" || o.Word == ">" || o.Word == "<=" || o.Word == ">=" {
 		o.Next()
 		b := o.ParseRelational()
-		a = &T_BinOp{a, op, b}
+		a = &BinOpX{a, op, b}
 		op = o.Word
 	}
 	return a
 }
 
-func (o *Parser) ParseAnd() TExpr {
+func (o *Parser) ParseAnd() Expr {
 	a := o.ParseRelational()
 	for o.Word == "&&" {
 		o.Next()
 		b := o.ParseAnd()
-		a = &T_BinOp{a, "&&", b}
+		a = &BinOpX{a, "&&", b}
 	}
 	return a
 }
 
-func (o *Parser) ParseOr() TExpr {
+func (o *Parser) ParseOr() Expr {
 	a := o.ParseAnd()
 	for o.Word == "||" {
 		o.Next()
 		b := o.ParseOr()
-		a = &T_BinOp{a, "||", b}
+		a = &BinOpX{a, "||", b}
 	}
 	return a
 }
 
-func (o *Parser) ParseExpr() TExpr {
+func (o *Parser) ParseExpr() Expr {
 	return o.ParseOr()
 }
 
-func (o *Parser) ParseType() TType {
+func (o *Parser) ParseType() Type {
 	w := o.TakeIdent()
 	switch w {
 	case "byte":
@@ -124,29 +124,29 @@ func (o *Parser) ParseType() TType {
 	return nil
 }
 
-func (o *Parser) ParseList() TExpr {
+func (o *Parser) ParseList() Expr {
 	a := o.ParseExpr()
 	if o.Word == "," {
-		v := []TExpr{a}
+		v := []Expr{a}
 		for o.Word == "," {
 			o.Next()
 			b := o.ParseExpr()
 			v = append(v, b)
 		}
-		return &T_List{v}
+		return &ListX{v}
 	}
 	return a
 }
 
-func (o *Parser) ParseAssignment() TStmt {
+func (o *Parser) ParseAssignment() Stmt {
 	a := o.ParseList()
 	op := o.Word
 	if op == "=" || len(op) == 2 && op[1] == '=' {
 		o.Next()
 		b := o.ParseList()
-		return &T_Assign{a, op, b}
+		return &AssignS{a, op, b}
 	}
-	return &T_Assign{nil, "", a}
+	return &AssignS{nil, "", a}
 }
 
 func (o *Parser) TakePunc(s string) {
@@ -189,11 +189,11 @@ BLOCK:
 				b.Locals = append(b.Locals, NameAndType{s, t})
 			case "return":
 				o.Next()
-				var xx TExpr
+				var xx Expr
 				if o.Kind != L_EOL {
 					xx = o.ParseList()
 				}
-				b.Body = append(b.Body, &T_Return{xx})
+				b.Body = append(b.Body, &ReturnS{xx})
 			default:
 				a := o.ParseAssignment()
 				b.Body = append(b.Body, a)
