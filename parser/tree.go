@@ -13,6 +13,7 @@ type ExprVisitor interface {
 	VisitIdent(*IdentX)
 	VisitBinOp(*BinOpX)
 	VisitList(*ListX)
+	VisitCall(*CallX)
 }
 
 type Expr interface {
@@ -81,6 +82,18 @@ func (o *ListX) String() string {
 }
 func (o *ListX) VisitExpr(v ExprVisitor) {
 	v.VisitList(o)
+}
+
+type CallX struct {
+	Func Expr
+	Args Expr
+}
+
+func (o *CallX) String() string {
+	return fmt.Sprintf("Call(%s; %s)", o.Func, o.Args)
+}
+func (o *CallX) VisitExpr(v ExprVisitor) {
+	v.VisitCall(o)
 }
 
 /////////// Stmt

@@ -50,12 +50,25 @@ func (o *Parser) ParsePrim() Expr {
 	panic("bad ParsePrim")
 }
 
-func (o *Parser) ParseProduct() Expr {
+func (o *Parser) ParsePrimEtc() Expr {
 	a := o.ParsePrim()
+	if o.Word == "(" {
+		o.TakePunc("(")
+		if o.Word != ")" {
+			args := o.ParseList()
+			a = &CallX{a, args}
+		}
+		o.TakePunc(")")
+	}
+	return a
+}
+
+func (o *Parser) ParseProduct() Expr {
+	a := o.ParsePrimEtc()
 	op := o.Word
 	for op == "*" || op == "/" || op == "%" || op == "<<" || op == ">>" || op == "&" || op == "&^" {
 		o.Next()
-		b := o.ParseProduct()
+		b := o.ParsePrimEtc()
 		a = &BinOpX{a, op, b}
 		op = o.Word
 	}
