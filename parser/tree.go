@@ -8,16 +8,16 @@ import (
 //////// Expr
 
 type ExprVisitor interface {
-    VisitInt(*IntX)
-    VisitString(*StringX)
-    VisitIdent(*IdentX)
-    VisitBinOp(*BinOpX)
-    VisitList(*ListX)
+	VisitInt(*IntX)
+	VisitString(*StringX)
+	VisitIdent(*IdentX)
+	VisitBinOp(*BinOpX)
+	VisitList(*ListX)
 }
 
 type Expr interface {
 	String() string
-    VisitExpr(ExprVisitor)
+	VisitExpr(ExprVisitor)
 }
 
 type IntX struct {
@@ -28,7 +28,7 @@ func (o *IntX) String() string {
 	return fmt.Sprintf("Int(%d)", o.X)
 }
 func (o *IntX) VisitExpr(v ExprVisitor) {
-    v.VisitInt(o)
+	v.VisitInt(o)
 }
 
 type StringX struct {
@@ -39,7 +39,7 @@ func (o *StringX) String() string {
 	return fmt.Sprintf("String(%q)", o.X)
 }
 func (o *StringX) VisitExpr(v ExprVisitor) {
-    v.VisitString(o)
+	v.VisitString(o)
 }
 
 type IdentX struct {
@@ -50,7 +50,7 @@ func (o *IdentX) String() string {
 	return fmt.Sprintf("Ident(%s)", o.X)
 }
 func (o *IdentX) VisitExpr(v ExprVisitor) {
-    v.VisitIdent(o)
+	v.VisitIdent(o)
 }
 
 type BinOpX struct {
@@ -63,7 +63,7 @@ func (o *BinOpX) String() string {
 	return fmt.Sprintf("Bin(%v %q %v)", o.A, o.Op, o.B)
 }
 func (o *BinOpX) VisitExpr(v ExprVisitor) {
-    v.VisitBinOp(o)
+	v.VisitBinOp(o)
 }
 
 type ListX struct {
@@ -80,13 +80,19 @@ func (o *ListX) String() string {
 	return buf.String()
 }
 func (o *ListX) VisitExpr(v ExprVisitor) {
-    v.VisitList(o)
+	v.VisitList(o)
 }
 
 /////////// Stmt
 
+type StmtVisitor interface {
+	VisitAssign(*AssignS)
+	VisitReturn(*ReturnS)
+}
+
 type Stmt interface {
 	String() string
+	VisitStmt(StmtVisitor)
 }
 
 type AssignS struct {
@@ -107,9 +113,26 @@ func (o *ReturnS) String() string {
 	return fmt.Sprintf("\nReturn(%v)\n", o.X)
 }
 
+func (o *AssignS) VisitStmt(v StmtVisitor) {
+	v.VisitAssign(o)
+}
+
+func (o *ReturnS) VisitStmt(v StmtVisitor) {
+	v.VisitReturn(o)
+}
+
 ////////////////////////
 
-type TDef interface {
+type Def interface {
+	VisitDef(DefVisitor)
+}
+type DefVisitor interface {
+	VisitDefPackage(*DefPackage)
+	VisitDefImport(*DefImport)
+	VisitDefConst(*DefConst)
+	VisitDefVar(*DefVar)
+	VisitDefType(*DefType)
+	VisitDefFunc(*DefFunc)
 }
 
 type DefPackage struct {
@@ -149,12 +172,38 @@ type DefFunc struct {
 	Body *Block
 }
 
+func (o *DefPackage) VisitDef(v DefVisitor) {
+	v.VisitDefPackage(o)
+}
+func (o *DefImport) VisitDef(v DefVisitor) {
+	v.VisitDefImport(o)
+}
+func (o *DefConst) VisitDef(v DefVisitor) {
+	v.VisitDefConst(o)
+}
+func (o *DefVar) VisitDef(v DefVisitor) {
+	v.VisitDefVar(o)
+}
+func (o *DefType) VisitDef(v DefVisitor) {
+	v.VisitDefType(o)
+}
+func (o *DefFunc) VisitDef(v DefVisitor) {
+	v.VisitDefFunc(o)
+}
+
+type TypeVisitor interface {
+	VisitIntType(*IntType)
+}
 type Type interface {
 }
 
 type IntType struct {
 	Size   int
 	Signed bool
+}
+
+func (o *IntType) VisitType(v TypeVisitor) {
+	v.VisitIntType(o)
 }
 
 var Byte = &IntType{Size: 1, Signed: false}
