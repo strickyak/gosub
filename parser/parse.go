@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"bufio"
 	"io"
 	"log"
 )
@@ -28,17 +29,17 @@ func NewParser(r io.Reader, filename string) *Parser {
 
 func (o *Parser) ParsePrim() Expr {
 	if o.Kind == L_Int {
-		z := &IntX{o.Num}
+		z := &LitIntX{o.Num}
 		o.Next()
 		return z
 	}
 	if o.Kind == L_String {
-		z := &StringX{o.Word}
+		z := &LitStringX{o.Word}
 		o.Next()
 		return z
 	}
 	if o.Kind == L_Char {
-		z := &IntX{int(o.Word[0])}
+		z := &LitIntX{int(o.Word[0])}
 		o.Next()
 		return z
 	}
@@ -280,4 +281,44 @@ LOOP:
 			log.Panicf("expected toplevel decl; got (%d) %q", o.Kind, o.Word)
 		}
 	}
+}
+
+type CGen struct {
+    W bufio.Writer
+}
+func (o *CGen) VisitLitInt(*LitIntX) {
+}
+func (o *CGen) VisitLitString(*LitStringX) {
+}
+func (o *CGen) VisitIdent(*IdentX) {
+}
+func (o *CGen) VisitBinOp(*BinOpX) {
+}
+func (o *CGen) VisitList(*ListX) {
+}
+func (o *CGen) VisitCall(*CallX) {
+}
+func (o *CGen) VisitExpr(ExprVisitor) {
+}
+func (o *CGen) VisitAssign(*AssignS) {
+}
+func (o *CGen) VisitReturn(*ReturnS) {
+}
+func (o *CGen) VisitStmt(StmtVisitor) {
+}
+func (o *CGen) VisitDef(DefVisitor) {
+}
+func (o *CGen) VisitDefPackage(*DefPackage) {
+}
+func (o *CGen) VisitDefImport(*DefImport) {
+}
+func (o *CGen) VisitDefConst(*DefConst) {
+}
+func (o *CGen) VisitDefVar(*DefVar) {
+}
+func (o *CGen) VisitDefType(*DefType) {
+}
+func (o *CGen) VisitDefFunc(*DefFunc) {
+}
+func (o *CGen) VisitIntType(*IntType) {
 }

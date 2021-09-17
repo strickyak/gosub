@@ -8,8 +8,8 @@ import (
 //////// Expr
 
 type ExprVisitor interface {
-	VisitInt(*IntX)
-	VisitString(*StringX)
+	VisitLitInt(*LitIntX)
+	VisitLitString(*LitStringX)
 	VisitIdent(*IdentX)
 	VisitBinOp(*BinOpX)
 	VisitList(*ListX)
@@ -21,26 +21,26 @@ type Expr interface {
 	VisitExpr(ExprVisitor)
 }
 
-type IntX struct {
+type LitIntX struct {
 	X int
 }
 
-func (o *IntX) String() string {
+func (o *LitIntX) String() string {
 	return fmt.Sprintf("Int(%d)", o.X)
 }
-func (o *IntX) VisitExpr(v ExprVisitor) {
-	v.VisitInt(o)
+func (o *LitIntX) VisitExpr(v ExprVisitor) {
+	v.VisitLitInt(o)
 }
 
-type StringX struct {
+type LitStringX struct {
 	X string
 }
 
-func (o *StringX) String() string {
+func (o *LitStringX) String() string {
 	return fmt.Sprintf("String(%q)", o.X)
 }
-func (o *StringX) VisitExpr(v ExprVisitor) {
-	v.VisitString(o)
+func (o *LitStringX) VisitExpr(v ExprVisitor) {
+	v.VisitLitString(o)
 }
 
 type IdentX struct {
