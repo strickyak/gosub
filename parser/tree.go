@@ -8,17 +8,17 @@ import (
 //////// Expr
 
 type ExprVisitor interface {
-	VisitLitInt(*LitIntX)
-	VisitLitString(*LitStringX)
-	VisitIdent(*IdentX)
-	VisitBinOp(*BinOpX)
-	VisitList(*ListX)
-	VisitCall(*CallX)
+	VisitLitInt(*LitIntX) string
+	VisitLitString(*LitStringX) string
+	VisitIdent(*IdentX) string
+	VisitBinOp(*BinOpX) string
+	VisitList(*ListX) string
+	VisitCall(*CallX) string
 }
 
 type Expr interface {
 	String() string
-	VisitExpr(ExprVisitor)
+	VisitExpr(ExprVisitor) string
 }
 
 type LitIntX struct {
@@ -28,8 +28,8 @@ type LitIntX struct {
 func (o *LitIntX) String() string {
 	return fmt.Sprintf("Int(%d)", o.X)
 }
-func (o *LitIntX) VisitExpr(v ExprVisitor) {
-	v.VisitLitInt(o)
+func (o *LitIntX) VisitExpr(v ExprVisitor) string {
+	return v.VisitLitInt(o)
 }
 
 type LitStringX struct {
@@ -39,8 +39,8 @@ type LitStringX struct {
 func (o *LitStringX) String() string {
 	return fmt.Sprintf("String(%q)", o.X)
 }
-func (o *LitStringX) VisitExpr(v ExprVisitor) {
-	v.VisitLitString(o)
+func (o *LitStringX) VisitExpr(v ExprVisitor) string {
+	return v.VisitLitString(o)
 }
 
 type IdentX struct {
@@ -50,8 +50,8 @@ type IdentX struct {
 func (o *IdentX) String() string {
 	return fmt.Sprintf("Ident(%s)", o.X)
 }
-func (o *IdentX) VisitExpr(v ExprVisitor) {
-	v.VisitIdent(o)
+func (o *IdentX) VisitExpr(v ExprVisitor) string {
+	return v.VisitIdent(o)
 }
 
 type BinOpX struct {
@@ -63,8 +63,8 @@ type BinOpX struct {
 func (o *BinOpX) String() string {
 	return fmt.Sprintf("Bin(%v %q %v)", o.A, o.Op, o.B)
 }
-func (o *BinOpX) VisitExpr(v ExprVisitor) {
-	v.VisitBinOp(o)
+func (o *BinOpX) VisitExpr(v ExprVisitor) string {
+	return v.VisitBinOp(o)
 }
 
 type ListX struct {
@@ -80,8 +80,8 @@ func (o *ListX) String() string {
 	buf.WriteString(")")
 	return buf.String()
 }
-func (o *ListX) VisitExpr(v ExprVisitor) {
-	v.VisitList(o)
+func (o *ListX) VisitExpr(v ExprVisitor) string {
+	return v.VisitList(o)
 }
 
 type CallX struct {
@@ -92,8 +92,8 @@ type CallX struct {
 func (o *CallX) String() string {
 	return fmt.Sprintf("Call(%s; %s)", o.Func, o.Args)
 }
-func (o *CallX) VisitExpr(v ExprVisitor) {
-	v.VisitCall(o)
+func (o *CallX) VisitExpr(v ExprVisitor) string {
+	return v.VisitCall(o)
 }
 
 /////////// Stmt
@@ -222,3 +222,22 @@ func (o *IntType) VisitType(v TypeVisitor) {
 var Byte = &IntType{Size: 1, Signed: false}
 var Int = &IntType{Size: 2, Signed: true}
 var UInt = &IntType{Size: 2, Signed: false}
+
+func (o IntType) CType(v string) string {
+	if o.Signed {
+		switch o.Size {
+		case 1:
+			return "signed char " + v
+		case 2:
+			return "int " + v
+		}
+	} else {
+		switch o.Size {
+		case 1:
+			return "unsigned char " + v
+		case 2:
+			return "unsigned int " + v
+		}
+	}
+	panic("bad")
+}

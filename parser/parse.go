@@ -2,6 +2,7 @@ package parser
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"log"
 )
@@ -226,12 +227,29 @@ func (o *Parser) ParseFunc(fn *DefFunc) {
 		fn.Ins = append(fn.Ins, NameAndType{s, t})
 		if o.Word == "," {
 			o.TakePunc(",")
+		} else if o.Word != ")" {
+			log.Panicf("expected `,` or `)` but got %q", o.Word)
 		}
 	}
 	o.TakePunc(")")
 	if o.Word != "{" {
-		t := o.ParseType()
-		fn.Outs = append(fn.Outs, NameAndType{"", t})
+		if o.Word == "{" {
+			o.TakePunc("(")
+			for o.Word != ")" {
+				s := o.TakeIdent()
+				t := o.ParseType()
+				fn.Outs = append(fn.Outs, NameAndType{s, t})
+				if o.Word == "," {
+					o.TakePunc(",")
+				} else if o.Word != ")" {
+					log.Panicf("expected `,` or `)` but got %q", o.Word)
+				}
+			}
+			o.TakePunc(")")
+		} else {
+			t := o.ParseType()
+			fn.Outs = append(fn.Outs, NameAndType{"", t})
+		}
 	}
 	b := &Block{Fn: fn}
 	o.ParseBlock(b)
@@ -283,42 +301,89 @@ LOOP:
 	}
 }
 
+func CompileToC(r io.Reader, sourceName string, w io.Writer) {
+	p := NewParser(r, sourceName)
+	p.ParseTop()
+	cg := NewCGen(w)
+	cg.P("#include <stdio.h>")
+	cg.P("#include \"runtime_c.h\"")
+	cg.VisitDefPackage(p.Package)
+	for _, i := range p.Imports {
+		cg.VisitDefImport(i)
+	}
+	for _, c := range p.Consts {
+		cg.VisitDefConst(c)
+	}
+	for _, t := range p.Types {
+		cg.VisitDefType(t)
+	}
+	for _, v := range p.Vars {
+		cg.VisitDefVar(v)
+	}
+	for _, f := range p.Funcs {
+		cg.VisitDefFunc(f)
+	}
+	cg.Flush()
+}
+
 type CGen struct {
-    W bufio.Writer
+	W *bufio.Writer
 }
-func (o *CGen) VisitLitInt(*LitIntX) {
+
+func NewCGen(w io.Writer) *CGen {
+	cg := &CGen{
+		W: bufio.NewWriter(w),
+	}
+	return cg
 }
-func (o *CGen) VisitLitString(*LitStringX) {
+func (cg *CGen) P(format string, args ...interface{}) {
+	fmt.Fprintf(cg.W, format+"\n", args...)
 }
-func (o *CGen) VisitIdent(*IdentX) {
+func (cg *CGen) Flush() {
+	cg.W.Flush()
 }
-func (o *CGen) VisitBinOp(*BinOpX) {
+func (cg *CGen) VisitLitInt(x *LitIntX) string {
+	return ""
 }
-func (o *CGen) VisitList(*ListX) {
+func (cg *CGen) VisitLitString(x *LitStringX) string {
+	return ""
 }
-func (o *CGen) VisitCall(*CallX) {
+func (cg *CGen) VisitIdent(x *IdentX) string {
+	return ""
 }
-func (o *CGen) VisitExpr(ExprVisitor) {
+func (cg *CGen) VisitBinOp(x *BinOpX) string {
+	return ""
 }
-func (o *CGen) VisitAssign(*AssignS) {
+func (cg *CGen) VisitList(x *ListX) string {
+	return ""
 }
-func (o *CGen) VisitReturn(*ReturnS) {
+func (cg *CGen) VisitCall(x *CallX) string {
+	return ""
 }
-func (o *CGen) VisitStmt(StmtVisitor) {
+func (cg *CGen) VisitAssign(*AssignS) {
 }
-func (o *CGen) VisitDef(DefVisitor) {
+func (cg *CGen) VisitReturn(*ReturnS) {
 }
-func (o *CGen) VisitDefPackage(*DefPackage) {
+func (cg *CGen) VisitDefPackage(def *DefPackage) {
+	cg.P("// package %s: %#v", def.Name, def)
 }
-func (o *CGen) VisitDefImport(*DefImport) {
+func (cg *CGen) VisitDefImport(def *DefImport) {
+	cg.P("// import %s: %#v", def.Name, def)
 }
-func (o *CGen) VisitDefConst(*DefConst) {
+func (cg *CGen) VisitDefConst(def *DefConst) {
+	cg.P("// const %s: %#v", def.Name, def)
 }
-func (o *CGen) VisitDefVar(*DefVar) {
+func (cg *CGen) VisitDefVar(def *DefVar) {
+	cg.P("// var %s: %#v", def.Name, def)
 }
-func (o *CGen) VisitDefType(*DefType) {
+func (cg *CGen) VisitDefType(def *DefType) {
+	cg.P("// type %s: %#v", def.Name, def)
 }
-func (o *CGen) VisitDefFunc(*DefFunc) {
+func (cg *CGen) VisitDefFunc(def *DefFunc) {
+	cg.P("// func %s: %#v", def.Name, def)
 }
-func (o *CGen) VisitIntType(*IntType) {
+
+/*
+func (cg *CGen) VisitIntType(*IntType) {
 }
+*/
