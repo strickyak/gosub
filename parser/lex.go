@@ -51,12 +51,13 @@ func (o *Lex) ReadChar() byte {
 	if o.Pending > 0 {
 		z := o.Pending
 		o.Pending = 0
-		log.Printf("=>> %q", string(z))
+		// log.Printf("=>> %q", string(z))
 		return z
 	}
 	ch, err := o.R.ReadByte()
+	// log.Printf("== ReadByte %d %v", ch, err)
 	if err == io.EOF {
-		log.Printf("==> 0 (EOF)")
+		// log.Printf("==> 0 (EOF)")
 		return 0
 	}
 	if err != nil {
@@ -69,7 +70,7 @@ func (o *Lex) ReadChar() byte {
 	} else {
 		o.Col++
 	}
-	log.Printf("==> %q", string(ch))
+	// log.Printf("==> %q", string(ch))
 	return ch
 }
 
@@ -82,7 +83,7 @@ func (o *Lex) _Next_() {
 	c := o.ReadChar()
 	for 0 < c && c <= 32 {
 		if c == '\n' {
-			o.Kind, o.Word = L_EOL, "--EOL--"
+			o.Kind, o.Word = L_EOL, ";;"
 			return
 		}
 		c = o.ReadChar()
@@ -105,17 +106,19 @@ func (o *Lex) _Next_() {
 			o.UnReadChar(c2)
 		}
 	}
-	neg := false
-	if c == '-' {
-		prevC := c
-		c = o.ReadChar()
-		if '0' <= c && c <= '9' {
-			neg = true
-		} else {
-			o.UnReadChar(c)
-			c = prevC
+	/*
+		neg := false
+		if c == '-' {
+			prevC := c
+			c = o.ReadChar()
+			if '0' <= c && c <= '9' {
+				neg = true
+			} else {
+				o.UnReadChar(c)
+				c = prevC
+			}
 		}
-	}
+	*/
 	if '0' <= c && c <= '9' {
 		x := int(c - '0')
 		c = o.ReadChar()
@@ -127,11 +130,15 @@ func (o *Lex) _Next_() {
 			c = o.ReadChar()
 		}
 		o.UnReadChar(c)
-		if neg {
-			o.Kind, o.Num = L_Int, -x
-		} else {
-			o.Kind, o.Num = L_Int, x
-		}
+		/*
+			if neg {
+				o.Kind, o.Num = L_Int, -x
+			} else {
+		*/
+		o.Kind, o.Num = L_Int, x
+		/*
+			}
+		*/
 		return
 	}
 	if 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || c == '_' {
