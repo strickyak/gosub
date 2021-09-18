@@ -343,22 +343,24 @@ func (cg *CGen) Flush() {
 	cg.W.Flush()
 }
 func (cg *CGen) VisitLitInt(x *LitIntX) string {
-	return ""
+	return fmt.Sprintf("%d", x.X)
 }
 func (cg *CGen) VisitLitString(x *LitStringX) string {
-	return ""
+	return fmt.Sprintf("%q", x.X)
 }
 func (cg *CGen) VisitIdent(x *IdentX) string {
-	return ""
+	return "v_" + x.X
 }
 func (cg *CGen) VisitBinOp(x *BinOpX) string {
-	return ""
+	a := x.A.VisitExpr(cg)
+	b := x.B.VisitExpr(cg)
+	return fmt.Sprintf("((%s) %s (%s))", a, x.Op, b)
 }
 func (cg *CGen) VisitList(x *ListX) string {
-	return ""
+	return "PROBLEM:VisitList"
 }
 func (cg *CGen) VisitCall(x *CallX) string {
-	return ""
+	return " -- need to know the results from the type -- "
 }
 func (cg *CGen) VisitAssign(*AssignS) {
 }
