@@ -139,18 +139,13 @@ func (o *Parser) ParseType() Type {
 	return nil
 }
 
-func (o *Parser) ParseList() Expr {
-	a := o.ParseExpr()
-	if o.Word == "," {
-		v := []Expr{a}
-		for o.Word == "," {
-			o.Next()
-			b := o.ParseExpr()
-			v = append(v, b)
-		}
-		return &ListX{v}
+func (o *Parser) ParseList() []Expr {
+	xx := []Expr{o.ParseExpr()}
+	for o.Word == "," {
+		o.Next()
+		xx = append(xx, o.ParseExpr())
 	}
-	return a
+	return xx
 }
 
 func (o *Parser) ParseAssignment() Stmt {
@@ -204,7 +199,7 @@ BLOCK:
 				b.Locals = append(b.Locals, NameAndType{s, t})
 			case "return":
 				o.Next()
-				var xx Expr
+				var xx []Expr
 				if o.Kind != L_EOL {
 					xx = o.ParseList()
 				}
@@ -301,6 +296,18 @@ LOOP:
 	}
 }
 
+type Value interface {
+	ToC() string
+}
+type VSimple struct {
+	C string // C language expression
+	T Type
+}
+
+func (vs *VSimple) ToC() string {
+	return vs.C
+}
+
 func CompileToC(r io.Reader, sourceName string, w io.Writer) {
 	p := NewParser(r, sourceName)
 	p.ParseTop()
@@ -342,25 +349,53 @@ func (cg *CGen) P(format string, args ...interface{}) {
 func (cg *CGen) Flush() {
 	cg.W.Flush()
 }
-func (cg *CGen) VisitLitInt(x *LitIntX) string {
-	return fmt.Sprintf("%d", x.X)
+func (cg *CGen) VisitLitInt(x *LitIntX) Value {
+	return &VSimple{
+		C: fmt.Sprintf("%d", x.X),
+		T: &Int,
+	}
 }
-func (cg *CGen) VisitLitString(x *LitStringX) string {
-	return fmt.Sprintf("%q", x.X)
+func (cg *CGen) VisitLitString(x *LitStringX) Value {
+	return &VSimple{
+		C: fmt.Sprintf("%q", x.X),
+		T: &Int,
+	}
 }
-func (cg *CGen) VisitIdent(x *IdentX) string {
-	return "v_" + x.X
+func (cg *CGen) VisitIdent(x *IdentX) Value {
+	return &VSimple{
+		C: "v_" + x.X,
+		T: &Int,
+	}
 }
-func (cg *CGen) VisitBinOp(x *BinOpX) string {
+func (cg *CGen) VisitBinOp(x *BinOpX) Value {
 	a := x.A.VisitExpr(cg)
 	b := x.B.VisitExpr(cg)
-	return fmt.Sprintf("((%s) %s (%s))", a, x.Op, b)
+	return &VSimple{
+		C: fmt.Sprintf("((%s) %s (%s))", a, x.Op, b),
+		T: &Int,
+	}
 }
-func (cg *CGen) VisitList(x *ListX) string {
-	return "PROBLEM:VisitList"
+func (cg *CGen) VisitList(x *ListX) Value {
+	return &VSimple{
+		C: "PROBLEM:VisitList",
+		T: &Int,
+	}
 }
-func (cg *CGen) VisitCall(x *CallX) string {
-	return " -- need to know the results from the type -- "
+func (cg *CGen) VisitCall(x *CallX) Value {
+	cargs := ""
+	firstTime := true
+	for _, e := range x.Args {
+		if !firstTime {
+			cargs += ", "
+		}
+		cargs += e.VisitExpr(cg).ToC()
+	}
+	cfunc := x.Func.VisitExpr(cg).ToC()
+	ccall := fmt.Sprintf("(%s(%s))", cfunc, cargs)
+	return &VSimple{
+		C: ccall,
+		T: &Int,
+	}
 }
 func (cg *CGen) VisitAssign(*AssignS) {
 }

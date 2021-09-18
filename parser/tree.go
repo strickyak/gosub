@@ -8,17 +8,17 @@ import (
 //////// Expr
 
 type ExprVisitor interface {
-	VisitLitInt(*LitIntX) string
-	VisitLitString(*LitStringX) string
-	VisitIdent(*IdentX) string
-	VisitBinOp(*BinOpX) string
-	VisitList(*ListX) string
-	VisitCall(*CallX) string
+	VisitLitInt(*LitIntX) Value
+	VisitLitString(*LitStringX) Value
+	VisitIdent(*IdentX) Value
+	VisitBinOp(*BinOpX) Value
+	VisitList(*ListX) Value
+	VisitCall(*CallX) Value
 }
 
 type Expr interface {
 	String() string
-	VisitExpr(ExprVisitor) string
+	VisitExpr(ExprVisitor) Value
 }
 
 type LitIntX struct {
@@ -28,7 +28,7 @@ type LitIntX struct {
 func (o *LitIntX) String() string {
 	return fmt.Sprintf("Int(%d)", o.X)
 }
-func (o *LitIntX) VisitExpr(v ExprVisitor) string {
+func (o *LitIntX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitLitInt(o)
 }
 
@@ -39,7 +39,7 @@ type LitStringX struct {
 func (o *LitStringX) String() string {
 	return fmt.Sprintf("String(%q)", o.X)
 }
-func (o *LitStringX) VisitExpr(v ExprVisitor) string {
+func (o *LitStringX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitLitString(o)
 }
 
@@ -50,7 +50,7 @@ type IdentX struct {
 func (o *IdentX) String() string {
 	return fmt.Sprintf("Ident(%s)", o.X)
 }
-func (o *IdentX) VisitExpr(v ExprVisitor) string {
+func (o *IdentX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitIdent(o)
 }
 
@@ -63,10 +63,11 @@ type BinOpX struct {
 func (o *BinOpX) String() string {
 	return fmt.Sprintf("Bin(%v %q %v)", o.A, o.Op, o.B)
 }
-func (o *BinOpX) VisitExpr(v ExprVisitor) string {
+func (o *BinOpX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitBinOp(o)
 }
 
+// Maybe ListX should not be an Expr, but a different sort of thing, entirely.
 type ListX struct {
 	V []Expr
 }
@@ -80,19 +81,19 @@ func (o *ListX) String() string {
 	buf.WriteString(")")
 	return buf.String()
 }
-func (o *ListX) VisitExpr(v ExprVisitor) string {
+func (o *ListX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitList(o)
 }
 
 type CallX struct {
 	Func Expr
-	Args Expr
+	Args []Expr
 }
 
 func (o *CallX) String() string {
 	return fmt.Sprintf("Call(%s; %s)", o.Func, o.Args)
 }
-func (o *CallX) VisitExpr(v ExprVisitor) string {
+func (o *CallX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitCall(o)
 }
 
@@ -109,17 +110,17 @@ type Stmt interface {
 }
 
 type AssignS struct {
-	A  Expr
+	A  []Expr
 	Op string
-	B  Expr
+	B  []Expr
 }
 
 func (o *AssignS) String() string {
-	return fmt.Sprintf("\nAssign(%v %q %v)\n", o.A, o.Op, o.B)
+	return fmt.Sprintf("\nAssign(%v <%q> %v)\n", o.A, o.Op, o.B)
 }
 
 type ReturnS struct {
-	X Expr
+	X []Expr
 }
 
 func (o *ReturnS) String() string {
@@ -223,7 +224,10 @@ var Byte = &IntType{Size: 1, Signed: false}
 var Int = &IntType{Size: 2, Signed: true}
 var UInt = &IntType{Size: 2, Signed: false}
 
-func (o IntType) CType(v string) string {
+// With Size:0, a ConstInt represents const number that has infinite size.
+var ConstInt = &IntType{Size: 0, Signed: true}
+
+func (o IntType) TypeNameInC(v string) string {
 	if o.Signed {
 		switch o.Size {
 		case 1:
