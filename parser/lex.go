@@ -2,6 +2,7 @@ package parser
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"log"
 )
@@ -135,7 +136,7 @@ func (o *Lex) _Next_() {
 				o.Kind, o.Num = L_Int, -x
 			} else {
 		*/
-		o.Kind, o.Num = L_Int, x
+		o.Kind, o.Num, o.Word = L_Int, x, fmt.Sprintf("%d", x)
 		/*
 			}
 		*/
@@ -176,10 +177,10 @@ func (o *Lex) _Next_() {
 		o.Kind, o.Word = L_String, string(s)
 		return
 	}
-	if c == '\047' { // 047 is single quote
+	if c == '\'' {
 		var s []byte
 		c = o.ReadChar()
-		for c != '\047' {
+		for c != '\'' {
 			if c == '\\' {
 				c = o.ReadChar()
 				if c == 'n' {
