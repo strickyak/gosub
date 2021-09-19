@@ -2,6 +2,7 @@ package parser
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -203,10 +204,10 @@ BLOCK:
 				if o.Kind != L_EOL {
 					xx = o.ParseList()
 				}
-				b.Body = append(b.Body, &ReturnS{xx})
+				b.Stmts = append(b.Stmts, &ReturnS{xx})
 			default:
 				a := o.ParseAssignment()
-				b.Body = append(b.Body, a)
+				b.Stmts = append(b.Stmts, a)
 			}
 			o.TakeEOL()
 		}
@@ -246,7 +247,7 @@ func (o *Parser) ParseFunc(fn *DefFunc) {
 			fn.Outs = append(fn.Outs, NameAndType{"", t})
 		}
 	}
-	b := &Block{Fn: fn}
+	b := &Block{Func: fn}
 	o.ParseBlock(b)
 	fn.Body = b
 }
@@ -297,15 +298,20 @@ LOOP:
 }
 
 type Value interface {
+	Type() Type
 	ToC() string
 }
+
 type VSimple struct {
 	C string // C language expression
 	T Type
 }
 
-func (vs *VSimple) ToC() string {
-	return vs.C
+func (val *VSimple) ToC() string {
+	return val.C
+}
+func (val *VSimple) Type() Type {
+	return val.T
 }
 
 func CompileToC(r io.Reader, sourceName string, w io.Writer) {
@@ -315,21 +321,27 @@ func CompileToC(r io.Reader, sourceName string, w io.Writer) {
 	cg.P("#include <stdio.h>")
 	cg.P("#include \"runtime_c.h\"")
 	cg.VisitDefPackage(p.Package)
+	cg.P("// ..... Imports .....")
 	for _, i := range p.Imports {
 		cg.VisitDefImport(i)
 	}
+	cg.P("// ..... Consts .....")
 	for _, c := range p.Consts {
 		cg.VisitDefConst(c)
 	}
+	cg.P("// ..... Types .....")
 	for _, t := range p.Types {
 		cg.VisitDefType(t)
 	}
+	cg.P("// ..... Vars .....")
 	for _, v := range p.Vars {
 		cg.VisitDefVar(v)
 	}
+	cg.P("// ..... Funcs .....")
 	for _, f := range p.Funcs {
 		cg.VisitDefFunc(f)
 	}
+	cg.P("// ..... Done .....")
 	cg.Flush()
 }
 
@@ -352,33 +364,33 @@ func (cg *CGen) Flush() {
 func (cg *CGen) VisitLitInt(x *LitIntX) Value {
 	return &VSimple{
 		C: fmt.Sprintf("%d", x.X),
-		T: &Int,
+		T: Int,
 	}
 }
 func (cg *CGen) VisitLitString(x *LitStringX) Value {
 	return &VSimple{
 		C: fmt.Sprintf("%q", x.X),
-		T: &Int,
+		T: Int,
 	}
 }
 func (cg *CGen) VisitIdent(x *IdentX) Value {
 	return &VSimple{
 		C: "v_" + x.X,
-		T: &Int,
+		T: Int,
 	}
 }
 func (cg *CGen) VisitBinOp(x *BinOpX) Value {
 	a := x.A.VisitExpr(cg)
 	b := x.B.VisitExpr(cg)
 	return &VSimple{
-		C: fmt.Sprintf("((%s) %s (%s))", a, x.Op, b),
-		T: &Int,
+		C: fmt.Sprintf("(%s) %s (%s)", a.ToC(), x.Op, b.ToC()),
+		T: Int,
 	}
 }
 func (cg *CGen) VisitList(x *ListX) Value {
 	return &VSimple{
 		C: "PROBLEM:VisitList",
-		T: &Int,
+		T: Int,
 	}
 }
 func (cg *CGen) VisitCall(x *CallX) Value {
@@ -389,17 +401,62 @@ func (cg *CGen) VisitCall(x *CallX) Value {
 			cargs += ", "
 		}
 		cargs += e.VisitExpr(cg).ToC()
+		firstTime = false
 	}
 	cfunc := x.Func.VisitExpr(cg).ToC()
 	ccall := fmt.Sprintf("(%s(%s))", cfunc, cargs)
 	return &VSimple{
 		C: ccall,
-		T: &Int,
+		T: Int,
 	}
 }
-func (cg *CGen) VisitAssign(*AssignS) {
+func (cg *CGen) VisitAssign(ass *AssignS) {
+	log.Printf("assign..... %v ; %v ; %v", ass.A, ass.Op, ass.B)
+	var values []Value
+	for _, e := range ass.B {
+		values = append(values, e.VisitExpr(cg))
+	}
+	if ass.A == nil {
+		for _, val := range values {
+			cg.P("  (void)(%s);", val.ToC())
+		}
+	} else {
+		if len(ass.A) != len(ass.B) {
+			log.Panicf("wrong number of values in assign")
+		}
+		for i, val := range values {
+			lhs := ass.A[i]
+			switch t := lhs.(type) {
+			case *IdentX:
+				// TODO -- check a.Op
+				// TODO -- check that variable t.X has the right type.
+				cvar := val.Type().TypeNameInC("v_" + t.X)
+				cg.P("  %s = (%s)(%s);", cvar, val.Type().TypeNameInC(""), val.ToC())
+			default:
+				log.Fatal("bad VisitAssign LHS: %#v", ass.A)
+			}
+		}
+	}
 }
-func (cg *CGen) VisitReturn(*ReturnS) {
+func (cg *CGen) VisitReturn(ret *ReturnS) {
+	log.Printf("return..... %v", ret.X)
+	switch len(ret.X) {
+	case 0:
+		cg.P("  return;")
+	case 1:
+		val := ret.X[0].VisitExpr(cg)
+		log.Printf("return..... val=%v", val)
+		cg.P("  return %s;", val.ToC())
+	default:
+		log.Panicf("multi-return not imp: %v", ret)
+	}
+}
+func (cg *CGen) VisitBlock(a *Block) {
+	cg.P("// CGen::VisitBlock: %#v", a)
+	for i, e := range a.Stmts {
+		log.Printf("VisitBlock[%d]: %#v", i, e)
+		e.VisitStmt(cg)
+	}
 }
 func (cg *CGen) VisitDefPackage(def *DefPackage) {
 	cg.P("// package %s: %#v", def.Name, def)
@@ -416,8 +473,43 @@ func (cg *CGen) VisitDefVar(def *DefVar) {
 func (cg *CGen) VisitDefType(def *DefType) {
 	cg.P("// type %s: %#v", def.Name, def)
 }
+
+type Buf struct {
+	W bytes.Buffer
+}
+
+func (buf *Buf) P(format string, args ...interface{}) {
+	fmt.Fprintf(&buf.W, format, args...)
+}
+func (buf *Buf) String() string {
+	return buf.W.String()
+}
 func (cg *CGen) VisitDefFunc(def *DefFunc) {
 	cg.P("// func %s: %#v", def.Name, def)
+	var b Buf
+	cfunc := "F_" + def.Name
+	crettype := "void"
+	if len(def.Outs) > 0 {
+		if len(def.Outs) > 1 {
+			panic("multi")
+		}
+		crettype = def.Outs[0].Type.TypeNameInC("")
+	}
+	b.P("%s %s(", crettype, cfunc)
+	if len(def.Ins) > 0 {
+		firstTime := true
+		for _, name_and_type := range def.Ins {
+			if !firstTime {
+				b.P(", ")
+			}
+			b.P("%s", name_and_type.Type.TypeNameInC("v_"+name_and_type.Name))
+			firstTime = false
+		}
+	}
+	b.P(") {\n")
+	cg.P(b.String())
+	def.Body.VisitStmt(cg)
+	cg.P("}\n")
 }
 
 /*

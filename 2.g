@@ -1,6 +1,6 @@
 package main
 
-func Hyp(a int, b int) {
+func Hyp(a int, b int) int {
     return a*a + b*b
 }
 

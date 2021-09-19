@@ -102,6 +102,7 @@ func (o *CallX) VisitExpr(v ExprVisitor) Value {
 type StmtVisitor interface {
 	VisitAssign(*AssignS)
 	VisitReturn(*ReturnS)
+	VisitBlock(*Block)
 }
 
 type Stmt interface {
@@ -174,10 +175,15 @@ type NameAndType struct {
 }
 type Block struct {
 	Locals []NameAndType
-	Body   []Stmt
+	Stmts  []Stmt
 	Parent *Block
-	Fn     *DefFunc
+	Func   *DefFunc
 }
+
+func (o *Block) VisitStmt(v StmtVisitor) {
+	v.VisitBlock(o)
+}
+
 type DefFunc struct {
 	Name string
 	Type Type
@@ -209,6 +215,7 @@ type TypeVisitor interface {
 	VisitIntType(*IntType)
 }
 type Type interface {
+	TypeNameInC(string) string
 }
 
 type IntType struct {
