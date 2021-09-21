@@ -234,21 +234,16 @@ var UInt = &IntType{Size: 2, Signed: false}
 // With Size:0, a ConstInt represents const number that has infinite size.
 var ConstInt = &IntType{Size: 0, Signed: true}
 
-func (o IntType) TypeNameInC(v string) string {
-	if o.Signed {
-		switch o.Size {
-		case 1:
-			return "signed char " + v
-		case 2:
-			return "int " + v
-		}
-	} else {
-		switch o.Size {
-		case 1:
-			return "unsigned char " + v
-		case 2:
-			return "unsigned int " + v
-		}
+func CondString(pred bool, yes string, no string) string {
+	if pred {
+		return yes
 	}
-	panic("bad")
+	return no
+}
+
+func (o IntType) TypeNameInC(v string) string {
+	if o.Size == 0 {
+		return "t_int2 " + v
+	}
+	return fmt.Sprintf("t_%sint%d %s", CondString(o.Signed, "", "u"), o.Size, v)
 }

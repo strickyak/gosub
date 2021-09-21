@@ -318,8 +318,29 @@ func CompileToC(r io.Reader, sourceName string, w io.Writer) {
 	p := NewParser(r, sourceName)
 	p.ParseTop()
 	cg := NewCGen(w)
+
+	cg.Globals["println"] = "F_BUILTIN_println"
+
 	cg.P("#include <stdio.h>")
 	cg.P("#include \"runtime_c.h\"")
+
+	cg.pre.VisitDefPackage(p.Package)
+	for _, i := range p.Imports {
+		cg.pre.VisitDefImport(i)
+	}
+	for _, c := range p.Consts {
+		cg.pre.VisitDefConst(c)
+	}
+	for _, t := range p.Types {
+		cg.pre.VisitDefType(t)
+	}
+	for _, v := range p.Vars {
+		cg.pre.VisitDefVar(v)
+	}
+	for _, f := range p.Funcs {
+		cg.pre.VisitDefFunc(f)
+	}
+
 	cg.VisitDefPackage(p.Package)
 	cg.P("// ..... Imports .....")
 	for _, i := range p.Imports {
@@ -342,17 +363,83 @@ func CompileToC(r io.Reader, sourceName string, w io.Writer) {
 		cg.VisitDefFunc(f)
 	}
 	cg.P("// ..... Done .....")
+
 	cg.Flush()
 }
 
+type cPreGen struct {
+	cg *CGen
+}
+
+/*
+func (cg *cPreGen) VisitLitInt(x *LitIntX) Value {}
+func (cg *cPreGen) VisitLitString(x *LitStringX) Value {}
+func (cg *cPreGen) VisitIdent(x *IdentX) Value {}
+func (cg *cPreGen) VisitBinOp(x *BinOpX) Value {}
+func (cg *cPreGen) VisitList(x *ListX) Value {}
+func (cg *cPreGen) VisitCall(x *CallX) Value {}
+func (cg *cPreGen) VisitAssign(ass *AssignS) {}
+func (cg *cPreGen) VisitReturn(ret *ReturnS) {}
+func (cg *cPreGen) VisitBlock(a *Block) {}
+func (cg *cPreGen) VisitIntType(*IntType) {}
+*/
+func (pre *cPreGen) VisitDefPackage(def *DefPackage) {
+	pre.cg.Package = def.Name
+}
+func (pre *cPreGen) VisitDefImport(def *DefImport) {
+	pre.cg.Globals[def.Name] = "I_" + pre.cg.Package + "__" + def.Name
+}
+func (pre *cPreGen) VisitDefConst(def *DefConst) {
+	pre.cg.Globals[def.Name] = "C_" + pre.cg.Package + "__" + def.Name
+}
+func (pre *cPreGen) VisitDefVar(def *DefVar) {
+	pre.cg.Globals[def.Name] = "V_" + pre.cg.Package + "__" + def.Name
+}
+func (pre *cPreGen) VisitDefType(def *DefType) {
+	pre.cg.Globals[def.Name] = "T_" + pre.cg.Package + "__" + def.Name
+}
+func (pre *cPreGen) VisitDefFunc(def *DefFunc) {
+	pre.cg.Globals[def.Name] = "F_" + pre.cg.Package + "__" + def.Name
+
+	// TODO -- dedup
+	var b Buf
+	cfunc := fmt.Sprintf("F_%s__%s", pre.cg.Package, def.Name)
+	crettype := "void"
+	if len(def.Outs) > 0 {
+		if len(def.Outs) > 1 {
+			panic("multi")
+		}
+		crettype = def.Outs[0].Type.TypeNameInC("")
+	}
+	b.P("%s %s(", crettype, cfunc)
+	if len(def.Ins) > 0 {
+		firstTime := true
+		for _, name_and_type := range def.Ins {
+			if !firstTime {
+				b.P(", ")
+			}
+			b.P("%s", name_and_type.Type.TypeNameInC("v_"+name_and_type.Name))
+			firstTime = false
+		}
+	}
+	b.P(");\n")
+	pre.cg.P(b.String())
+}
+
 type CGen struct {
-	W *bufio.Writer
+	pre     *cPreGen
+	W       *bufio.Writer
+	Package string
+	Globals map[string]string
 }
 
 func NewCGen(w io.Writer) *CGen {
 	cg := &CGen{
-		W: bufio.NewWriter(w),
+		pre:     new(cPreGen),
+		W:       bufio.NewWriter(w),
+		Globals: make(map[string]string),
 	}
+	cg.pre.cg = cg
 	return cg
 }
 func (cg *CGen) P(format string, args ...interface{}) {
@@ -374,10 +461,10 @@ func (cg *CGen) VisitLitString(x *LitStringX) Value {
 	}
 }
 func (cg *CGen) VisitIdent(x *IdentX) Value {
-	return &VSimple{
-		C: "v_" + x.X,
-		T: Int,
+	if globalName, ok := cg.Globals[x.X]; ok {
+		return &VSimple{C: globalName, T: /*TODO*/ Int}
 	}
+	return &VSimple{C: "v_" + x.X, T: Int}
 }
 func (cg *CGen) VisitBinOp(x *BinOpX) Value {
 	a := x.A.VisitExpr(cg)
@@ -452,26 +539,26 @@ func (cg *CGen) VisitReturn(ret *ReturnS) {
 	}
 }
 func (cg *CGen) VisitBlock(a *Block) {
-	cg.P("// CGen::VisitBlock: %#v", a)
 	for i, e := range a.Stmts {
-		log.Printf("VisitBlock[%d]: %#v", i, e)
+		log.Printf("VisitBlock[%d]", i)
 		e.VisitStmt(cg)
 	}
 }
 func (cg *CGen) VisitDefPackage(def *DefPackage) {
-	cg.P("// package %s: %#v", def.Name, def)
+	cg.P("// package %s", def.Name)
+	cg.Package = def.Name
 }
 func (cg *CGen) VisitDefImport(def *DefImport) {
-	cg.P("// import %s: %#v", def.Name, def)
+	cg.P("// import %s", def.Name)
 }
 func (cg *CGen) VisitDefConst(def *DefConst) {
-	cg.P("// const %s: %#v", def.Name, def)
+	cg.P("// const %s", def.Name)
 }
 func (cg *CGen) VisitDefVar(def *DefVar) {
-	cg.P("// var %s: %#v", def.Name, def)
+	cg.P("// var %s", def.Name)
 }
 func (cg *CGen) VisitDefType(def *DefType) {
-	cg.P("// type %s: %#v", def.Name, def)
+	cg.P("// type %s", def.Name)
 }
 
 type Buf struct {
@@ -485,9 +572,9 @@ func (buf *Buf) String() string {
 	return buf.W.String()
 }
 func (cg *CGen) VisitDefFunc(def *DefFunc) {
-	cg.P("// func %s: %#v", def.Name, def)
+	log.Printf("// func %s: %#v", def.Name, def)
 	var b Buf
-	cfunc := "F_" + def.Name
+	cfunc := fmt.Sprintf("F_%s__%s", cg.Package, def.Name)
 	crettype := "void"
 	if len(def.Outs) > 0 {
 		if len(def.Outs) > 1 {
