@@ -101,6 +101,7 @@ func (o *CallX) VisitExpr(v ExprVisitor) Value {
 
 type StmtVisitor interface {
 	VisitAssign(*AssignS)
+	VisitWhile(*WhileS)
 	VisitReturn(*ReturnS)
 	VisitBlock(*Block)
 }
@@ -120,6 +121,10 @@ func (o *AssignS) String() string {
 	return fmt.Sprintf("\nAssign(%v <%q> %v)\n", o.A, o.Op, o.B)
 }
 
+func (o *AssignS) VisitStmt(v StmtVisitor) {
+	v.VisitAssign(o)
+}
+
 type ReturnS struct {
 	X []Expr
 }
@@ -128,12 +133,21 @@ func (o *ReturnS) String() string {
 	return fmt.Sprintf("\nReturn(%v)\n", o.X)
 }
 
-func (o *AssignS) VisitStmt(v StmtVisitor) {
-	v.VisitAssign(o)
-}
-
 func (o *ReturnS) VisitStmt(v StmtVisitor) {
 	v.VisitReturn(o)
+}
+
+type WhileS struct {
+	Pred Expr
+	Body *Block
+}
+
+func (o *WhileS) String() string {
+	return fmt.Sprintf("\nWhile(%v)\n", o.Pred)
+}
+
+func (o *WhileS) VisitStmt(v StmtVisitor) {
+	v.VisitWhile(o)
 }
 
 ////////////////////////

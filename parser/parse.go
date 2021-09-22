@@ -198,6 +198,15 @@ BLOCK:
 				s := o.TakeIdent()
 				t := o.ParseType()
 				b.Locals = append(b.Locals, NameAndType{s, t})
+			case "for":
+				o.Next()
+				var pred Expr
+				if o.Word != "{" {
+					pred = o.ParseExpr()
+				}
+				b2 := &Block{Func: b.Func}
+				o.ParseBlock(b2)
+				b.Stmts = append(b.Stmts, &WhileS{pred, b2})
 			case "return":
 				o.Next()
 				var xx []Expr
@@ -380,6 +389,7 @@ func (cg *cPreGen) VisitList(x *ListX) Value {}
 func (cg *cPreGen) VisitCall(x *CallX) Value {}
 func (cg *cPreGen) VisitAssign(ass *AssignS) {}
 func (cg *cPreGen) VisitReturn(ret *ReturnS) {}
+func (cg *cPreGen) VisitWhile(ret *ReturnS) {}
 func (cg *cPreGen) VisitBlock(a *Block) {}
 func (cg *cPreGen) VisitIntType(*IntType) {}
 */
@@ -515,10 +525,17 @@ func (cg *CGen) VisitAssign(ass *AssignS) {
 			lhs := ass.A[i]
 			switch t := lhs.(type) {
 			case *IdentX:
-				// TODO -- check a.Op
 				// TODO -- check that variable t.X has the right type.
-				cvar := val.Type().TypeNameInC("v_" + t.X)
-				cg.P("  %s = (%s)(%s);", cvar, val.Type().TypeNameInC(""), val.ToC())
+				switch ass.Op {
+				case "=":
+					// TODO check Globals
+					cvar := "v_" + t.X
+					cg.P("  %s = (%s)(%s);", cvar, val.Type().TypeNameInC(""), val.ToC())
+				case ":=":
+					// TODO check Globals
+					cvar := val.Type().TypeNameInC("v_" + t.X)
+					cg.P("  %s = (%s)(%s);", cvar, val.Type().TypeNameInC(""), val.ToC())
+				}
 			default:
 				log.Fatal("bad VisitAssign LHS: %#v", ass.A)
 			}
@@ -537,6 +554,13 @@ func (cg *CGen) VisitReturn(ret *ReturnS) {
 	default:
 		log.Panicf("multi-return not imp: %v", ret)
 	}
+}
+func (cg *CGen) VisitWhile(wh *WhileS) {
+	cg.P("  while(1) {")
+	cg.P("    t_bool _while_ = (t_bool)(%s);", wh.Pred.VisitExpr(cg).ToC())
+	cg.P("    if (!_while_) break;")
+	wh.Body.VisitStmt(cg)
+	cg.P("  }")
 }
 func (cg *CGen) VisitBlock(a *Block) {
 	for i, e := range a.Stmts {
