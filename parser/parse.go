@@ -328,7 +328,7 @@ func CompileToC(r io.Reader, sourceName string, w io.Writer) {
 	p.ParseTop()
 	cg := NewCGen(w)
 
-	cg.Globals["println"] = "F_BUILTIN_println"
+	cg.Globals["println"] = NameAndType{"F_BUILTIN_println", nil}
 
 	cg.P("#include <stdio.h>")
 	cg.P("#include \"runtime_c.h\"")
@@ -397,19 +397,19 @@ func (pre *cPreGen) VisitDefPackage(def *DefPackage) {
 	pre.cg.Package = def.Name
 }
 func (pre *cPreGen) VisitDefImport(def *DefImport) {
-	pre.cg.Globals[def.Name] = "I_" + pre.cg.Package + "__" + def.Name
+	pre.cg.Globals[def.Name] = NameAndType{"I_" + pre.cg.Package + "__" + def.Name, nil}
 }
 func (pre *cPreGen) VisitDefConst(def *DefConst) {
-	pre.cg.Globals[def.Name] = "C_" + pre.cg.Package + "__" + def.Name
+	pre.cg.Globals[def.Name] = NameAndType{"C_" + pre.cg.Package + "__" + def.Name, ConstInt}
 }
 func (pre *cPreGen) VisitDefVar(def *DefVar) {
-	pre.cg.Globals[def.Name] = "V_" + pre.cg.Package + "__" + def.Name
+	pre.cg.Globals[def.Name] = NameAndType{"V_" + pre.cg.Package + "__" + def.Name, Int}
 }
 func (pre *cPreGen) VisitDefType(def *DefType) {
-	pre.cg.Globals[def.Name] = "T_" + pre.cg.Package + "__" + def.Name
+	pre.cg.Globals[def.Name] = NameAndType{"T_" + pre.cg.Package + "__" + def.Name, nil}
 }
 func (pre *cPreGen) VisitDefFunc(def *DefFunc) {
-	pre.cg.Globals[def.Name] = "F_" + pre.cg.Package + "__" + def.Name
+	pre.cg.Globals[def.Name] = NameAndType{"F_" + pre.cg.Package + "__" + def.Name, nil}
 
 	// TODO -- dedup
 	var b Buf
@@ -440,14 +440,14 @@ type CGen struct {
 	pre     *cPreGen
 	W       *bufio.Writer
 	Package string
-	Globals map[string]string
+	Globals map[string]NameAndType
 }
 
 func NewCGen(w io.Writer) *CGen {
 	cg := &CGen{
 		pre:     new(cPreGen),
 		W:       bufio.NewWriter(w),
-		Globals: make(map[string]string),
+		Globals: make(map[string]NameAndType),
 	}
 	cg.pre.cg = cg
 	return cg
@@ -471,9 +471,10 @@ func (cg *CGen) VisitLitString(x *LitStringX) Value {
 	}
 }
 func (cg *CGen) VisitIdent(x *IdentX) Value {
-	if globalName, ok := cg.Globals[x.X]; ok {
-		return &VSimple{C: globalName, T: /*TODO*/ Int}
+	if gl, ok := cg.Globals[x.X]; ok {
+		return &VSimple{C: gl.Name, T: /*TODO*/ Int}
 	}
+    // Assume it is a local variable.
 	return &VSimple{C: "v_" + x.X, T: Int}
 }
 func (cg *CGen) VisitBinOp(x *BinOpX) Value {
