@@ -474,7 +474,7 @@ func (cg *CGen) VisitIdent(x *IdentX) Value {
 	if gl, ok := cg.Globals[x.X]; ok {
 		return &VSimple{C: gl.Name, T: /*TODO*/ Int}
 	}
-    // Assume it is a local variable.
+	// Assume it is a local variable.
 	return &VSimple{C: "v_" + x.X, T: Int}
 }
 func (cg *CGen) VisitBinOp(x *BinOpX) Value {
