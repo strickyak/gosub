@@ -1,7 +1,7 @@
 all:
 	go run gosub.go  < 2.g   > 2.c 
 	cat -n 2.c
-	cc 2.c runtime_c.c
+	cc 2.c runt.c bigmem.c
 	./a.out
 
 ci:

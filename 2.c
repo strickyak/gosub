@@ -1,10 +1,10 @@
 #include <stdio.h>
-#include "runtime_c.h"
-t_int2  F_main__Triangle(t_int2 v_n);
-
+#include "runt.h"
 t_int2  F_main__Hyp(t_int2 v_a, t_int2 v_b);
 
 void F_main__main();
+
+t_int2  F_main__Triangle(t_int2 v_n);
 
 // package main
 // ..... Imports .....

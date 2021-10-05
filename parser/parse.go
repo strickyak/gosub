@@ -183,14 +183,35 @@ func (o *Parser) TakeEOL() {
 	o.Next()
 }
 
+func (o *Parser) ParseStmt(b *Block) Stmt {
+	switch o.Word {
+	case "for":
+		o.Next()
+		var pred Expr
+		if o.Word != "{" {
+			pred = o.ParseExpr()
+		}
+		b2 := &Block{Func: b.Func}
+		o.ParseBlock(b2)
+		return &WhileS{pred, b2}
+	case "return":
+		o.Next()
+		var xx []Expr
+		if o.Kind != L_EOL {
+			xx = o.ParseList()
+		}
+		return &ReturnS{xx}
+	default:
+		a := o.ParseAssignment()
+		return a
+	}
+}
 func (o *Parser) ParseBlock(b *Block) {
 	o.TakePunc("{")
-BLOCK:
 	for o.Word != "}" {
 		switch o.Kind {
 		case L_EOL:
 			o.TakeEOL()
-			continue BLOCK
 		case L_Ident:
 			switch o.Word {
 			case "var":
@@ -198,27 +219,13 @@ BLOCK:
 				s := o.TakeIdent()
 				t := o.ParseType()
 				b.Locals = append(b.Locals, NameAndType{s, t})
-			case "for":
-				o.Next()
-				var pred Expr
-				if o.Word != "{" {
-					pred = o.ParseExpr()
-				}
-				b2 := &Block{Func: b.Func}
-				o.ParseBlock(b2)
-				b.Stmts = append(b.Stmts, &WhileS{pred, b2})
-			case "return":
-				o.Next()
-				var xx []Expr
-				if o.Kind != L_EOL {
-					xx = o.ParseList()
-				}
-				b.Stmts = append(b.Stmts, &ReturnS{xx})
 			default:
-				a := o.ParseAssignment()
-				b.Stmts = append(b.Stmts, a)
+				stmt := o.ParseStmt(b)
+				if stmt != nil {
+					b.Stmts = append(b.Stmts, stmt)
+				}
+				o.TakeEOL()
 			}
-			o.TakeEOL()
 		}
 	}
 	o.TakePunc("}")
@@ -331,7 +338,7 @@ func CompileToC(r io.Reader, sourceName string, w io.Writer) {
 	cg.Globals["println"] = NameAndType{"F_BUILTIN_println", nil}
 
 	cg.P("#include <stdio.h>")
-	cg.P("#include \"runtime_c.h\"")
+	cg.P("#include \"runt.h\"")
 
 	cg.pre.VisitDefPackage(p.Package)
 	for _, i := range p.Imports {
