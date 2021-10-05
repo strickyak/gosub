@@ -1,0 +1,6 @@
+RCS/
+*,v
+*.swp
+a.out
+*.s
+*.o
