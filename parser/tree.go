@@ -14,6 +14,9 @@ type ExprVisitor interface {
 	VisitBinOp(*BinOpX) Value
 	VisitList(*ListX) Value
 	VisitCall(*CallX) Value
+	VisitType(*TypeX) Value
+	VisitSub(*SubX) Value
+	VisitDot(*DotX) Value
 }
 
 type Expr interface {
@@ -95,6 +98,41 @@ func (o *CallX) String() string {
 }
 func (o *CallX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitCall(o)
+}
+
+type DotX struct {
+	X      Expr
+	Member string
+}
+
+func (o *DotX) String() string {
+	return fmt.Sprintf("Dot(%s; %s)", o.X, o.Member)
+}
+func (o *DotX) VisitExpr(v ExprVisitor) Value {
+	return v.VisitDot(o)
+}
+
+type SubX struct {
+	X         Expr
+	Subscript Expr
+}
+
+func (o *SubX) String() string {
+	return fmt.Sprintf("Sub(%s; %s)", o.X, o.Subscript)
+}
+func (o *SubX) VisitExpr(v ExprVisitor) Value {
+	return v.VisitSub(o)
+}
+
+type TypeX struct {
+	T Type
+}
+
+func (o *TypeX) String() string {
+	return fmt.Sprintf("TypeX(%s)", o.T)
+}
+func (o *TypeX) VisitExpr(v ExprVisitor) Value {
+	return v.VisitType(o)
 }
 
 /////////// Stmt
@@ -227,6 +265,7 @@ func (o *DefFunc) VisitDef(v DefVisitor) {
 
 type TypeVisitor interface {
 	VisitIntType(*IntType)
+	VisitSliceType(*SliceType)
 }
 type Type interface {
 	TypeNameInC(string) string
@@ -236,9 +275,15 @@ type IntType struct {
 	Size   int
 	Signed bool
 }
+type SliceType struct {
+	MemberType Type
+}
 
 func (o *IntType) VisitType(v TypeVisitor) {
 	v.VisitIntType(o)
+}
+func (o *SliceType) VisitType(v TypeVisitor) {
+	v.VisitSliceType(o)
 }
 
 var Byte = &IntType{Size: 1, Signed: false}
@@ -255,9 +300,14 @@ func CondString(pred bool, yes string, no string) string {
 	return no
 }
 
-func (o IntType) TypeNameInC(v string) string {
+func (o *IntType) TypeNameInC(v string) string {
 	if o.Size == 0 {
 		return "t_int2 " + v
 	}
 	return fmt.Sprintf("t_%sint%d %s", CondString(o.Signed, "", "u"), o.Size, v)
+}
+
+func (o *SliceType) TypeNameInC(v string) string {
+	memberType := o.MemberType.TypeNameInC("")
+	return "_SLICE_X_" + memberType + "_Y_ " + v
 }

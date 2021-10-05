@@ -50,18 +50,38 @@ func (o *Parser) ParsePrim() Expr {
 		o.Next()
 		return z
 	}
+	if o.Kind == L_Punc {
+		if o.Word == "[" {
+			return &TypeX{o.ParseType()}
+		}
+	}
 	panic("bad ParsePrim")
 }
 
 func (o *Parser) ParsePrimEtc() Expr {
 	a := o.ParsePrim()
-	if o.Word == "(" {
-		o.TakePunc("(")
-		if o.Word != ")" {
-			args := o.ParseList()
-			a = &CallX{a, args}
+LOOP:
+	for {
+		switch o.Word {
+		case "(":
+			o.TakePunc("(")
+			if o.Word != ")" {
+				args := o.ParseList()
+				a = &CallX{a, args}
+			}
+			o.TakePunc(")")
+		case "[":
+			o.TakePunc("[")
+			sub := o.ParseExpr()
+			o.TakePunc("]")
+			a = &SubX{a, sub}
+		case ".":
+			o.TakePunc(".")
+			member := o.TakeIdent()
+			a = &DotX{a, member}
+		default:
+			break LOOP
 		}
-		o.TakePunc(")")
 	}
 	return a
 }
@@ -127,17 +147,32 @@ func (o *Parser) ParseExpr() Expr {
 }
 
 func (o *Parser) ParseType() Type {
-	w := o.TakeIdent()
-	switch w {
-	case "byte":
-		return Byte
-	case "int":
-		return Int
-	case "uint":
-		return UInt
+	switch o.Kind {
+	case L_Ident:
+		w := o.TakeIdent()
+		switch w {
+		case "byte":
+			return Byte
+		case "int":
+			return Int
+		case "uint":
+			return UInt
+		}
+		log.Panicf("expected a type, got %q", w)
+		return nil
+	case L_Punc:
+		if o.Word == "[" {
+			o.Next()
+			if o.Word != "]" {
+				log.Panicf("for slice type, after [ expected ], got %v", o.Word)
+			}
+			o.Next()
+			memberType := o.ParseType()
+			return &SliceType{memberType}
+		}
 	}
-	log.Panicf("expected a type, got %q", w)
-	return nil
+	log.Panicf("not a type: starts with %v", o.Word)
+	panic("notreached")
 }
 
 func (o *Parser) ParseList() []Expr {
@@ -279,7 +314,11 @@ LOOP:
 				w := o.TakeIdent()
 				o.Package = &DefPackage{Name: w}
 			case "import":
-				w := o.TakeIdent()
+				if o.Kind != L_String {
+					log.Panicf("after import, expected string, got %v", o.Word)
+				}
+				w := o.Word
+				o.Next()
 				o.Imports[w] = &DefImport{Name: w}
 			case "const":
 				w := o.TakeIdent()
@@ -394,6 +433,7 @@ func (cg *cPreGen) VisitIdent(x *IdentX) Value {}
 func (cg *cPreGen) VisitBinOp(x *BinOpX) Value {}
 func (cg *cPreGen) VisitList(x *ListX) Value {}
 func (cg *cPreGen) VisitCall(x *CallX) Value {}
+func (cg *cPreGen) VisitType(x *TypeX) Value {}
 func (cg *cPreGen) VisitAssign(ass *AssignS) {}
 func (cg *cPreGen) VisitReturn(ret *ReturnS) {}
 func (cg *cPreGen) VisitWhile(ret *ReturnS) {}
@@ -513,6 +553,24 @@ func (cg *CGen) VisitCall(x *CallX) Value {
 	return &VSimple{
 		C: ccall,
 		T: Int,
+	}
+}
+func (cg *CGen) VisitType(x *TypeX) Value {
+	return &VSimple{
+		C: "TYPE__" + x.T.TypeNameInC(""),
+		T: x.T,
+	}
+}
+func (cg *CGen) VisitSub(x *SubX) Value {
+	return &VSimple{
+		C: "TODO: VisitSub",
+		T: nil,
+	}
+}
+func (cg *CGen) VisitDot(x *DotX) Value {
+	return &VSimple{
+		C: "TODO: VisitDot",
+		T: nil,
 	}
 }
 func (cg *CGen) VisitAssign(ass *AssignS) {

@@ -1,7 +1,8 @@
+DEMO=2.g
 all:
-	go run gosub.go  < 2.g   > 2.c 
-	cat -n 2.c
-	cc 2.c runt.c bigmem.c
+	go run gosub.go  < $(DEMO)   > $(DEMO).c 
+	cat -n $(DEMO).c
+	cc $(DEMO).c runt.c bigmem.c
 	./a.out
 
 ci:
@@ -9,3 +10,6 @@ ci:
 
 fmt:
 	gofmt -w *.go */*.go
+
+clean:
+	rm *.s *.o a.out
