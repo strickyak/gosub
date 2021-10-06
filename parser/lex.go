@@ -206,7 +206,7 @@ func (o *Lex) _Next_() {
 
 	d := o.ReadChar()
 	for _, digraph := range []string{
-		":=", "<=", "<<", ">=", ">>", "==", "!=", "+=", "-=", "*="} {
+		"++", "--", ":=", "<=", "<<", ">=", ">>", "==", "!=", "+=", "-=", "*="} {
 		if c == digraph[0] && d == digraph[1] {
 			o.Kind, o.Word = L_Punc, digraph
 			return

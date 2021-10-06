@@ -4,3 +4,5 @@ RCS/
 a.out
 *.s
 *.o
+*.g.c
+*.go.c

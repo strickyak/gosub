@@ -151,6 +151,8 @@ func (o *Parser) ParseType() Type {
 	case L_Ident:
 		w := o.TakeIdent()
 		switch w {
+		case "bool":
+			return Bool
 		case "byte":
 			return Byte
 		case "int":
@@ -191,6 +193,12 @@ func (o *Parser) ParseAssignment() Stmt {
 		o.Next()
 		b := o.ParseList()
 		return &AssignS{a, op, b}
+	} else if op == "++" {
+		o.Next()
+		return &AssignS{a, op, nil}
+	} else if op == "--" {
+		o.Next()
+		return &AssignS{a, op, nil}
 	}
 	return &AssignS{nil, "", a}
 }
@@ -220,15 +228,52 @@ func (o *Parser) TakeEOL() {
 
 func (o *Parser) ParseStmt(b *Block) Stmt {
 	switch o.Word {
+	case "if":
+		o.Next()
+		pred := o.ParseExpr()
+		yes := o.ParseBlock(b.Func)
+		var no *Block
+		if o.Word == "else" {
+			no = o.ParseBlock(b.Func)
+		}
+		return &IfS{pred, yes, no}
 	case "for":
 		o.Next()
 		var pred Expr
 		if o.Word != "{" {
 			pred = o.ParseExpr()
 		}
-		b2 := &Block{Func: b.Func}
-		o.ParseBlock(b2)
+		b2 := o.ParseBlock(b.Func)
 		return &WhileS{pred, b2}
+	case "switch":
+		o.Next()
+		var subject Expr
+		if o.Word != "{" {
+			subject = o.ParseExpr()
+		}
+		o.TakePunc("{")
+		sws := &SwitchS{subject, nil}
+		for o.Word != "}" {
+			for o.Word == ";;" {
+				o.Next()
+			}
+			cOrD := o.TakeIdent()
+			switch cOrD {
+			case "case":
+				exprs := o.ParseList()
+				o.TakePunc(":")
+				bare := o.ParseBareBlock(b.Func)
+				sws.Entries = append(sws.Entries, &SwitchEntry{exprs, bare})
+			case "default":
+				o.TakePunc(":")
+				bare := o.ParseBareBlock(b.Func)
+				sws.Entries = append(sws.Entries, &SwitchEntry{nil, bare})
+			default:
+				panic(cOrD)
+			}
+		}
+		o.TakePunc("}")
+		return sws
 	case "return":
 		o.Next()
 		var xx []Expr
@@ -241,9 +286,15 @@ func (o *Parser) ParseStmt(b *Block) Stmt {
 		return a
 	}
 }
-func (o *Parser) ParseBlock(b *Block) {
+func (o *Parser) ParseBlock(fn *DefFunc) *Block {
 	o.TakePunc("{")
-	for o.Word != "}" {
+	b := o.ParseBareBlock(fn)
+	o.TakePunc("}")
+	return b
+}
+func (o *Parser) ParseBareBlock(fn *DefFunc) *Block {
+	b := &Block{Func: fn}
+	for o.Word != "}" && o.Word != "case" && o.Word != "default" {
 		switch o.Kind {
 		case L_EOL:
 			o.TakeEOL()
@@ -263,7 +314,7 @@ func (o *Parser) ParseBlock(b *Block) {
 			}
 		}
 	}
-	o.TakePunc("}")
+	return b
 }
 
 func (o *Parser) ParseFunc(fn *DefFunc) {
@@ -298,8 +349,7 @@ func (o *Parser) ParseFunc(fn *DefFunc) {
 			fn.Outs = append(fn.Outs, NameAndType{"", t})
 		}
 	}
-	b := &Block{Func: fn}
-	o.ParseBlock(b)
+	b := o.ParseBlock(fn)
 	fn.Body = b
 }
 
@@ -437,6 +487,7 @@ func (cg *cPreGen) VisitType(x *TypeX) Value {}
 func (cg *cPreGen) VisitAssign(ass *AssignS) {}
 func (cg *cPreGen) VisitReturn(ret *ReturnS) {}
 func (cg *cPreGen) VisitWhile(ret *ReturnS) {}
+func (cg *cPreGen) VisitIf(ret *IfS) {}
 func (cg *cPreGen) VisitBlock(a *Block) {}
 func (cg *cPreGen) VisitIntType(*IntType) {}
 */
@@ -583,6 +634,19 @@ func (cg *CGen) VisitAssign(ass *AssignS) {
 		for _, val := range values {
 			cg.P("  (void)(%s);", val.ToC())
 		}
+	} else if ass.B == nil {
+		if len(ass.A) != 1 {
+			log.Panicf("operator %v requires one lvalue on the left, got %v", ass.Op, ass.A)
+		}
+		// TODO check Globals
+		lhs := ass.A[0]
+		switch t := lhs.(type) {
+		case *IdentX:
+			cvar := "v_" + t.X
+			cg.P("  %s %s;", cvar, ass.Op)
+		default:
+			log.Panicf("operator %v: lhs not supported: %v", ass.Op, lhs)
+		}
 	} else {
 		if len(ass.A) != len(ass.B) {
 			log.Panicf("wrong number of values in assign")
@@ -623,9 +687,24 @@ func (cg *CGen) VisitReturn(ret *ReturnS) {
 }
 func (cg *CGen) VisitWhile(wh *WhileS) {
 	cg.P("  while(1) {")
-	cg.P("    t_bool _while_ = (t_bool)(%s);", wh.Pred.VisitExpr(cg).ToC())
-	cg.P("    if (!_while_) break;")
+	if wh.Pred != nil {
+		cg.P("    t_bool _while_ = (t_bool)(%s);", wh.Pred.VisitExpr(cg).ToC())
+		cg.P("    if (!_while_) break;")
+	}
 	wh.Body.VisitStmt(cg)
+	cg.P("  }")
+}
+func (cg *CGen) VisitIf(ifs *IfS) {
+	cg.P("  { t_bool _if_ = %s;", ifs.Pred.VisitExpr(cg).ToC())
+	cg.P("  if( _if_s ) {", ifs.Pred.VisitExpr(cg).ToC())
+	ifs.Yes.VisitStmt(cg)
+	cg.P("  } else {")
+	ifs.No.VisitStmt(cg)
+	cg.P("  }}")
+}
+func (cg *CGen) VisitSwitch(sws *SwitchS) {
+	cg.P("  { t_int _switch_ = %s;", sws.Pred.VisitExpr(cg).ToC())
+	cg.P("  TODO(switch)")
 	cg.P("  }")
 }
 func (cg *CGen) VisitBlock(a *Block) {

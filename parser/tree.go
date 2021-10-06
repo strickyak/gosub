@@ -140,6 +140,8 @@ func (o *TypeX) VisitExpr(v ExprVisitor) Value {
 type StmtVisitor interface {
 	VisitAssign(*AssignS)
 	VisitWhile(*WhileS)
+	VisitSwitch(*SwitchS)
+	VisitIf(*IfS)
 	VisitReturn(*ReturnS)
 	VisitBlock(*Block)
 }
@@ -175,6 +177,23 @@ func (o *ReturnS) VisitStmt(v StmtVisitor) {
 	v.VisitReturn(o)
 }
 
+type SwitchEntry struct {
+	Cases []Expr
+	Body  *Block
+}
+type SwitchS struct {
+	Pred    Expr
+	Entries []*SwitchEntry
+}
+
+func (o *SwitchS) String() string {
+	return fmt.Sprintf("\nSwitch(%v)\n", o.Pred)
+}
+
+func (o *SwitchS) VisitStmt(v StmtVisitor) {
+	v.VisitSwitch(o)
+}
+
 type WhileS struct {
 	Pred Expr
 	Body *Block
@@ -186,6 +205,20 @@ func (o *WhileS) String() string {
 
 func (o *WhileS) VisitStmt(v StmtVisitor) {
 	v.VisitWhile(o)
+}
+
+type IfS struct {
+	Pred Expr
+	Yes  *Block
+	No   *Block
+}
+
+func (o *IfS) String() string {
+	return fmt.Sprintf("\nIf(%v)\n", o.Pred)
+}
+
+func (o *IfS) VisitStmt(v StmtVisitor) {
+	v.VisitIf(o)
 }
 
 ////////////////////////
@@ -286,6 +319,7 @@ func (o *SliceType) VisitType(v TypeVisitor) {
 	v.VisitSliceType(o)
 }
 
+var Bool = &IntType{Size: 1, Signed: false}
 var Byte = &IntType{Size: 1, Signed: false}
 var Int = &IntType{Size: 2, Signed: true}
 var UInt = &IntType{Size: 2, Signed: false}

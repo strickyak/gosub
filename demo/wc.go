@@ -7,6 +7,7 @@ import "os"
 import "log"
 
 func main() {
+	wasWhite = true
 	onebyte := make([]byte, 1)
 	for {
 		n, err := os.Stdin.Read(onebyte)
@@ -27,7 +28,7 @@ func main() {
 var Bytes int
 var Words int
 var Lines int
-var wasWhite = true
+var wasWhite bool
 
 func Count(ch byte) {
 	Bytes++
