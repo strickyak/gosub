@@ -2,7 +2,7 @@ DEMO=2.g
 all:
 	go run gosub.go  < $(DEMO)   > $(DEMO).c 
 	cat -n $(DEMO).c
-	cc $(DEMO).c runt.c bigmem.c
+	cc -I. $(DEMO).c runt.c bigmem.c
 	./a.out
 
 ci:
