@@ -630,9 +630,20 @@ func (cg *CGen) VisitAssign(ass *AssignS) {
 	for _, e := range ass.B {
 		values = append(values, e.VisitExpr(cg))
 	}
+	var bcall *CallX
+	if len(ass.B) == 1 {
+		switch t := ass.B[0].(type) {
+		case *CallX:
+			bcall = t
+		}
+	}
 	if ass.A == nil {
-		for _, val := range values {
-			cg.P("  (void)(%s);", val.ToC())
+		if bcall == nil {
+			for _, val := range values {
+				cg.P("  (void)(%s);", val.ToC())
+			}
+		} else {
+			// call with outputs
 		}
 	} else if ass.B == nil {
 		if len(ass.A) != 1 {
@@ -647,6 +658,24 @@ func (cg *CGen) VisitAssign(ass *AssignS) {
 		default:
 			log.Panicf("operator %v: lhs not supported: %v", ass.Op, lhs)
 		}
+	} else if len(ass.A) > 1 && bcall != nil {
+		// From 1 call, to 2 or more assigned vars.
+		var buf Buf
+		buf.P("((%s)(", bcall.Func.VisitExpr(cg).ToC())
+		for i, arg := range bcall.Args {
+			if i > 0 {
+				buf.P(", ")
+			}
+			buf.P("%s", arg.VisitExpr(cg).ToC())
+		}
+		for i, arg := range ass.A {
+			if len(bcall.Args)+i > 0 {
+				buf.P(", ")
+			}
+			// TODO -- VisitAddr ?
+			buf.P("&(%s)", arg.VisitExpr(cg).ToC())
+		}
+		buf.P("))")
 	} else {
 		if len(ass.A) != len(ass.B) {
 			log.Panicf("wrong number of values in assign")
@@ -699,7 +728,9 @@ func (cg *CGen) VisitIf(ifs *IfS) {
 	cg.P("  if( _if_s ) {", ifs.Pred.VisitExpr(cg).ToC())
 	ifs.Yes.VisitStmt(cg)
 	cg.P("  } else {")
-	ifs.No.VisitStmt(cg)
+	if ifs.No != nil {
+		ifs.No.VisitStmt(cg)
+	}
 	cg.P("  }}")
 }
 func (cg *CGen) VisitSwitch(sws *SwitchS) {
@@ -708,6 +739,12 @@ func (cg *CGen) VisitSwitch(sws *SwitchS) {
 	cg.P("  }")
 }
 func (cg *CGen) VisitBlock(a *Block) {
+	if a == nil {
+		panic(8881)
+	}
+	if a.Stmts == nil {
+		panic(8882)
+	}
 	for i, e := range a.Stmts {
 		log.Printf("VisitBlock[%d]", i)
 		e.VisitStmt(cg)
