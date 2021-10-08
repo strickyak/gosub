@@ -424,16 +424,32 @@ type Value interface {
 	ToC() string
 }
 
-type VSimple struct {
+type LValue interface {
+	LType() Type
+	LToC() string
+}
+
+type SimpleValue struct {
 	C string // C language expression
 	T Type
 }
 
-func (val *VSimple) ToC() string {
+type SimpleLValue struct {
+	LC string // C language expression
+	LT Type
+}
+
+func (val *SimpleValue) ToC() string {
 	return val.C
 }
-func (val *VSimple) Type() Type {
+func (val *SimpleValue) Type() Type {
 	return val.T
+}
+func (lval *SimpleLValue) LToC() string {
+	return lval.LC
+}
+func (lval *SimpleLValue) LType() Type {
+	return lval.LT
 }
 
 func CompileToC(r io.Reader, sourceName string, w io.Writer) {
@@ -589,14 +605,25 @@ func (cm *CMod) P(format string, args ...interface{}) {
 func (cm *CMod) Flush() {
 	cm.W.Flush()
 }
+
+func (cm *CMod) VisitLvalIdent(x *IdentX) LValue {
+	return &SimpleLValue{Format("LValue(%v)", x), ""}
+}
+func (cm *CMod) VisitLValSub(x *SubX) LValue {
+	return &SimpleLValue{Format("LValue(%v)", x), ""}
+}
+func (cm *CMod) VisitLvalDot(x *DotX) LValue {
+	return &SimpleLValue{Format("LValue(%v)", x), ""}
+}
+
 func (cm *CMod) VisitLitInt(x *LitIntX) Value {
-	return &VSimple{
+	return &SimpleValue{
 		C: Format("%d", x.X),
 		T: IntType,
 	}
 }
 func (cm *CMod) VisitLitString(x *LitStringX) Value {
-	return &VSimple{
+	return &SimpleValue{
 		C: Format("%q", x.X),
 		T: IntType,
 	}
@@ -609,33 +636,27 @@ func (cm *CMod) _VisitIdent_(x *IdentX) Value {
 	if gd, ok := cm.GlobalDefs[x.X]; ok {
 		switch t := gd.(type) {
 		case *DefImport:
-			return &VSimple{C: "I_" + t.Name, T: ""}
+			return &SimpleValue{C: "I_" + t.Name, T: ""}
 		case *DefConst:
-			return &VSimple{C: "C_" + t.Name, T: ""}
+			return &SimpleValue{C: "C_" + t.Name, T: ""}
 		case *DefVar:
-			return &VSimple{C: "G_" + t.Name, T: ""}
+			return &SimpleValue{C: "G_" + t.Name, T: ""}
 		case *DefType:
-			return &VSimple{C: "T_" + t.Name, T: "t"}
+			return &SimpleValue{C: "T_" + t.Name, T: "t"}
 		case *DefFunc:
-			return &VSimple{C: "F_" + t.Name, T: ""}
+			return &SimpleValue{C: "F_" + t.Name, T: ""}
 		default:
 			panic(663)
 		}
 	}
 	// Else, assume it is a local variable.
-	return &VSimple{C: "v_" + x.X, T: IntType}
+	return &SimpleValue{C: "v_" + x.X, T: IntType}
 }
 func (cm *CMod) VisitBinOp(x *BinOpX) Value {
 	a := x.A.VisitExpr(cm)
 	b := x.B.VisitExpr(cm)
-	return &VSimple{
+	return &SimpleValue{
 		C: Format("(%s) %s (%s)", a.ToC(), x.Op, b.ToC()),
-		T: IntType,
-	}
-}
-func (cm *CMod) VisitList(x *ListX) Value {
-	return &VSimple{
-		C: "PROBLEM:VisitList",
 		T: IntType,
 	}
 }
@@ -651,19 +672,19 @@ func (cm *CMod) VisitCall(x *CallX) Value {
 	}
 	cfunc := x.Func.VisitExpr(cm).ToC()
 	ccall := Format("(%s(%s))", cfunc, cargs)
-	return &VSimple{
+	return &SimpleValue{
 		C: ccall,
 		T: IntType,
 	}
 }
 func (cm *CMod) VisitType(x *TypeX) Value {
-	return &VSimple{
+	return &SimpleValue{
 		C: string(x.T),
 		T: x.T,
 	}
 }
 func (cm *CMod) VisitSub(x *SubX) Value {
-	return &VSimple{
+	return &SimpleValue{
 		C: Format("SubXXX(%v)", x),
 		T: "",
 	}
@@ -674,7 +695,7 @@ func (cm *CMod) VisitDot(dot *DotX) Value {
 		if gd, ok := cm.GlobalDefs[t.X]; ok {
 			/*
 			   if g.Name[0] == 'I' {
-			       return &VSimple{
+			       return &SimpleValue{
 			           C: Format("TODO_import_%s__%s", g.Name, dot.Member),
 			           T: "-TODO-",
 			       }
@@ -682,14 +703,14 @@ func (cm *CMod) VisitDot(dot *DotX) Value {
 			*/
 			switch tg := gd.(type) {
 			case *DefImport:
-				return &VSimple{
+				return &SimpleValue{
 					C: Format("TODO_import_%s__%s", tg.Name, dot.Member),
 					T: "-TODO-66773",
 				}
 			}
 		}
 	}
-	return &VSimple{
+	return &SimpleValue{
 		C: Format("DotXXX(%v)", dot),
 		T: "",
 	}

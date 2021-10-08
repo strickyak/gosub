@@ -1,7 +1,7 @@
 package parser
 
 import (
-	"bytes"
+	//"bytes"
 	"fmt"
 )
 
@@ -17,16 +17,25 @@ type ExprVisitor interface {
 	VisitLitString(*LitStringX) Value
 	VisitIdent(*IdentX) Value
 	VisitBinOp(*BinOpX) Value
-	VisitList(*ListX) Value
 	VisitCall(*CallX) Value
 	VisitType(*TypeX) Value
 	VisitSub(*SubX) Value
 	VisitDot(*DotX) Value
 }
+type LvalVisitor interface {
+	VisitLvalIdent(*IdentX) LValue
+	VisitLvalSub(*SubX) LValue
+	VisitLvalDot(*DotX) LValue
+}
 
 type Expr interface {
 	String() string
 	VisitExpr(ExprVisitor) Value
+}
+
+type Lval interface {
+	String() string
+	VisitLVal(LvalVisitor) Value
 }
 
 type LitIntX struct {
@@ -62,6 +71,10 @@ func (o *IdentX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitIdent(o)
 }
 
+func (o *IdentX) VisitLval(v LvalVisitor) LValue {
+	return v.VisitLvalIdent(o)
+}
+
 type BinOpX struct {
 	A  Expr
 	Op string
@@ -73,24 +86,6 @@ func (o *BinOpX) String() string {
 }
 func (o *BinOpX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitBinOp(o)
-}
-
-// Maybe ListX should not be an Expr, but a different sort of thing, entirely.
-type ListX struct {
-	V []Expr
-}
-
-func (o *ListX) String() string {
-	var buf bytes.Buffer
-	buf.WriteString("List(")
-	for i, e := range o.V {
-		buf.WriteString(fmt.Sprintf("[%d] %v ", i, e))
-	}
-	buf.WriteString(")")
-	return buf.String()
-}
-func (o *ListX) VisitExpr(v ExprVisitor) Value {
-	return v.VisitList(o)
 }
 
 type CallX struct {
@@ -116,6 +111,9 @@ func (o *DotX) String() string {
 func (o *DotX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitDot(o)
 }
+func (o *DotX) VisitLval(v LvalVisitor) LValue {
+	return v.VisitLvalDot(o)
+}
 
 type SubX struct {
 	X         Expr
@@ -127,6 +125,10 @@ func (o *SubX) String() string {
 }
 func (o *SubX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitSub(o)
+}
+
+func (o *SubX) VisitLval(v LvalVisitor) LValue {
+	return v.VisitLvalSub(o)
 }
 
 type TypeX struct {
@@ -325,58 +327,6 @@ func (o *DefType) VisitDef(v DefVisitor) {
 func (o *DefFunc) VisitDef(v DefVisitor) {
 	v.VisitDefFunc(o)
 }
-
-/*
-type TypeVisitor interface {
-	VisitIntType(*IntType)
-	VisitSliceType(*SliceType)
-}
-type Type interface {
-	TypeNameInC(string) string
-}
-
-type IntType struct {
-	Size   int
-	Signed bool
-}
-type SliceType struct {
-	MemberType Type
-}
-
-func (o *IntType) VisitType(v TypeVisitor) {
-	v.VisitIntType(o)
-}
-func (o *SliceType) VisitType(v TypeVisitor) {
-	v.VisitSliceType(o)
-}
-
-var Bool = &IntType{Size: 1, Signed: false}
-var Byte = &IntType{Size: 1, Signed: false}
-var Int = &IntType{Size: 2, Signed: true}
-var UInt = &IntType{Size: 2, Signed: false}
-
-// With Size:0, a ConstInt represents const number that has infinite size.
-var ConstInt = &IntType{Size: 0, Signed: true}
-
-func CondString(pred bool, yes string, no string) string {
-	if pred {
-		return yes
-	}
-	return no
-}
-
-func (o *IntType) TypeNameInC(v string) string {
-	if o.Size == 0 {
-		return "t_int2 " + v
-	}
-	return fmt.Sprintf("t_%sint%d %s", CondString(o.Signed, "", "u"), o.Size, v)
-}
-
-func (o *SliceType) TypeNameInC(v string) string {
-	memberType := o.MemberType.TypeNameInC("")
-	return "_SLICE_X_" + memberType + "_Y_ " + v
-}
-*/
 
 type Type string
 
