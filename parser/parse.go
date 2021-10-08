@@ -440,95 +440,82 @@ func CompileToC(r io.Reader, sourceName string, w io.Writer) {
 	p := NewParser(r, sourceName)
 	p.ParseTop()
 	cg := NewCGen(w)
+	cm := cg.Mods["main"]
 
-	cg.Globals["println"] = NameAndType{"F_BUILTIN_println", ""}
+	cm.Globals["println"] = NameAndType{"F_BUILTIN_println", ""}
 
-	cg.P("#include <stdio.h>")
-	cg.P("#include \"runt.h\"")
+	cm.P("#include <stdio.h>")
+	cm.P("#include \"runt.h\"")
 
-	cg.pre.VisitDefPackage(p.Package)
+	cm.pre.VisitDefPackage(p.Package)
 	for _, i := range p.Imports {
-		cg.pre.VisitDefImport(i)
+		cm.pre.VisitDefImport(i)
 	}
 	for _, c := range p.Consts {
-		cg.pre.VisitDefConst(c)
+		cm.pre.VisitDefConst(c)
 	}
 	for _, t := range p.Types {
-		cg.pre.VisitDefType(t)
+		cm.pre.VisitDefType(t)
 	}
 	for _, v := range p.Vars {
-		cg.pre.VisitDefVar(v)
+		cm.pre.VisitDefVar(v)
 	}
 	for _, f := range p.Funcs {
-		cg.pre.VisitDefFunc(f)
+		cm.pre.VisitDefFunc(f)
 	}
 
-	cg.VisitDefPackage(p.Package)
-	cg.P("// ..... Imports .....")
+	cm.VisitDefPackage(p.Package)
+	cm.P("// ..... Imports .....")
 	for _, i := range p.Imports {
-		cg.VisitDefImport(i)
+		cm.VisitDefImport(i)
 	}
-	cg.P("// ..... Consts .....")
+	cm.P("// ..... Consts .....")
 	for _, c := range p.Consts {
-		cg.VisitDefConst(c)
+		cm.VisitDefConst(c)
 	}
-	cg.P("// ..... Types .....")
+	cm.P("// ..... Types .....")
 	for _, t := range p.Types {
-		cg.VisitDefType(t)
+		cm.VisitDefType(t)
 	}
-	cg.P("// ..... Vars .....")
+	cm.P("// ..... Vars .....")
 	for _, v := range p.Vars {
-		cg.VisitDefVar(v)
+		cm.VisitDefVar(v)
 	}
-	cg.P("// ..... Funcs .....")
+	cm.P("// ..... Funcs .....")
 	for _, f := range p.Funcs {
-		cg.VisitDefFunc(f)
+		cm.VisitDefFunc(f)
 	}
-	cg.P("// ..... Done .....")
+	cm.P("// ..... Done .....")
 
-	cg.Flush()
-}
-
-type cPreGen struct {
-	cg *CGen
+	cm.Flush()
 }
 
-/*
-func (cg *cPreGen) VisitLitInt(x *LitIntX) Value {}
-func (cg *cPreGen) VisitLitString(x *LitStringX) Value {}
-func (cg *cPreGen) VisitIdent(x *IdentX) Value {}
-func (cg *cPreGen) VisitBinOp(x *BinOpX) Value {}
-func (cg *cPreGen) VisitList(x *ListX) Value {}
-func (cg *cPreGen) VisitCall(x *CallX) Value {}
-func (cg *cPreGen) VisitType(x *TypeX) Value {}
-func (cg *cPreGen) VisitAssign(ass *AssignS) {}
-func (cg *cPreGen) VisitReturn(ret *ReturnS) {}
-func (cg *cPreGen) VisitWhile(ret *ReturnS) {}
-func (cg *cPreGen) VisitIf(ret *IfS) {}
-func (cg *cPreGen) VisitBlock(a *Block) {}
-func (cg *cPreGen) VisitIntType(*IntType) {}
-*/
-func (pre *cPreGen) VisitDefPackage(def *DefPackage) {
-	pre.cg.Package = def.Name
+type cPreMod struct {
+	cm *CMod
+	// cg *CGen
 }
-func (pre *cPreGen) VisitDefImport(def *DefImport) {
-	pre.cg.Globals[def.Name] = NameAndType{"I_" + pre.cg.Package + "__" + def.Name, ""}
+
+func (pre *cPreMod) VisitDefPackage(def *DefPackage) {
+	pre.cm.Package = def.Name
 }
-func (pre *cPreGen) VisitDefConst(def *DefConst) {
-	pre.cg.Globals[def.Name] = NameAndType{"C_" + pre.cg.Package + "__" + def.Name, ConstIntType}
+func (pre *cPreMod) VisitDefImport(def *DefImport) {
+	pre.cm.Globals[def.Name] = NameAndType{"I_" + pre.cm.Package + "__" + def.Name, ""}
 }
-func (pre *cPreGen) VisitDefVar(def *DefVar) {
-	pre.cg.Globals[def.Name] = NameAndType{"V_" + pre.cg.Package + "__" + def.Name, IntType}
+func (pre *cPreMod) VisitDefConst(def *DefConst) {
+	pre.cm.Globals[def.Name] = NameAndType{"C_" + pre.cm.Package + "__" + def.Name, ConstIntType}
 }
-func (pre *cPreGen) VisitDefType(def *DefType) {
-	pre.cg.Globals[def.Name] = NameAndType{"T_" + pre.cg.Package + "__" + def.Name, ""}
+func (pre *cPreMod) VisitDefVar(def *DefVar) {
+	pre.cm.Globals[def.Name] = NameAndType{"V_" + pre.cm.Package + "__" + def.Name, IntType}
 }
-func (pre *cPreGen) VisitDefFunc(def *DefFunc) {
-	pre.cg.Globals[def.Name] = NameAndType{"F_" + pre.cg.Package + "__" + def.Name, ""}
+func (pre *cPreMod) VisitDefType(def *DefType) {
+	pre.cm.Globals[def.Name] = NameAndType{"T_" + pre.cm.Package + "__" + def.Name, ""}
+}
+func (pre *cPreMod) VisitDefFunc(def *DefFunc) {
+	pre.cm.Globals[def.Name] = NameAndType{"F_" + pre.cm.Package + "__" + def.Name, ""}
 
 	// TODO -- dedup
 	var b Buf
-	cfunc := Format("F_%s__%s", pre.cg.Package, def.Name)
+	cfunc := Format("F_%s__%s", pre.cm.Package, def.Name)
 	crettype := "void"
 	if len(def.Outs) > 0 {
 		if len(def.Outs) > 1 {
@@ -548,106 +535,113 @@ func (pre *cPreGen) VisitDefFunc(def *DefFunc) {
 		}
 	}
 	b.P(");\n")
-	pre.cg.P(b.String())
+	pre.cm.P(b.String())
 }
 
-type CGen struct {
-	pre        *cPreGen
+type CMod struct {
+	pre        *cPreMod
 	W          *bufio.Writer
 	Package    string
 	Globals    map[string]NameAndType
 	BreakTo    string
 	ContinueTo string
 }
+type CGen struct {
+	Mods map[string]*CMod
+}
 
 func NewCGen(w io.Writer) *CGen {
-	cg := &CGen{
-		pre:     new(cPreGen),
+	mainMod := &CMod{
+		pre:     new(cPreMod),
 		W:       bufio.NewWriter(w),
+		Package: "main",
 		Globals: make(map[string]NameAndType),
 	}
-	cg.pre.cg = cg
+	mainMod.pre.cm = mainMod
+	cg := &CGen{
+		Mods: map[string]*CMod{"main": mainMod},
+	}
 	return cg
 }
-func (cg *CGen) P(format string, args ...interface{}) {
-	fmt.Fprintf(cg.W, format+"\n", args...)
+func (cm *CMod) P(format string, args ...interface{}) {
+	fmt.Fprintf(cm.W, format+"\n", args...)
 }
-func (cg *CGen) Flush() {
-	cg.W.Flush()
+func (cm *CMod) Flush() {
+	cm.W.Flush()
 }
-func (cg *CGen) VisitLitInt(x *LitIntX) Value {
+func (cm *CMod) VisitLitInt(x *LitIntX) Value {
 	return &VSimple{
 		C: Format("%d", x.X),
 		T: IntType,
 	}
 }
-func (cg *CGen) VisitLitString(x *LitStringX) Value {
+func (cm *CMod) VisitLitString(x *LitStringX) Value {
 	return &VSimple{
 		C: Format("%q", x.X),
 		T: IntType,
 	}
 }
-func (cg *CGen) VisitIdent(x *IdentX) Value {
-	if gl, ok := cg.Globals[x.X]; ok {
+func (cm *CMod) VisitIdent(x *IdentX) Value {
+	if gl, ok := cm.Globals[x.X]; ok {
 		return &VSimple{C: gl.Name, T: /*TODO*/ IntType}
 	}
 	// Assume it is a local variable.
 	return &VSimple{C: "v_" + x.X, T: IntType}
 }
-func (cg *CGen) VisitBinOp(x *BinOpX) Value {
-	a := x.A.VisitExpr(cg)
-	b := x.B.VisitExpr(cg)
+func (cm *CMod) VisitBinOp(x *BinOpX) Value {
+	a := x.A.VisitExpr(cm)
+	b := x.B.VisitExpr(cm)
 	return &VSimple{
 		C: Format("(%s) %s (%s)", a.ToC(), x.Op, b.ToC()),
 		T: IntType,
 	}
 }
-func (cg *CGen) VisitList(x *ListX) Value {
+func (cm *CMod) VisitList(x *ListX) Value {
 	return &VSimple{
 		C: "PROBLEM:VisitList",
 		T: IntType,
 	}
 }
-func (cg *CGen) VisitCall(x *CallX) Value {
+func (cm *CMod) VisitCall(x *CallX) Value {
 	cargs := ""
 	firstTime := true
 	for _, e := range x.Args {
 		if !firstTime {
 			cargs += ", "
 		}
-		cargs += e.VisitExpr(cg).ToC()
+		cargs += e.VisitExpr(cm).ToC()
 		firstTime = false
 	}
-	cfunc := x.Func.VisitExpr(cg).ToC()
+	cfunc := x.Func.VisitExpr(cm).ToC()
 	ccall := Format("(%s(%s))", cfunc, cargs)
 	return &VSimple{
 		C: ccall,
 		T: IntType,
 	}
 }
-func (cg *CGen) VisitType(x *TypeX) Value {
+func (cm *CMod) VisitType(x *TypeX) Value {
 	return &VSimple{
-		C: Format("%q", x.T),
+		C: string(x.T),
 		T: x.T,
 	}
 }
-func (cg *CGen) VisitSub(x *SubX) Value {
+func (cm *CMod) VisitSub(x *SubX) Value {
 	return &VSimple{
 		C: Format("SubXXX(%v)", x),
 		T: "",
 	}
 }
-func (cg *CGen) VisitDot(x *DotX) Value {
+func (cm *CMod) VisitDot(x *DotX) Value {
 	return &VSimple{
 		C: Format("DotXXX(%v)", x),
 		T: "",
 	}
 }
-func (cg *CGen) VisitAssign(ass *AssignS) {
+func (cm *CMod) VisitAssign(ass *AssignS) {
 	log.Printf("assign..... %v ; %v ; %v", ass.A, ass.Op, ass.B)
 	var values []Value
 	for _, e := range ass.B {
-		values = append(values, e.VisitExpr(cg))
+		values = append(values, e.VisitExpr(cm))
 	}
 	var bcall *CallX
 	if len(ass.B) == 1 {
@@ -659,7 +653,7 @@ func (cg *CGen) VisitAssign(ass *AssignS) {
 	if ass.A == nil {
 		if bcall == nil {
 			for _, val := range values {
-				cg.P("  (void)(%s);", val.ToC())
+				cm.P("  (void)(%s);", val.ToC())
 			}
 		} else {
 			// call with outputs
@@ -673,26 +667,26 @@ func (cg *CGen) VisitAssign(ass *AssignS) {
 		switch t := lhs.(type) {
 		case *IdentX:
 			cvar := "v_" + t.X
-			cg.P("  %s %s;", cvar, ass.Op)
+			cm.P("  %s %s;", cvar, ass.Op)
 		default:
 			Panicf("operator %v: lhs not supported: %v", ass.Op, lhs)
 		}
 	} else if len(ass.A) > 1 && bcall != nil {
 		// From 1 call, to 2 or more assigned vars.
 		var buf Buf
-		buf.P("((%s)(", bcall.Func.VisitExpr(cg).ToC())
+		buf.P("((%s)(", bcall.Func.VisitExpr(cm).ToC())
 		for i, arg := range bcall.Args {
 			if i > 0 {
 				buf.P(", ")
 			}
-			buf.P("%s", arg.VisitExpr(cg).ToC())
+			buf.P("%s", arg.VisitExpr(cm).ToC())
 		}
 		for i, arg := range ass.A {
 			if len(bcall.Args)+i > 0 {
 				buf.P(", ")
 			}
 			// TODO -- VisitAddr ?
-			buf.P("&(%s)", arg.VisitExpr(cg).ToC())
+			buf.P("&(%s)", arg.VisitExpr(cm).ToC())
 		}
 		buf.P("))")
 	} else {
@@ -708,11 +702,11 @@ func (cg *CGen) VisitAssign(ass *AssignS) {
 				case "=":
 					// TODO check Globals
 					cvar := "v_" + t.X
-					cg.P("  %s = (%s)(%s);", cvar, TypeNameInC(val.Type()), val.ToC())
+					cm.P("  %s = (%s)(%s);", cvar, TypeNameInC(val.Type()), val.ToC())
 				case ":=":
 					// TODO check Globals
 					cvar := Format("%s %s", TypeNameInC(val.Type()), "v_"+t.X)
-					cg.P("  %s = (%s)(%s);", cvar, TypeNameInC(val.Type()), val.ToC())
+					cm.P("  %s = (%s)(%s);", cvar, TypeNameInC(val.Type()), val.ToC())
 				}
 			default:
 				log.Fatal("bad VisitAssign LHS: %#v", ass.A)
@@ -720,61 +714,61 @@ func (cg *CGen) VisitAssign(ass *AssignS) {
 		}
 	}
 }
-func (cg *CGen) VisitReturn(ret *ReturnS) {
+func (cm *CMod) VisitReturn(ret *ReturnS) {
 	log.Printf("return..... %v", ret.X)
 	switch len(ret.X) {
 	case 0:
-		cg.P("  return;")
+		cm.P("  return;")
 	case 1:
-		val := ret.X[0].VisitExpr(cg)
+		val := ret.X[0].VisitExpr(cm)
 		log.Printf("return..... val=%v", val)
-		cg.P("  return %s;", val.ToC())
+		cm.P("  return %s;", val.ToC())
 	default:
 		Panicf("multi-return not imp: %v", ret)
 	}
 }
-func (cg *CGen) VisitWhile(wh *WhileS) {
+func (cm *CMod) VisitWhile(wh *WhileS) {
 	label := Serial("while")
-	cg.P("Break_%s:  while(1) {", label)
+	cm.P("Break_%s:  while(1) {", label)
 	if wh.Pred != nil {
-		cg.P("    t_bool _while_ = (t_bool)(%s);", wh.Pred.VisitExpr(cg).ToC())
-		cg.P("    if (!_while_) break;")
+		cm.P("    t_bool _while_ = (t_bool)(%s);", wh.Pred.VisitExpr(cm).ToC())
+		cm.P("    if (!_while_) break;")
 	}
-	savedB, savedC := cg.BreakTo, cg.ContinueTo
-	cg.BreakTo, cg.ContinueTo = "Break_"+label, "Cont_"+label
-	wh.Body.VisitStmt(cg)
-	cg.P("  }")
-	cg.P("Cont_%s: {}", label)
-	cg.BreakTo, cg.ContinueTo = savedB, savedC
+	savedB, savedC := cm.BreakTo, cm.ContinueTo
+	cm.BreakTo, cm.ContinueTo = "Break_"+label, "Cont_"+label
+	wh.Body.VisitStmt(cm)
+	cm.P("  }")
+	cm.P("Cont_%s: {}", label)
+	cm.BreakTo, cm.ContinueTo = savedB, savedC
 }
-func (cg *CGen) VisitBreak(sws *BreakS) {
-	if cg.BreakTo == "" {
+func (cm *CMod) VisitBreak(sws *BreakS) {
+	if cm.BreakTo == "" {
 		Panicf("cannot break from here")
 	}
-	cg.P("goto %s;", cg.BreakTo)
+	cm.P("goto %s;", cm.BreakTo)
 }
-func (cg *CGen) VisitContinue(sws *ContinueS) {
-	if cg.ContinueTo == "" {
+func (cm *CMod) VisitContinue(sws *ContinueS) {
+	if cm.ContinueTo == "" {
 		Panicf("cannot continue from here")
 	}
-	cg.P("goto %s;", cg.ContinueTo)
+	cm.P("goto %s;", cm.ContinueTo)
 }
-func (cg *CGen) VisitIf(ifs *IfS) {
-	cg.P("  { t_bool _if_ = %s;", ifs.Pred.VisitExpr(cg).ToC())
-	cg.P("  if( _if_ ) {", ifs.Pred.VisitExpr(cg).ToC())
-	ifs.Yes.VisitStmt(cg)
+func (cm *CMod) VisitIf(ifs *IfS) {
+	cm.P("  { t_bool _if_ = %s;", ifs.Pred.VisitExpr(cm).ToC())
+	cm.P("  if( _if_ ) {", ifs.Pred.VisitExpr(cm).ToC())
+	ifs.Yes.VisitStmt(cm)
 	if ifs.No != nil {
-		cg.P("  } else {")
-		ifs.No.VisitStmt(cg)
+		cm.P("  } else {")
+		ifs.No.VisitStmt(cm)
 	}
-	cg.P("  }}")
+	cm.P("  }}")
 }
-func (cg *CGen) VisitSwitch(sws *SwitchS) {
-	cg.P("  { t_int _switch_ = %s;", sws.Pred.VisitExpr(cg).ToC())
-	cg.P("  TODO(switch)")
-	cg.P("  }")
+func (cm *CMod) VisitSwitch(sws *SwitchS) {
+	cm.P("  { t_int _switch_ = %s;", sws.Pred.VisitExpr(cm).ToC())
+	cm.P("  TODO(switch)")
+	cm.P("  }")
 }
-func (cg *CGen) VisitBlock(a *Block) {
+func (cm *CMod) VisitBlock(a *Block) {
 	if a == nil {
 		panic(8881)
 	}
@@ -783,24 +777,24 @@ func (cg *CGen) VisitBlock(a *Block) {
 	}
 	for i, e := range a.Stmts {
 		log.Printf("VisitBlock[%d]", i)
-		e.VisitStmt(cg)
+		e.VisitStmt(cm)
 	}
 }
-func (cg *CGen) VisitDefPackage(def *DefPackage) {
-	cg.P("// package %s", def.Name)
-	cg.Package = def.Name
+func (cm *CMod) VisitDefPackage(def *DefPackage) {
+	cm.P("// package %s", def.Name)
+	cm.Package = def.Name
 }
-func (cg *CGen) VisitDefImport(def *DefImport) {
-	cg.P("// import %s", def.Name)
+func (cm *CMod) VisitDefImport(def *DefImport) {
+	cm.P("// import %s", def.Name)
 }
-func (cg *CGen) VisitDefConst(def *DefConst) {
-	cg.P("// const %s", def.Name)
+func (cm *CMod) VisitDefConst(def *DefConst) {
+	cm.P("// const %s", def.Name)
 }
-func (cg *CGen) VisitDefVar(def *DefVar) {
-	cg.P("// var %s", def.Name)
+func (cm *CMod) VisitDefVar(def *DefVar) {
+	cm.P("// var %s", def.Name)
 }
-func (cg *CGen) VisitDefType(def *DefType) {
-	cg.P("// type %s", def.Name)
+func (cm *CMod) VisitDefType(def *DefType) {
+	cm.P("// type %s", def.Name)
 }
 
 type Buf struct {
@@ -813,10 +807,10 @@ func (buf *Buf) P(format string, args ...interface{}) {
 func (buf *Buf) String() string {
 	return buf.W.String()
 }
-func (cg *CGen) VisitDefFunc(def *DefFunc) {
+func (cm *CMod) VisitDefFunc(def *DefFunc) {
 	log.Printf("// func %s: %#v", def.Name, def)
 	var b Buf
-	cfunc := Format("F_%s__%s", cg.Package, def.Name)
+	cfunc := Format("F_%s__%s", cm.Package, def.Name)
 	crettype := "void"
 	if len(def.Outs) > 0 {
 		if len(def.Outs) > 1 {
@@ -836,9 +830,9 @@ func (cg *CGen) VisitDefFunc(def *DefFunc) {
 		}
 	}
 	b.P(") {\n")
-	cg.P(b.String())
-	def.Body.VisitStmt(cg)
-	cg.P("}\n")
+	cm.P(b.String())
+	def.Body.VisitStmt(cm)
+	cm.P("}\n")
 }
 
 var SerialNum uint
