@@ -564,6 +564,7 @@ func NewCGen(w io.Writer) *CGen {
 	return cg
 }
 func (cm *CMod) P(format string, args ...interface{}) {
+	log.Printf("<<<<< %q >>>>> %q", format, fmt.Sprintf(format, args...))
 	fmt.Fprintf(cm.W, format+"\n", args...)
 }
 func (cm *CMod) Flush() {
@@ -755,7 +756,7 @@ func (cm *CMod) VisitContinue(sws *ContinueS) {
 }
 func (cm *CMod) VisitIf(ifs *IfS) {
 	cm.P("  { t_bool _if_ = %s;", ifs.Pred.VisitExpr(cm).ToC())
-	cm.P("  if( _if_ ) {", ifs.Pred.VisitExpr(cm).ToC())
+	cm.P("  if( _if_ ) {")
 	ifs.Yes.VisitStmt(cm)
 	if ifs.No != nil {
 		cm.P("  } else {")
