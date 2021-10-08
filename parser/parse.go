@@ -442,7 +442,7 @@ func CompileToC(r io.Reader, sourceName string, w io.Writer) {
 	cg := NewCGen(w)
 	cm := cg.Mods["main"]
 
-	cm.Globals["println"] = NameAndType{"F_BUILTIN_println", ""}
+	cm.GlobalDefs["println"] = &DefFunc{"F_BUILTIN__println", "", nil, nil, nil}
 
 	cm.P("#include <stdio.h>")
 	cm.P("#include \"runt.h\"")
@@ -495,23 +495,40 @@ type cPreMod struct {
 	// cg *CGen
 }
 
+func (pre *cPreMod) mustNotExistYet(s string) {
+	if _, ok := pre.cm.GlobalDefs[s]; ok {
+		Panicf("redefined global name: %s", s)
+	}
+}
 func (pre *cPreMod) VisitDefPackage(def *DefPackage) {
+	pre.mustNotExistYet(def.Name)
 	pre.cm.Package = def.Name
+	pre.cm.P("\n// PRE VISIT %#v\n", def)
 }
 func (pre *cPreMod) VisitDefImport(def *DefImport) {
-	pre.cm.Globals[def.Name] = NameAndType{"I_" + pre.cm.Package + "__" + def.Name, ""}
+	pre.mustNotExistYet(def.Name)
+	pre.cm.GlobalDefs[def.Name] = def
+	pre.cm.P("\n// PRE VISIT %#v\n", def)
 }
 func (pre *cPreMod) VisitDefConst(def *DefConst) {
-	pre.cm.Globals[def.Name] = NameAndType{"C_" + pre.cm.Package + "__" + def.Name, ConstIntType}
+	pre.mustNotExistYet(def.Name)
+	pre.cm.GlobalDefs[def.Name] = def
+	pre.cm.P("\n// PRE VISIT %#v\n", def)
 }
 func (pre *cPreMod) VisitDefVar(def *DefVar) {
-	pre.cm.Globals[def.Name] = NameAndType{"V_" + pre.cm.Package + "__" + def.Name, IntType}
+	pre.mustNotExistYet(def.Name)
+	pre.cm.GlobalDefs[def.Name] = def
+	log.Printf("pre visit DefVar: %v => %v", def, pre.cm.GlobalDefs)
+	pre.cm.P("\n// PRE VISIT %#v\n", def)
 }
 func (pre *cPreMod) VisitDefType(def *DefType) {
-	pre.cm.Globals[def.Name] = NameAndType{"T_" + pre.cm.Package + "__" + def.Name, ""}
+	pre.mustNotExistYet(def.Name)
+	pre.cm.GlobalDefs[def.Name] = def
+	pre.cm.P("\n// PRE VISIT %#v\n", def)
 }
 func (pre *cPreMod) VisitDefFunc(def *DefFunc) {
-	pre.cm.Globals[def.Name] = NameAndType{"F_" + pre.cm.Package + "__" + def.Name, ""}
+	pre.mustNotExistYet(def.Name)
+	pre.cm.GlobalDefs[def.Name] = def
 
 	// TODO -- dedup
 	var b Buf
@@ -535,14 +552,16 @@ func (pre *cPreMod) VisitDefFunc(def *DefFunc) {
 		}
 	}
 	b.P(");\n")
+	pre.cm.P("\n// {{{{{ // BEGIN Pre def of func: %v\n", def)
 	pre.cm.P(b.String())
+	pre.cm.P("\n// }}}}} // END Pre def of func: %v\n", def)
 }
 
 type CMod struct {
 	pre        *cPreMod
 	W          *bufio.Writer
 	Package    string
-	Globals    map[string]NameAndType
+	GlobalDefs map[string]Def
 	BreakTo    string
 	ContinueTo string
 }
@@ -552,10 +571,10 @@ type CGen struct {
 
 func NewCGen(w io.Writer) *CGen {
 	mainMod := &CMod{
-		pre:     new(cPreMod),
-		W:       bufio.NewWriter(w),
-		Package: "main",
-		Globals: make(map[string]NameAndType),
+		pre:        new(cPreMod),
+		W:          bufio.NewWriter(w),
+		Package:    "main",
+		GlobalDefs: make(map[string]Def),
 	}
 	mainMod.pre.cm = mainMod
 	cg := &CGen{
@@ -583,10 +602,27 @@ func (cm *CMod) VisitLitString(x *LitStringX) Value {
 	}
 }
 func (cm *CMod) VisitIdent(x *IdentX) Value {
-	if gl, ok := cm.Globals[x.X]; ok {
-		return &VSimple{C: gl.Name, T: /*TODO*/ IntType}
+	z := cm._VisitIdent_(x)
+	return z
+}
+func (cm *CMod) _VisitIdent_(x *IdentX) Value {
+	if gd, ok := cm.GlobalDefs[x.X]; ok {
+		switch t := gd.(type) {
+		case *DefImport:
+			return &VSimple{C: "I_" + t.Name, T: ""}
+		case *DefConst:
+			return &VSimple{C: "C_" + t.Name, T: ""}
+		case *DefVar:
+			return &VSimple{C: "G_" + t.Name, T: ""}
+		case *DefType:
+			return &VSimple{C: "T_" + t.Name, T: "t"}
+		case *DefFunc:
+			return &VSimple{C: "F_" + t.Name, T: ""}
+		default:
+			panic(663)
+		}
 	}
-	// Assume it is a local variable.
+	// Else, assume it is a local variable.
 	return &VSimple{C: "v_" + x.X, T: IntType}
 }
 func (cm *CMod) VisitBinOp(x *BinOpX) Value {
@@ -632,9 +668,29 @@ func (cm *CMod) VisitSub(x *SubX) Value {
 		T: "",
 	}
 }
-func (cm *CMod) VisitDot(x *DotX) Value {
+func (cm *CMod) VisitDot(dot *DotX) Value {
+	switch t := dot.X.(type) {
+	case *IdentX:
+		if gd, ok := cm.GlobalDefs[t.X]; ok {
+			/*
+			   if g.Name[0] == 'I' {
+			       return &VSimple{
+			           C: Format("TODO_import_%s__%s", g.Name, dot.Member),
+			           T: "-TODO-",
+			       }
+			   }
+			*/
+			switch tg := gd.(type) {
+			case *DefImport:
+				return &VSimple{
+					C: Format("TODO_import_%s__%s", tg.Name, dot.Member),
+					T: "-TODO-66773",
+				}
+			}
+		}
+	}
 	return &VSimple{
-		C: Format("DotXXX(%v)", x),
+		C: Format("DotXXX(%v)", dot),
 		T: "",
 	}
 }
@@ -657,21 +713,15 @@ func (cm *CMod) VisitAssign(ass *AssignS) {
 				cm.P("  (void)(%s);", val.ToC())
 			}
 		} else {
-			// call with outputs
+			cm.P("  \"TODO -- call with outputs -- (void)(%v)\";", bcall)
 		}
 	} else if ass.B == nil {
 		if len(ass.A) != 1 {
 			Panicf("operator %v requires one lvalue on the left, got %v", ass.Op, ass.A)
 		}
-		// TODO check Globals
-		lhs := ass.A[0]
-		switch t := lhs.(type) {
-		case *IdentX:
-			cvar := "v_" + t.X
-			cm.P("  %s %s;", cvar, ass.Op)
-		default:
-			Panicf("operator %v: lhs not supported: %v", ass.Op, lhs)
-		}
+		// TODO check lvalue
+		cvar := ass.A[0].VisitExpr(cm).ToC()
+		cm.P("  (%s)%s;", cvar, ass.Op)
 	} else if len(ass.A) > 1 && bcall != nil {
 		// From 1 call, to 2 or more assigned vars.
 		var buf Buf
