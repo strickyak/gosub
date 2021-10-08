@@ -766,8 +766,20 @@ func (cm *CMod) VisitIf(ifs *IfS) {
 }
 func (cm *CMod) VisitSwitch(sws *SwitchS) {
 	cm.P("  { t_int _switch_ = %s;", sws.Switch.VisitExpr(cm).ToC())
-    // for 
-	// cm.P("    
+	for _, c := range sws.Cases {
+		cm.P("  if (")
+		for _, m := range c.Matches {
+			cm.P("_switch_ == %s ||", m.VisitExpr(cm))
+		}
+		cm.P("      0 ) {")
+		c.Body.VisitStmt(cm)
+		cm.P("  } else ")
+	}
+	cm.P("  {")
+	if sws.Default != nil {
+		sws.Default.VisitStmt(cm)
+	}
+	cm.P("  }")
 	cm.P("  }")
 }
 func (cm *CMod) VisitBlock(a *Block) {

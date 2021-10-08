@@ -211,9 +211,9 @@ type Case struct {
 	Body    *Block
 }
 type SwitchS struct {
-	Switch Expr
-	Cases  []*Case
-    Default *Block
+	Switch  Expr
+	Cases   []*Case
+	Default *Block
 }
 
 func (o *SwitchS) String() string {
