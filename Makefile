@@ -1,6 +1,7 @@
 DEMO=2.g
 all:
 	go run gosub.go  < $(DEMO)   > $(DEMO).c 
+	clang-format -i --style=Google $(DEMO).c
 	cat -n $(DEMO).c
 	cc -I. $(DEMO).c runt.c bigmem.c
 	./a.out
