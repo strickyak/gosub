@@ -8,6 +8,8 @@ import (
 	"log"
 )
 
+var Format = fmt.Sprintf
+
 type Parser struct {
 	*Lex
 	Package *DefPackage
@@ -152,28 +154,27 @@ func (o *Parser) ParseType() Type {
 		w := o.TakeIdent()
 		switch w {
 		case "bool":
-			return Bool
+			return BoolType
 		case "byte":
-			return Byte
+			return ByteType
 		case "int":
-			return Int
+			return IntType
 		case "uint":
-			return UInt
+			return UintType
 		}
-		log.Panicf("expected a type, got %q", w)
-		return nil
+		Panicf("expected a type, got %q", w)
 	case L_Punc:
 		if o.Word == "[" {
 			o.Next()
 			if o.Word != "]" {
-				log.Panicf("for slice type, after [ expected ], got %v", o.Word)
+				Panicf("for slice type, after [ expected ], got %v", o.Word)
 			}
 			o.Next()
 			memberType := o.ParseType()
-			return &SliceType{memberType}
+			return Type(Format(SliceForm, memberType))
 		}
 	}
-	log.Panicf("not a type: starts with %v", o.Word)
+	Panicf("not a type: starts with %v", o.Word)
 	panic("notreached")
 }
 
@@ -205,14 +206,14 @@ func (o *Parser) ParseAssignment() Stmt {
 
 func (o *Parser) TakePunc(s string) {
 	if o.Kind != L_Punc || s != o.Word {
-		log.Panicf("expected %q, got (%d) %q", s, o.Kind, o.Word)
+		Panicf("expected %q, got (%d) %q", s, o.Kind, o.Word)
 	}
 	o.Next()
 }
 
 func (o *Parser) TakeIdent() string {
 	if o.Kind != L_Ident {
-		log.Panicf("expected Ident, got (%d) %q", o.Kind, o.Word)
+		Panicf("expected Ident, got (%d) %q", o.Kind, o.Word)
 	}
 	w := o.Word
 	o.Next()
@@ -221,7 +222,7 @@ func (o *Parser) TakeIdent() string {
 
 func (o *Parser) TakeEOL() {
 	if o.Kind != L_EOL {
-		log.Panicf("expected EOL, got (%d) %q", o.Kind, o.Word)
+		Panicf("expected EOL, got (%d) %q", o.Kind, o.Word)
 	}
 	o.Next()
 }
@@ -281,6 +282,22 @@ func (o *Parser) ParseStmt(b *Block) Stmt {
 			xx = o.ParseList()
 		}
 		return &ReturnS{xx}
+	case "break":
+		o.Next()
+		break_to := ""
+		if o.Kind == L_Ident {
+			break_to = o.Word
+			o.Next()
+		}
+		return &BreakS{break_to}
+	case "continue":
+		o.Next()
+		continue_to := ""
+		if o.Kind == L_Ident {
+			continue_to = o.Word
+			o.Next()
+		}
+		return &ContinueS{continue_to}
 	default:
 		a := o.ParseAssignment()
 		return a
@@ -326,7 +343,7 @@ func (o *Parser) ParseFunc(fn *DefFunc) {
 		if o.Word == "," {
 			o.TakePunc(",")
 		} else if o.Word != ")" {
-			log.Panicf("expected `,` or `)` but got %q", o.Word)
+			Panicf("expected `,` or `)` but got %q", o.Word)
 		}
 	}
 	o.TakePunc(")")
@@ -340,7 +357,7 @@ func (o *Parser) ParseFunc(fn *DefFunc) {
 				if o.Word == "," {
 					o.TakePunc(",")
 				} else if o.Word != ")" {
-					log.Panicf("expected `,` or `)` but got %q", o.Word)
+					Panicf("expected `,` or `)` but got %q", o.Word)
 				}
 			}
 			o.TakePunc(")")
@@ -365,7 +382,7 @@ LOOP:
 				o.Package = &DefPackage{Name: w}
 			case "import":
 				if o.Kind != L_String {
-					log.Panicf("after import, expected string, got %v", o.Word)
+					Panicf("after import, expected string, got %v", o.Word)
 				}
 				w := o.Word
 				o.Next()
@@ -388,7 +405,7 @@ LOOP:
 				o.ParseFunc(fn)
 				o.Funcs[w] = fn
 			default:
-				log.Panicf("Expected top level decl, got %q", d)
+				Panicf("Expected top level decl, got %q", d)
 			}
 			o.TakeEOL()
 		case L_EOL:
@@ -397,7 +414,7 @@ LOOP:
 		case L_EOF:
 			break LOOP
 		default:
-			log.Panicf("expected toplevel decl; got (%d) %q", o.Kind, o.Word)
+			Panicf("expected toplevel decl; got (%d) %q", o.Kind, o.Word)
 		}
 	}
 }
@@ -424,7 +441,7 @@ func CompileToC(r io.Reader, sourceName string, w io.Writer) {
 	p.ParseTop()
 	cg := NewCGen(w)
 
-	cg.Globals["println"] = NameAndType{"F_BUILTIN_println", nil}
+	cg.Globals["println"] = NameAndType{"F_BUILTIN_println", ""}
 
 	cg.P("#include <stdio.h>")
 	cg.P("#include \"runt.h\"")
@@ -495,29 +512,29 @@ func (pre *cPreGen) VisitDefPackage(def *DefPackage) {
 	pre.cg.Package = def.Name
 }
 func (pre *cPreGen) VisitDefImport(def *DefImport) {
-	pre.cg.Globals[def.Name] = NameAndType{"I_" + pre.cg.Package + "__" + def.Name, nil}
+	pre.cg.Globals[def.Name] = NameAndType{"I_" + pre.cg.Package + "__" + def.Name, ""}
 }
 func (pre *cPreGen) VisitDefConst(def *DefConst) {
-	pre.cg.Globals[def.Name] = NameAndType{"C_" + pre.cg.Package + "__" + def.Name, ConstInt}
+	pre.cg.Globals[def.Name] = NameAndType{"C_" + pre.cg.Package + "__" + def.Name, ConstIntType}
 }
 func (pre *cPreGen) VisitDefVar(def *DefVar) {
-	pre.cg.Globals[def.Name] = NameAndType{"V_" + pre.cg.Package + "__" + def.Name, Int}
+	pre.cg.Globals[def.Name] = NameAndType{"V_" + pre.cg.Package + "__" + def.Name, IntType}
 }
 func (pre *cPreGen) VisitDefType(def *DefType) {
-	pre.cg.Globals[def.Name] = NameAndType{"T_" + pre.cg.Package + "__" + def.Name, nil}
+	pre.cg.Globals[def.Name] = NameAndType{"T_" + pre.cg.Package + "__" + def.Name, ""}
 }
 func (pre *cPreGen) VisitDefFunc(def *DefFunc) {
-	pre.cg.Globals[def.Name] = NameAndType{"F_" + pre.cg.Package + "__" + def.Name, nil}
+	pre.cg.Globals[def.Name] = NameAndType{"F_" + pre.cg.Package + "__" + def.Name, ""}
 
 	// TODO -- dedup
 	var b Buf
-	cfunc := fmt.Sprintf("F_%s__%s", pre.cg.Package, def.Name)
+	cfunc := Format("F_%s__%s", pre.cg.Package, def.Name)
 	crettype := "void"
 	if len(def.Outs) > 0 {
 		if len(def.Outs) > 1 {
 			panic("multi")
 		}
-		crettype = def.Outs[0].Type.TypeNameInC("")
+		crettype = TypeNameInC(def.Outs[0].Type)
 	}
 	b.P("%s %s(", crettype, cfunc)
 	if len(def.Ins) > 0 {
@@ -526,7 +543,7 @@ func (pre *cPreGen) VisitDefFunc(def *DefFunc) {
 			if !firstTime {
 				b.P(", ")
 			}
-			b.P("%s", name_and_type.Type.TypeNameInC("v_"+name_and_type.Name))
+			b.P("%s %s", TypeNameInC(name_and_type.Type), "v_"+name_and_type.Name)
 			firstTime = false
 		}
 	}
@@ -535,10 +552,12 @@ func (pre *cPreGen) VisitDefFunc(def *DefFunc) {
 }
 
 type CGen struct {
-	pre     *cPreGen
-	W       *bufio.Writer
-	Package string
-	Globals map[string]NameAndType
+	pre        *cPreGen
+	W          *bufio.Writer
+	Package    string
+	Globals    map[string]NameAndType
+	BreakTo    string
+	ContinueTo string
 }
 
 func NewCGen(w io.Writer) *CGen {
@@ -558,35 +577,35 @@ func (cg *CGen) Flush() {
 }
 func (cg *CGen) VisitLitInt(x *LitIntX) Value {
 	return &VSimple{
-		C: fmt.Sprintf("%d", x.X),
-		T: Int,
+		C: Format("%d", x.X),
+		T: IntType,
 	}
 }
 func (cg *CGen) VisitLitString(x *LitStringX) Value {
 	return &VSimple{
-		C: fmt.Sprintf("%q", x.X),
-		T: Int,
+		C: Format("%q", x.X),
+		T: IntType,
 	}
 }
 func (cg *CGen) VisitIdent(x *IdentX) Value {
 	if gl, ok := cg.Globals[x.X]; ok {
-		return &VSimple{C: gl.Name, T: /*TODO*/ Int}
+		return &VSimple{C: gl.Name, T: /*TODO*/ IntType}
 	}
 	// Assume it is a local variable.
-	return &VSimple{C: "v_" + x.X, T: Int}
+	return &VSimple{C: "v_" + x.X, T: IntType}
 }
 func (cg *CGen) VisitBinOp(x *BinOpX) Value {
 	a := x.A.VisitExpr(cg)
 	b := x.B.VisitExpr(cg)
 	return &VSimple{
-		C: fmt.Sprintf("(%s) %s (%s)", a.ToC(), x.Op, b.ToC()),
-		T: Int,
+		C: Format("(%s) %s (%s)", a.ToC(), x.Op, b.ToC()),
+		T: IntType,
 	}
 }
 func (cg *CGen) VisitList(x *ListX) Value {
 	return &VSimple{
 		C: "PROBLEM:VisitList",
-		T: Int,
+		T: IntType,
 	}
 }
 func (cg *CGen) VisitCall(x *CallX) Value {
@@ -600,28 +619,28 @@ func (cg *CGen) VisitCall(x *CallX) Value {
 		firstTime = false
 	}
 	cfunc := x.Func.VisitExpr(cg).ToC()
-	ccall := fmt.Sprintf("(%s(%s))", cfunc, cargs)
+	ccall := Format("(%s(%s))", cfunc, cargs)
 	return &VSimple{
 		C: ccall,
-		T: Int,
+		T: IntType,
 	}
 }
 func (cg *CGen) VisitType(x *TypeX) Value {
 	return &VSimple{
-		C: "TYPE__" + x.T.TypeNameInC(""),
+		C: Format("%q", x.T),
 		T: x.T,
 	}
 }
 func (cg *CGen) VisitSub(x *SubX) Value {
 	return &VSimple{
-		C: "TODO: VisitSub",
-		T: nil,
+		C: Format("SubXXX(%v)", x),
+		T: "",
 	}
 }
 func (cg *CGen) VisitDot(x *DotX) Value {
 	return &VSimple{
-		C: "TODO: VisitDot",
-		T: nil,
+		C: Format("DotXXX(%v)", x),
+		T: "",
 	}
 }
 func (cg *CGen) VisitAssign(ass *AssignS) {
@@ -647,7 +666,7 @@ func (cg *CGen) VisitAssign(ass *AssignS) {
 		}
 	} else if ass.B == nil {
 		if len(ass.A) != 1 {
-			log.Panicf("operator %v requires one lvalue on the left, got %v", ass.Op, ass.A)
+			Panicf("operator %v requires one lvalue on the left, got %v", ass.Op, ass.A)
 		}
 		// TODO check Globals
 		lhs := ass.A[0]
@@ -656,7 +675,7 @@ func (cg *CGen) VisitAssign(ass *AssignS) {
 			cvar := "v_" + t.X
 			cg.P("  %s %s;", cvar, ass.Op)
 		default:
-			log.Panicf("operator %v: lhs not supported: %v", ass.Op, lhs)
+			Panicf("operator %v: lhs not supported: %v", ass.Op, lhs)
 		}
 	} else if len(ass.A) > 1 && bcall != nil {
 		// From 1 call, to 2 or more assigned vars.
@@ -678,7 +697,7 @@ func (cg *CGen) VisitAssign(ass *AssignS) {
 		buf.P("))")
 	} else {
 		if len(ass.A) != len(ass.B) {
-			log.Panicf("wrong number of values in assign")
+			Panicf("wrong number of values in assign")
 		}
 		for i, val := range values {
 			lhs := ass.A[i]
@@ -689,11 +708,11 @@ func (cg *CGen) VisitAssign(ass *AssignS) {
 				case "=":
 					// TODO check Globals
 					cvar := "v_" + t.X
-					cg.P("  %s = (%s)(%s);", cvar, val.Type().TypeNameInC(""), val.ToC())
+					cg.P("  %s = (%s)(%s);", cvar, TypeNameInC(val.Type()), val.ToC())
 				case ":=":
 					// TODO check Globals
-					cvar := val.Type().TypeNameInC("v_" + t.X)
-					cg.P("  %s = (%s)(%s);", cvar, val.Type().TypeNameInC(""), val.ToC())
+					cvar := Format("%s %s", TypeNameInC(val.Type()), "v_"+t.X)
+					cg.P("  %s = (%s)(%s);", cvar, TypeNameInC(val.Type()), val.ToC())
 				}
 			default:
 				log.Fatal("bad VisitAssign LHS: %#v", ass.A)
@@ -711,24 +730,41 @@ func (cg *CGen) VisitReturn(ret *ReturnS) {
 		log.Printf("return..... val=%v", val)
 		cg.P("  return %s;", val.ToC())
 	default:
-		log.Panicf("multi-return not imp: %v", ret)
+		Panicf("multi-return not imp: %v", ret)
 	}
 }
 func (cg *CGen) VisitWhile(wh *WhileS) {
-	cg.P("  while(1) {")
+	label := Serial("while")
+	cg.P("Break_%s:  while(1) {", label)
 	if wh.Pred != nil {
 		cg.P("    t_bool _while_ = (t_bool)(%s);", wh.Pred.VisitExpr(cg).ToC())
 		cg.P("    if (!_while_) break;")
 	}
+	savedB, savedC := cg.BreakTo, cg.ContinueTo
+	cg.BreakTo, cg.ContinueTo = "Break_"+label, "Cont_"+label
 	wh.Body.VisitStmt(cg)
 	cg.P("  }")
+	cg.P("Cont_%s: {}", label)
+	cg.BreakTo, cg.ContinueTo = savedB, savedC
+}
+func (cg *CGen) VisitBreak(sws *BreakS) {
+	if cg.BreakTo == "" {
+		Panicf("cannot break from here")
+	}
+	cg.P("goto %s;", cg.BreakTo)
+}
+func (cg *CGen) VisitContinue(sws *ContinueS) {
+	if cg.ContinueTo == "" {
+		Panicf("cannot continue from here")
+	}
+	cg.P("goto %s;", cg.ContinueTo)
 }
 func (cg *CGen) VisitIf(ifs *IfS) {
 	cg.P("  { t_bool _if_ = %s;", ifs.Pred.VisitExpr(cg).ToC())
-	cg.P("  if( _if_s ) {", ifs.Pred.VisitExpr(cg).ToC())
+	cg.P("  if( _if_ ) {", ifs.Pred.VisitExpr(cg).ToC())
 	ifs.Yes.VisitStmt(cg)
-	cg.P("  } else {")
 	if ifs.No != nil {
+		cg.P("  } else {")
 		ifs.No.VisitStmt(cg)
 	}
 	cg.P("  }}")
@@ -780,13 +816,13 @@ func (buf *Buf) String() string {
 func (cg *CGen) VisitDefFunc(def *DefFunc) {
 	log.Printf("// func %s: %#v", def.Name, def)
 	var b Buf
-	cfunc := fmt.Sprintf("F_%s__%s", cg.Package, def.Name)
+	cfunc := Format("F_%s__%s", cg.Package, def.Name)
 	crettype := "void"
 	if len(def.Outs) > 0 {
 		if len(def.Outs) > 1 {
 			panic("multi")
 		}
-		crettype = def.Outs[0].Type.TypeNameInC("")
+		crettype = TypeNameInC(def.Outs[0].Type)
 	}
 	b.P("%s %s(", crettype, cfunc)
 	if len(def.Ins) > 0 {
@@ -795,7 +831,7 @@ func (cg *CGen) VisitDefFunc(def *DefFunc) {
 			if !firstTime {
 				b.P(", ")
 			}
-			b.P("%s", name_and_type.Type.TypeNameInC("v_"+name_and_type.Name))
+			b.P("%s %s", TypeNameInC(name_and_type.Type), "v_"+name_and_type.Name)
 			firstTime = false
 		}
 	}
@@ -805,7 +841,9 @@ func (cg *CGen) VisitDefFunc(def *DefFunc) {
 	cg.P("}\n")
 }
 
-/*
-func (cg *CGen) VisitIntType(*IntType) {
+var SerialNum uint
+
+func Serial(prefix string) string {
+	SerialNum++
+	return Format("%s_%d", prefix, SerialNum)
 }
-*/

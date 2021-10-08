@@ -5,6 +5,11 @@ import (
 	"fmt"
 )
 
+func Panicf(format string, args ...interface{}) string {
+	s := Format(format, args...)
+	panic(s)
+}
+
 //////// Expr
 
 type ExprVisitor interface {
@@ -144,6 +149,8 @@ type StmtVisitor interface {
 	VisitIf(*IfS)
 	VisitReturn(*ReturnS)
 	VisitBlock(*Block)
+	VisitBreak(*BreakS)
+	VisitContinue(*ContinueS)
 }
 
 type Stmt interface {
@@ -168,6 +175,12 @@ func (o *AssignS) VisitStmt(v StmtVisitor) {
 type ReturnS struct {
 	X []Expr
 }
+type BreakS struct {
+	Label string
+}
+type ContinueS struct {
+	Label string
+}
 
 func (o *ReturnS) String() string {
 	return fmt.Sprintf("\nReturn(%v)\n", o.X)
@@ -175,6 +188,22 @@ func (o *ReturnS) String() string {
 
 func (o *ReturnS) VisitStmt(v StmtVisitor) {
 	v.VisitReturn(o)
+}
+
+func (o *BreakS) String() string {
+	return fmt.Sprintf("\nBreak(%v)\n", o.Label)
+}
+
+func (o *BreakS) VisitStmt(v StmtVisitor) {
+	v.VisitBreak(o)
+}
+
+func (o *ContinueS) String() string {
+	return fmt.Sprintf("\nContinue(%v)\n", o.Label)
+}
+
+func (o *ContinueS) VisitStmt(v StmtVisitor) {
+	v.VisitContinue(o)
 }
 
 type SwitchEntry struct {
@@ -296,6 +325,7 @@ func (o *DefFunc) VisitDef(v DefVisitor) {
 	v.VisitDefFunc(o)
 }
 
+/*
 type TypeVisitor interface {
 	VisitIntType(*IntType)
 	VisitSliceType(*SliceType)
@@ -345,3 +375,67 @@ func (o *SliceType) TypeNameInC(v string) string {
 	memberType := o.MemberType.TypeNameInC("")
 	return "_SLICE_X_" + memberType + "_Y_ " + v
 }
+*/
+
+type Type string
+
+func TypeNameInC(type_ Type) string {
+	switch type_[0] {
+	case BoolPre:
+		return "bool"
+	case BytePre:
+		return "byte"
+	case UintPre:
+		return "word"
+	case IntPre:
+		return "int"
+	case ConstIntPre:
+		return "int"
+	case StringPre:
+		return "string"
+
+	case SlicePre:
+		return "slice"
+	case MapPre:
+		return "map"
+	case ChanPre:
+		return "chan"
+	case FuncPre:
+		return "func"
+	case HandlePre:
+		return "oop"
+	case InterfacePre:
+		return "interface"
+	default:
+		Panicf("unknown type: %q", type_)
+	}
+	panic(0)
+}
+
+const BoolType = "a"
+const ByteType = "b"
+const UintType = "u"
+const IntType = "i"
+const ConstIntType = "c"
+const StringType = "s"
+
+const BoolPre = 'a'
+const BytePre = 'b'
+const UintPre = 'u'
+const IntPre = 'i'
+const ConstIntPre = 'c'
+const StringPre = 's'
+
+const SlicePre = 'S'
+const MapPre = 'M'
+const ChanPre = 'C'
+const FuncPre = 'F'
+const HandlePre = 'H'
+const InterfacePre = 'I'
+
+const SliceForm = "S%s"
+const MapForm = "M%s%s"
+const ChanForm = "C%s"
+const FuncForm = "F(%s;%s)"
+const HandleForm = "H{%s}"
+const InterfaceForm = "I{%s}"
