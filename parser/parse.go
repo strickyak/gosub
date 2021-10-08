@@ -253,7 +253,7 @@ func (o *Parser) ParseStmt(b *Block) Stmt {
 			subject = o.ParseExpr()
 		}
 		o.TakePunc("{")
-		sws := &SwitchS{subject, nil}
+		sws := &SwitchS{subject, nil, nil}
 		for o.Word != "}" {
 			for o.Word == ";;" {
 				o.Next()
@@ -268,7 +268,7 @@ func (o *Parser) ParseStmt(b *Block) Stmt {
 			case "default":
 				o.TakePunc(":")
 				bare := o.ParseBareBlock(b.Func)
-				sws.Cases = append(sws.Cases, &Case{nil, bare})
+				sws.Default = bare
 			default:
 				panic(cOrD)
 			}
@@ -766,7 +766,8 @@ func (cm *CMod) VisitIf(ifs *IfS) {
 }
 func (cm *CMod) VisitSwitch(sws *SwitchS) {
 	cm.P("  { t_int _switch_ = %s;", sws.Switch.VisitExpr(cm).ToC())
-	cm.P("  TODO(switch)")
+    // for 
+	// cm.P("    
 	cm.P("  }")
 }
 func (cm *CMod) VisitBlock(a *Block) {

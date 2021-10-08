@@ -213,10 +213,11 @@ type Case struct {
 type SwitchS struct {
 	Switch Expr
 	Cases  []*Case
+    Default *Block
 }
 
 func (o *SwitchS) String() string {
-	return fmt.Sprintf("\nSwitch(switch: %v, cases: [[[ %#v ]]] )\n", o.Switch, o.Cases)
+	return fmt.Sprintf("\nSwitch(switch: %v, cases: [[[ %#v ]]], default: %v )\n", o.Switch, o.Cases, o.Default)
 }
 
 func (o *SwitchS) VisitStmt(v StmtVisitor) {
