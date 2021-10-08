@@ -261,14 +261,14 @@ func (o *Parser) ParseStmt(b *Block) Stmt {
 			cOrD := o.TakeIdent()
 			switch cOrD {
 			case "case":
-				exprs := o.ParseList()
+				matches := o.ParseList()
 				o.TakePunc(":")
 				bare := o.ParseBareBlock(b.Func)
-				sws.Entries = append(sws.Entries, &SwitchEntry{exprs, bare})
+				sws.Cases = append(sws.Cases, &Case{matches, bare})
 			case "default":
 				o.TakePunc(":")
 				bare := o.ParseBareBlock(b.Func)
-				sws.Entries = append(sws.Entries, &SwitchEntry{nil, bare})
+				sws.Cases = append(sws.Cases, &Case{nil, bare})
 			default:
 				panic(cOrD)
 			}
@@ -765,7 +765,7 @@ func (cm *CMod) VisitIf(ifs *IfS) {
 	cm.P("  }}")
 }
 func (cm *CMod) VisitSwitch(sws *SwitchS) {
-	cm.P("  { t_int _switch_ = %s;", sws.Pred.VisitExpr(cm).ToC())
+	cm.P("  { t_int _switch_ = %s;", sws.Switch.VisitExpr(cm).ToC())
 	cm.P("  TODO(switch)")
 	cm.P("  }")
 }

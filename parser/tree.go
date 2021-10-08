@@ -206,17 +206,17 @@ func (o *ContinueS) VisitStmt(v StmtVisitor) {
 	v.VisitContinue(o)
 }
 
-type SwitchEntry struct {
-	Cases []Expr
-	Body  *Block
+type Case struct {
+	Matches []Expr
+	Body    *Block
 }
 type SwitchS struct {
-	Pred    Expr
-	Entries []*SwitchEntry
+	Switch Expr
+	Cases  []*Case
 }
 
 func (o *SwitchS) String() string {
-	return fmt.Sprintf("\nSwitch(%v)\n", o.Pred)
+	return fmt.Sprintf("\nSwitch(switch: %v, cases: [[[ %#v ]]] )\n", o.Switch, o.Cases)
 }
 
 func (o *SwitchS) VisitStmt(v StmtVisitor) {
