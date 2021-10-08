@@ -769,7 +769,7 @@ func (cm *CMod) VisitSwitch(sws *SwitchS) {
 	for _, c := range sws.Cases {
 		cm.P("  if (")
 		for _, m := range c.Matches {
-			cm.P("_switch_ == %s ||", m.VisitExpr(cm))
+			cm.P("_switch_ == %s ||", m.VisitExpr(cm).ToC())
 		}
 		cm.P("      0 ) {")
 		c.Body.VisitStmt(cm)
