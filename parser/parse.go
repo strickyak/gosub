@@ -10,6 +10,11 @@ import (
 
 var Format = fmt.Sprintf
 
+// FullName creates the mangled name with kind and package.
+func FullName(kind string, pkg string, name string) string {
+	return Format("%s_%s__%s", kind, pkg, name)
+}
+
 type Parser struct {
 	*Lex
 	Package *DefPackage
@@ -200,8 +205,12 @@ func (o *Parser) ParseAssignment() Stmt {
 	} else if op == "--" {
 		o.Next()
 		return &AssignS{a, op, nil}
+	} else if o.Kind == L_EOL {
+		// Result not assigned.
+		return &AssignS{nil, "", a}
+	} else {
+		panic(Format("Unexpected token after statement: %v", o.Word))
 	}
-	return &AssignS{nil, "", a}
 }
 
 func (o *Parser) TakePunc(s string) {
@@ -386,22 +395,38 @@ LOOP:
 				}
 				w := o.Word
 				o.Next()
-				o.Imports[w] = &DefImport{Name: w}
+				o.Imports[w] = &DefImport{
+					Name: w,
+				}
 			case "const":
 				w := o.TakeIdent()
 				o.TakePunc("=")
 				x := o.ParseExpr()
-				o.Consts[w] = &DefConst{Name: w, Expr: x}
+				o.Consts[w] = &DefConst{
+					Name: w,
+					C:    FullName("C", o.Package.Name, w),
+					Expr: x,
+				}
 			case "var":
 				w := o.TakeIdent()
 				t := o.ParseType()
-				o.Vars[w] = &DefVar{Name: w, Type: t}
+				o.Vars[w] = &DefVar{
+					Name: w,
+					C:    FullName("V", o.Package.Name, w),
+					Type: t,
+				}
 			case "type":
 				w := o.TakeIdent()
-				o.Types[w] = &DefType{Name: w}
+				o.Types[w] = &DefType{
+					Name: w,
+					C:    FullName("T", o.Package.Name, w),
+				}
 			case "func":
 				w := o.TakeIdent()
-				fn := &DefFunc{Name: w}
+				fn := &DefFunc{
+					Name: w,
+					C:    FullName("F", o.Package.Name, w),
+				}
 				o.ParseFunc(fn)
 				o.Funcs[w] = fn
 			default:
@@ -430,13 +455,15 @@ type LValue interface {
 }
 
 type SimpleValue struct {
-	C string // C language expression
-	T Type
+	C         string // C language expression
+	T         Type
+	GlobalDef Def
 }
 
 type SimpleLValue struct {
-	LC string // C language expression
-	LT Type
+	LC        string // C language expression
+	LT        Type
+	GlobalDef Def
 }
 
 func (val *SimpleValue) ToC() string {
@@ -452,13 +479,52 @@ func (lval *SimpleLValue) LType() Type {
 	return lval.LT
 }
 
+func BootstrapModules(cg *CGen) {
+	log_ := &CMod{
+		Package: "log",
+		GlobalDefs: map[string]Def{
+			"Fatalf": &DefFunc{
+				Name: "Fatalf",
+				Type: "F",
+				Ins: []NameAndType{
+					{"format", "s"},
+					{"args", ".SI"},
+				},
+				Outs: []NameAndType{},
+			},
+		},
+	}
+	cg.Mods["log"] = log_
+	os_ := &CMod{
+		Package: "os",
+		GlobalDefs: map[string]Def{
+			"Stdin": &DefVar{
+				Name: "Stdin",
+				Type: "H",
+			},
+		},
+	}
+	cg.Mods["os"] = os_
+	io_ := &CMod{
+		Package: "io",
+		GlobalDefs: map[string]Def{
+			"EOF": &DefVar{
+				Name: "EOF",
+				Type: "H",
+			},
+		},
+	}
+	cg.Mods["io"] = io_
+}
+
 func CompileToC(r io.Reader, sourceName string, w io.Writer) {
 	p := NewParser(r, sourceName)
 	p.ParseTop()
 	cg := NewCGen(w)
+	BootstrapModules(cg)
 	cm := cg.Mods["main"]
 
-	cm.GlobalDefs["println"] = &DefFunc{"F_BUILTIN__println", "", nil, nil, nil}
+	cm.GlobalDefs["println"] = &DefFunc{"println", "F_BUILTIN__println", "", nil, nil, nil}
 
 	cm.P("#include <stdio.h>")
 	cm.P("#include \"runt.h\"")
@@ -548,15 +614,7 @@ func (pre *cPreMod) VisitDefFunc(def *DefFunc) {
 
 	// TODO -- dedup
 	var b Buf
-	cfunc := Format("F_%s__%s", pre.cm.Package, def.Name)
-	crettype := "void"
-	if len(def.Outs) > 0 {
-		if len(def.Outs) > 1 {
-			panic("multi")
-		}
-		crettype = TypeNameInC(def.Outs[0].Type)
-	}
-	b.P("%s %s(", crettype, cfunc)
+	b.P("void %s(", def.C)
 	if len(def.Ins) > 0 {
 		firstTime := true
 		for _, name_and_type := range def.Ins {
@@ -580,6 +638,7 @@ type CMod struct {
 	GlobalDefs map[string]Def
 	BreakTo    string
 	ContinueTo string
+	CGen       *CGen
 }
 type CGen struct {
 	Mods map[string]*CMod
@@ -596,6 +655,7 @@ func NewCGen(w io.Writer) *CGen {
 	cg := &CGen{
 		Mods: map[string]*CMod{"main": mainMod},
 	}
+	mainMod.CGen = cg
 	return cg
 }
 func (cm *CMod) P(format string, args ...interface{}) {
@@ -607,13 +667,16 @@ func (cm *CMod) Flush() {
 }
 
 func (cm *CMod) VisitLvalIdent(x *IdentX) LValue {
-	return &SimpleLValue{Format("LValue(%v)", x), ""}
+	value := cm.VisitIdent(x)
+	return &SimpleLValue{LC: Format("&(%s)", value.ToC()), LT: value.Type()}
 }
 func (cm *CMod) VisitLValSub(x *SubX) LValue {
-	return &SimpleLValue{Format("LValue(%v)", x), ""}
+	value := cm.VisitSub(x)
+	return &SimpleLValue{LC: Format("TODO_LValue(%s)", value.ToC()), LT: value.Type()}
 }
 func (cm *CMod) VisitLvalDot(x *DotX) LValue {
-	return &SimpleLValue{Format("LValue(%v)", x), ""}
+	value := cm.VisitDot(x)
+	return &SimpleLValue{LC: Format("&(%s)", value.ToC()), LT: value.Type()}
 }
 
 func (cm *CMod) VisitLitInt(x *LitIntX) Value {
@@ -636,15 +699,15 @@ func (cm *CMod) _VisitIdent_(x *IdentX) Value {
 	if gd, ok := cm.GlobalDefs[x.X]; ok {
 		switch t := gd.(type) {
 		case *DefImport:
-			return &SimpleValue{C: "I_" + t.Name, T: ""}
+			return &SimpleValue{C: t.Name, T: "@", GlobalDef: t}
 		case *DefConst:
-			return &SimpleValue{C: "C_" + t.Name, T: ""}
+			return &SimpleValue{C: t.C, T: t.Expr.VisitExpr(cm).Type(), GlobalDef: t}
 		case *DefVar:
-			return &SimpleValue{C: "G_" + t.Name, T: ""}
+			return &SimpleValue{C: t.C, T: t.Type, GlobalDef: t}
 		case *DefType:
-			return &SimpleValue{C: "T_" + t.Name, T: "t"}
+			return &SimpleValue{C: t.C, T: "t", GlobalDef: t}
 		case *DefFunc:
-			return &SimpleValue{C: "F_" + t.Name, T: ""}
+			return &SimpleValue{C: t.C, T: t.Type, GlobalDef: t}
 		default:
 			panic(663)
 		}
@@ -690,37 +753,37 @@ func (cm *CMod) VisitSub(x *SubX) Value {
 	}
 }
 func (cm *CMod) VisitDot(dot *DotX) Value {
-	switch t := dot.X.(type) {
-	case *IdentX:
-		if gd, ok := cm.GlobalDefs[t.X]; ok {
-			/*
-			   if g.Name[0] == 'I' {
-			       return &SimpleValue{
-			           C: Format("TODO_import_%s__%s", g.Name, dot.Member),
-			           T: "-TODO-",
-			       }
-			   }
-			*/
-			switch tg := gd.(type) {
-			case *DefImport:
-				return &SimpleValue{
-					C: Format("TODO_import_%s__%s", tg.Name, dot.Member),
-					T: "-TODO-66773",
-				}
-			}
+	val := dot.X.VisitExpr(cm)
+	if val.Type() == ImportType {
+		modName := val.ToC() // is there a better way?
+		println("DOT", modName, dot.Member)
+		otherMod := cm.CGen.Mods[modName] // TODO: import aliases.
+		println("OM", otherMod)
+		println("GD", otherMod.GlobalDefs)
+		_, ok := otherMod.GlobalDefs[dot.Member]
+		if !ok {
+			panic(Format("cannot find member %s in module %s", dot.Member, modName))
 		}
+		return otherMod.VisitIdent(&IdentX{modName})
 	}
+
 	return &SimpleValue{
 		C: Format("DotXXX(%v)", dot),
-		T: "",
+		T: "i",
 	}
 }
 func (cm *CMod) VisitAssign(ass *AssignS) {
-	log.Printf("assign..... %v ; %v ; %v", ass.A, ass.Op, ass.B)
-	var values []Value
+	cm.P("//## assign..... %v   %v   %v", ass.A, ass.Op, ass.B)
+	lenA, lenB := len(ass.A), len(ass.B)
+	_ = lenA
+
+	// Evalute the rvalues.
+	var rvalues []Value
 	for _, e := range ass.B {
-		values = append(values, e.VisitExpr(cm))
+		rvalues = append(rvalues, e.VisitExpr(cm))
 	}
+
+	// If there is just one thing on right, and it is a CallX, set bcall.
 	var bcall *CallX
 	if len(ass.B) == 1 {
 		switch t := ass.B[0].(type) {
@@ -728,22 +791,54 @@ func (cm *CMod) VisitAssign(ass *AssignS) {
 			bcall = t
 		}
 	}
-	if ass.A == nil {
-		if bcall == nil {
-			for _, val := range values {
-				cm.P("  (void)(%s);", val.ToC())
-			}
-		} else {
-			cm.P("  \"TODO -- call with outputs -- (void)(%v)\";", bcall)
-		}
-	} else if ass.B == nil {
+
+	switch {
+	// A lvalue followed by ++ or --.
+	case ass.B == nil:
 		if len(ass.A) != 1 {
 			Panicf("operator %v requires one lvalue on the left, got %v", ass.Op, ass.A)
 		}
 		// TODO check lvalue
 		cvar := ass.A[0].VisitExpr(cm).ToC()
 		cm.P("  (%s)%s;", cvar, ass.Op)
-	} else if len(ass.A) > 1 && bcall != nil {
+		// No assignment.  Just a non-function.  Does this happen?
+	case ass.A == nil && bcall == nil:
+		panic(Format("Lone expr is not a funciton call: [%v]", ass.B))
+		//for _, val := range rvalues {
+		//cm.P("  (void)(%s);", val.ToC())
+		//}
+		// No assignment.  Just a function call.
+	case ass.A == nil && bcall != nil:
+		funcIdent := bcall.VisitExpr(cm).ToC()
+		funcname := funcIdent
+		log.Printf("funcname=%s", funcname)
+
+		//////// NOT IF IN ANOTHER MODULE
+		funcDef := cm.GlobalDefs[funcname].(*DefFunc)
+
+		// functype := fn.Type()
+		if lenB != len(bcall.Args) {
+			panic(Format("Function %s wants %d args, got %d", funcname, len(bcall.Args), lenB))
+		}
+		ser := Serial("call")
+		cm.P("{ // %s", ser)
+		c := Format(" %s( fp", funcname)
+		for i, in := range funcDef.Ins {
+			val := ass.B[i].VisitExpr(cm)
+			expectedType := in.Type
+			if expectedType != val.Type() {
+				panic(Format("bad type: expected %s, got %s", expectedType, val.Type()))
+			}
+			cm.P("  %s %s_in_%d = %s;", TypeNameInC(in.Type), ser, i, val.ToC())
+			c += Format(", %s_in_%d", ser, i)
+		}
+		for i, out := range funcDef.Outs {
+			cm.P("  %s %s_out_%d;", TypeNameInC(out.Type), ser, i)
+			c += Format(", &%s_out_%d", ser, i)
+		}
+		c += " );"
+		cm.P("  %s\n} // %s", c, ser)
+	case len(ass.A) > 1 && bcall != nil:
 		// From 1 call, to 2 or more assigned vars.
 		var buf Buf
 		buf.P("((%s)(", bcall.Func.VisitExpr(cm).ToC())
@@ -761,11 +856,11 @@ func (cm *CMod) VisitAssign(ass *AssignS) {
 			buf.P("&(%s)", arg.VisitExpr(cm).ToC())
 		}
 		buf.P("))")
-	} else {
+	default:
 		if len(ass.A) != len(ass.B) {
-			Panicf("wrong number of values in assign")
+			Panicf("wrong number of values in assign: left has %d, right has %d", len(ass.A), len(ass.B))
 		}
-		for i, val := range values {
+		for i, val := range rvalues {
 			lhs := ass.A[i]
 			switch t := lhs.(type) {
 			case *IdentX:
@@ -784,7 +879,7 @@ func (cm *CMod) VisitAssign(ass *AssignS) {
 				log.Fatal("bad VisitAssign LHS: %#v", ass.A)
 			}
 		}
-	}
+	} // switch
 }
 func (cm *CMod) VisitReturn(ret *ReturnS) {
 	log.Printf("return..... %v", ret.X)
@@ -876,7 +971,7 @@ func (cm *CMod) VisitDefConst(def *DefConst) {
 	cm.P("// const %s", def.Name)
 }
 func (cm *CMod) VisitDefVar(def *DefVar) {
-	cm.P("// var %s", def.Name)
+	cm.P("%s V_%s__%s; // global var", TypeNameInC(def.Type), cm.Package, def.Name)
 }
 func (cm *CMod) VisitDefType(def *DefType) {
 	cm.P("// type %s", def.Name)
@@ -896,14 +991,7 @@ func (cm *CMod) VisitDefFunc(def *DefFunc) {
 	log.Printf("// func %s: %#v", def.Name, def)
 	var b Buf
 	cfunc := Format("F_%s__%s", cm.Package, def.Name)
-	crettype := "void"
-	if len(def.Outs) > 0 {
-		if len(def.Outs) > 1 {
-			panic("multi")
-		}
-		crettype = TypeNameInC(def.Outs[0].Type)
-	}
-	b.P("%s %s(", crettype, cfunc)
+	b.P("void %s(", cfunc)
 	if len(def.Ins) > 0 {
 		firstTime := true
 		for _, name_and_type := range def.Ins {

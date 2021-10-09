@@ -276,14 +276,17 @@ type DefImport struct {
 }
 type DefConst struct {
 	Name string
+	C    string
 	Expr Expr
 }
 type DefVar struct {
 	Name string
+	C    string
 	Type Type
 }
 type DefType struct {
 	Name string
+	C    string
 	Type Type
 }
 type NameAndType struct {
@@ -303,6 +306,7 @@ func (o *Block) VisitStmt(v StmtVisitor) {
 
 type DefFunc struct {
 	Name string
+	C    string
 	Type Type
 	Ins  []NameAndType
 	Outs []NameAndType
@@ -370,6 +374,7 @@ const IntType = "i"
 const ConstIntType = "c"
 const StringType = "s"
 const TypeType = "t"
+const ImportType = "@"
 
 const BoolPre = 'a'
 const BytePre = 'b'
@@ -378,6 +383,7 @@ const IntPre = 'i'
 const ConstIntPre = 'c'
 const StringPre = 's'
 const TypePre = 't'
+const ImportPre = '@'
 
 const SlicePre = 'S'
 const MapPre = 'M'
