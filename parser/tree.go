@@ -257,6 +257,8 @@ func (o *IfS) VisitStmt(v StmtVisitor) {
 
 type Def interface {
 	VisitDef(DefVisitor)
+	Value
+	LValue
 }
 type DefVisitor interface {
 	VisitDefPackage(*DefPackage)
@@ -267,28 +269,45 @@ type DefVisitor interface {
 	VisitDefFunc(*DefFunc)
 }
 
-type DefPackage struct {
+func (d *DefCommon) ToC() string  { return d.C }
+func (d *DefCommon) Type() Type   { return d.T }
+func (d *DefCommon) LToC() string { return "" }
+func (d *DefCommon) LType() Type  { return "" }
+
+func (d *DefVar) LToC() string { return Format("&%s", d.ToC()) }
+func (d *DefVar) LType() Type  { return d.T }
+
+type DefCommon struct {
+	CMod *CMod
 	Name string
+	C    string
+	T    Type
+}
+
+type DefPackage struct {
+	DefCommon
 }
 type DefImport struct {
-	Name string
+	DefCommon
 	Path string
 }
 type DefConst struct {
-	Name string
-	C    string
+	DefCommon
 	Expr Expr
 }
 type DefVar struct {
-	Name string
-	C    string
-	Type Type
+	DefCommon
 }
 type DefType struct {
-	Name string
-	C    string
-	Type Type
+	DefCommon
 }
+type DefFunc struct {
+	DefCommon
+	Ins  []NameAndType
+	Outs []NameAndType
+	Body *Block
+}
+
 type NameAndType struct {
 	Name string
 	Type Type
@@ -302,15 +321,6 @@ type Block struct {
 
 func (o *Block) VisitStmt(v StmtVisitor) {
 	v.VisitBlock(o)
-}
-
-type DefFunc struct {
-	Name string
-	C    string
-	Type Type
-	Ins  []NameAndType
-	Outs []NameAndType
-	Body *Block
 }
 
 func (o *DefPackage) VisitDef(v DefVisitor) {
@@ -347,20 +357,22 @@ func TypeNameInC(type_ Type) string {
 	case ConstIntPre:
 		return "int"
 	case StringPre:
-		return "string"
+		return "String"
 
 	case SlicePre:
-		return "slice"
+		return "Slice"
 	case MapPre:
-		return "map"
+		return "Map"
 	case ChanPre:
-		return "chan"
+		return "Chan"
 	case FuncPre:
-		return "func"
+		return "Func"
 	case HandlePre:
-		return "oop"
+		return "Handle"
 	case InterfacePre:
-		return "interface"
+		return "Interface"
+	case TypePre:
+		return "type"
 	default:
 		Panicf("unknown type: %q", type_)
 	}
@@ -375,6 +387,8 @@ const ConstIntType = "c"
 const StringType = "s"
 const TypeType = "t"
 const ImportType = "@"
+const VoidType = "v"
+const ListType = "l"
 
 const BoolPre = 'a'
 const BytePre = 'b'
@@ -384,6 +398,8 @@ const ConstIntPre = 'c'
 const StringPre = 's'
 const TypePre = 't'
 const ImportPre = '@'
+const VoidPre = 'v'
+const ListPre = 'l'
 
 const SlicePre = 'S'
 const MapPre = 'M'

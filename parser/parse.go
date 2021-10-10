@@ -388,7 +388,11 @@ LOOP:
 			switch d {
 			case "package":
 				w := o.TakeIdent()
-				o.Package = &DefPackage{Name: w}
+				o.Package = &DefPackage{
+					DefCommon: DefCommon{
+						Name: w,
+					},
+				}
 			case "import":
 				if o.Kind != L_String {
 					Panicf("after import, expected string, got %v", o.Word)
@@ -396,36 +400,50 @@ LOOP:
 				w := o.Word
 				o.Next()
 				o.Imports[w] = &DefImport{
-					Name: w,
+					DefCommon: DefCommon{
+						Name: w,
+						C:    w,
+						T:    ImportType,
+					},
 				}
 			case "const":
 				w := o.TakeIdent()
 				o.TakePunc("=")
 				x := o.ParseExpr()
 				o.Consts[w] = &DefConst{
-					Name: w,
-					C:    FullName("C", o.Package.Name, w),
+					DefCommon: DefCommon{
+						Name: w,
+						C:    FullName("C", o.Package.Name, w),
+					},
 					Expr: x,
 				}
 			case "var":
 				w := o.TakeIdent()
 				t := o.ParseType()
 				o.Vars[w] = &DefVar{
-					Name: w,
-					C:    FullName("V", o.Package.Name, w),
-					Type: t,
+					DefCommon: DefCommon{
+						Name: w,
+						C:    FullName("V", o.Package.Name, w),
+						T:    t,
+					},
 				}
 			case "type":
 				w := o.TakeIdent()
 				o.Types[w] = &DefType{
-					Name: w,
-					C:    FullName("T", o.Package.Name, w),
+					DefCommon: DefCommon{
+						Name: w,
+						C:    FullName("T", o.Package.Name, w),
+						T:    TypeType,
+					},
 				}
 			case "func":
 				w := o.TakeIdent()
 				fn := &DefFunc{
-					Name: w,
-					C:    FullName("F", o.Package.Name, w),
+					DefCommon: DefCommon{
+						Name: w,
+						C:    FullName("F", o.Package.Name, w),
+						T:    "F",
+					},
 				}
 				o.ParseFunc(fn)
 				o.Funcs[w] = fn
@@ -450,20 +468,20 @@ type Value interface {
 }
 
 type LValue interface {
-	LType() Type
+	Type() Type
 	LToC() string
 }
 
 type SimpleValue struct {
-	C         string // C language expression
-	T         Type
-	GlobalDef Def
+	C string // C language expression
+	T Type
+	// GlobalDef Def
 }
 
 type SimpleLValue struct {
-	LC        string // C language expression
-	LT        Type
-	GlobalDef Def
+	LC string // C language expression
+	T  Type
+	// GlobalDef Def
 }
 
 func (val *SimpleValue) ToC() string {
@@ -475,8 +493,8 @@ func (val *SimpleValue) Type() Type {
 func (lval *SimpleLValue) LToC() string {
 	return lval.LC
 }
-func (lval *SimpleLValue) LType() Type {
-	return lval.LT
+func (lval *SimpleLValue) Type() Type {
+	return lval.T
 }
 
 func BootstrapModules(cg *CGen) {
@@ -484,8 +502,10 @@ func BootstrapModules(cg *CGen) {
 		Package: "log",
 		GlobalDefs: map[string]Def{
 			"Fatalf": &DefFunc{
-				Name: "Fatalf",
-				Type: "F",
+				DefCommon: DefCommon{
+					Name: "Fatalf",
+					T:    "F",
+				},
 				Ins: []NameAndType{
 					{"format", "s"},
 					{"args", ".SI"},
@@ -499,8 +519,10 @@ func BootstrapModules(cg *CGen) {
 		Package: "os",
 		GlobalDefs: map[string]Def{
 			"Stdin": &DefVar{
-				Name: "Stdin",
-				Type: "H",
+				DefCommon: DefCommon{
+					Name: "Stdin",
+					T:    "H",
+				},
 			},
 		},
 	}
@@ -509,8 +531,10 @@ func BootstrapModules(cg *CGen) {
 		Package: "io",
 		GlobalDefs: map[string]Def{
 			"EOF": &DefVar{
-				Name: "EOF",
-				Type: "H",
+				DefCommon: DefCommon{
+					Name: "EOF",
+					T:    "H",
+				},
 			},
 		},
 	}
@@ -524,7 +548,31 @@ func CompileToC(r io.Reader, sourceName string, w io.Writer) {
 	BootstrapModules(cg)
 	cm := cg.Mods["main"]
 
-	cm.GlobalDefs["println"] = &DefFunc{"println", "F_BUILTIN__println", "", nil, nil, nil}
+	cm.GlobalDefs["println"] = &DefFunc{
+		DefCommon: DefCommon{
+			Name: "println",
+			C:    "F_BUILTIN__println",
+			T:    "F*",
+		},
+		Ins: []NameAndType{
+			{"args", ".I"},
+		},
+	}
+
+	cm.GlobalDefs["make"] = &DefFunc{
+		DefCommon: DefCommon{
+			Name: "make",
+			C:    "F_BUILTIN__make",
+			T:    "F*",
+		},
+		Ins: []NameAndType{
+			{"type_", "t"},
+			{"args", ".i"},
+		},
+		Outs: []NameAndType{
+			{"", "I"},
+		},
+	}
 
 	cm.P("#include <stdio.h>")
 	cm.P("#include \"runt.h\"")
@@ -668,49 +716,38 @@ func (cm *CMod) Flush() {
 
 func (cm *CMod) VisitLvalIdent(x *IdentX) LValue {
 	value := cm.VisitIdent(x)
-	return &SimpleLValue{LC: Format("&(%s)", value.ToC()), LT: value.Type()}
+	return &SimpleLValue{LC: Format("&(%s)", value.ToC()), T: value.Type()}
 }
 func (cm *CMod) VisitLValSub(x *SubX) LValue {
 	value := cm.VisitSub(x)
-	return &SimpleLValue{LC: Format("TODO_LValue(%s)", value.ToC()), LT: value.Type()}
+	return &SimpleLValue{LC: Format("TODO_LValue(%s)", value.ToC()), T: value.Type()}
 }
 func (cm *CMod) VisitLvalDot(x *DotX) LValue {
 	value := cm.VisitDot(x)
-	return &SimpleLValue{LC: Format("&(%s)", value.ToC()), LT: value.Type()}
+	return &SimpleLValue{LC: Format("&(%s)", value.ToC()), T: value.Type()}
 }
 
 func (cm *CMod) VisitLitInt(x *LitIntX) Value {
 	return &SimpleValue{
 		C: Format("%d", x.X),
-		T: IntType,
+		T: ConstIntType,
 	}
 }
 func (cm *CMod) VisitLitString(x *LitStringX) Value {
 	return &SimpleValue{
 		C: Format("%q", x.X),
-		T: IntType,
+		T: StringType,
 	}
 }
 func (cm *CMod) VisitIdent(x *IdentX) Value {
+	log.Printf("VisitIdent <= %v", x)
 	z := cm._VisitIdent_(x)
+	log.Printf("VisitIdent => %#v", z)
 	return z
 }
 func (cm *CMod) _VisitIdent_(x *IdentX) Value {
 	if gd, ok := cm.GlobalDefs[x.X]; ok {
-		switch t := gd.(type) {
-		case *DefImport:
-			return &SimpleValue{C: t.Name, T: "@", GlobalDef: t}
-		case *DefConst:
-			return &SimpleValue{C: t.C, T: t.Expr.VisitExpr(cm).Type(), GlobalDef: t}
-		case *DefVar:
-			return &SimpleValue{C: t.C, T: t.Type, GlobalDef: t}
-		case *DefType:
-			return &SimpleValue{C: t.C, T: "t", GlobalDef: t}
-		case *DefFunc:
-			return &SimpleValue{C: t.C, T: t.Type, GlobalDef: t}
-		default:
-			panic(663)
-		}
+		return gd
 	}
 	// Else, assume it is a local variable.
 	return &SimpleValue{C: "v_" + x.X, T: IntType}
@@ -723,27 +760,122 @@ func (cm *CMod) VisitBinOp(x *BinOpX) Value {
 		T: IntType,
 	}
 }
-func (cm *CMod) VisitCall(x *CallX) Value {
-	cargs := ""
-	firstTime := true
-	for _, e := range x.Args {
-		if !firstTime {
-			cargs += ", "
+
+func Intlike(ty Type) bool {
+	switch ty {
+	case ByteType, IntType, UintType, ConstIntType:
+		return true
+	default:
+		return false
+	}
+}
+
+func CopyAndSoftConvert(in NameAndType, out NameAndType) string {
+	switch out.Type[0] {
+	case InterfacePre: // Create an interface.
+		handle, pointer := "0", "0"
+		switch in.Type[0] {
+		case HandlePre:
+			handle = in.Name
+		default:
+			pointer = Format("(word)(&%s)" + in.Name) // broken for int constants
 		}
-		cargs += e.VisitExpr(cm).ToC()
-		firstTime = false
+		return Format("Interface %s = {%s, %s, %q};", out.Name, handle, pointer, in.Type)
+
+	default:
+		outCType := TypeNameInC(out.Type)
+		if Intlike(in.Type) && Intlike(out.Type) {
+			return Format("%s %s = (%s)%s;", outCType, out.Name, outCType, in.Name)
+		}
+		if in.Type == out.Type {
+			return Format("%s %s = %s;", outCType, out.Name, in.Name)
+		}
 	}
-	cfunc := x.Func.VisitExpr(cm).ToC()
-	ccall := Format("(%s(%s))", cfunc, cargs)
-	return &SimpleValue{
-		C: ccall,
-		T: IntType,
+	return Format("((( CONVERT TO %#v FROM %#v )));", out, in)
+}
+
+func (cm *CMod) VisitCall(x *CallX) Value {
+	cm.P("// Calling: %#v", x)
+	cm.P("// Calling Func: %#v", x.Func)
+	for i, a := range x.Args {
+		cm.P("// Calling with Arg [%d]: %#v", i, a)
 	}
+
+	ser := Serial("call")
+	cm.P("{ // %s", ser)
+	log.Printf("x.Func: %#v", x.Func)
+	funcX := x.Func.VisitExpr(cm)
+	log.Printf("funcX: %#v", funcX)
+	funcDef := funcX.(*DefFunc)
+	funcname := funcDef.Name
+	c2 := ""
+	c := Format(" %s( fp", funcname)
+
+	for i, in := range funcDef.Ins {
+		val := x.Args[i].VisitExpr(cm)
+		expectedType := in.Type
+
+		if expectedType[0] == '.' {
+			memberType := expectedType[1:]
+			sliceType := "S" + memberType
+			c2 += Format("Slice %s_in_rest = CreateSlice();", ser)
+			for j := i; j < len(x.Args); j++ {
+				CopyAndSoftConvert(
+					NameAndType{val.ToC(), val.Type()},
+					NameAndType{Format("%s_in_%d", ser, j), sliceType})
+				c2 += Format("AppendSlice(%d_in_rest,  %s_in_%d);", ser, ser, j)
+			}
+			c += Format("FINISH(%s_in_rest);", ser)
+
+		} else {
+			//##if expectedType != val.Type() {
+			//##panic(Format("bad type: expected %s, got %s", expectedType, val.Type()))
+			//##}
+			CopyAndSoftConvert(
+				NameAndType{val.ToC(), val.Type()},
+				NameAndType{Format("%s_in_%d", ser, i), expectedType})
+			//##cm.P("  %s %s_in_%d = %s;", TypeNameInC(in.Type), ser, i, val.ToC())
+			c += Format(", %s_in_%d", ser, i)
+		}
+
+	}
+	for i, out := range funcDef.Outs {
+		cm.P("  %s %s_out_%d;", TypeNameInC(out.Type), ser, i)
+		c += Format(", &%s_out_%d", ser, i)
+	}
+	c += " );"
+	cm.P("[[[%s]]]  %s\n} // %s", c2, c, ser)
+
+	switch len(funcDef.Outs) {
+	case 0:
+		return &SimpleValue{"VOID", VoidType}
+	case 1:
+		return &SimpleValue{Format("%s_out_0", ser), funcDef.Outs[0].Type}
+	default:
+		return &SimpleValue{ser, ListType}
+	}
+	/*
+		cargs := ""
+		firstTime := true
+		for _, e := range x.Args {
+			if !firstTime {
+				cargs += ", "
+			}
+			cargs += e.VisitExpr(cm).ToC()
+			firstTime = false
+		}
+		cfunc := x.Func.VisitExpr(cm).ToC()
+		ccall := Format("(%s(%s))", cfunc, cargs)
+		return &SimpleValue{
+			C: ccall,
+			T: "dunno",
+		}
+	*/
 }
 func (cm *CMod) VisitType(x *TypeX) Value {
 	return &SimpleValue{
 		C: string(x.T),
-		T: x.T,
+		T: TypeType,
 	}
 }
 func (cm *CMod) VisitSub(x *SubX) Value {
@@ -753,7 +885,9 @@ func (cm *CMod) VisitSub(x *SubX) Value {
 	}
 }
 func (cm *CMod) VisitDot(dot *DotX) Value {
+	log.Printf("VisitDot: <------ %#v", dot)
 	val := dot.X.VisitExpr(cm)
+	log.Printf("VisitDot: val---- %#v", val)
 	if val.Type() == ImportType {
 		modName := val.ToC() // is there a better way?
 		println("DOT", modName, dot.Member)
@@ -767,10 +901,12 @@ func (cm *CMod) VisitDot(dot *DotX) Value {
 		return otherMod.VisitIdent(&IdentX{modName})
 	}
 
-	return &SimpleValue{
+	z := &SimpleValue{
 		C: Format("DotXXX(%v)", dot),
 		T: "i",
 	}
+	log.Printf("VisitDot: Not Import: ----> %v", z)
+	return z
 }
 func (cm *CMod) VisitAssign(ass *AssignS) {
 	cm.P("//## assign..... %v   %v   %v", ass.A, ass.Op, ass.B)
@@ -809,12 +945,14 @@ func (cm *CMod) VisitAssign(ass *AssignS) {
 		//}
 		// No assignment.  Just a function call.
 	case ass.A == nil && bcall != nil:
-		funcIdent := bcall.VisitExpr(cm).ToC()
-		funcname := funcIdent
-		log.Printf("funcname=%s", funcname)
+		log.Printf("bcall=%#v", bcall)
+		visited := bcall.VisitExpr(cm)
+		log.Printf("visited=%#v", visited)
 
-		//////// NOT IF IN ANOTHER MODULE
-		funcDef := cm.GlobalDefs[funcname].(*DefFunc)
+		funcDef := visited.(*DefFunc)
+
+		funcname := funcDef.ToC()
+		log.Printf("funcname=%s", funcname)
 
 		// functype := fn.Type()
 		if lenB != len(bcall.Args) {
@@ -971,7 +1109,7 @@ func (cm *CMod) VisitDefConst(def *DefConst) {
 	cm.P("// const %s", def.Name)
 }
 func (cm *CMod) VisitDefVar(def *DefVar) {
-	cm.P("%s V_%s__%s; // global var", TypeNameInC(def.Type), cm.Package, def.Name)
+	cm.P("%s V_%s__%s; // global var", TypeNameInC(def.T), cm.Package, def.Name)
 }
 func (cm *CMod) VisitDefType(def *DefType) {
 	cm.P("// type %s", def.Name)

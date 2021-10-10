@@ -40,17 +40,23 @@ enum ClsNum {
     C_Map = 5,
 };
 
-typedef struct s_string {
+typedef struct _string {
     word base;
     word offset;
     word len;
 } String;
 
-typedef struct slice {
+typedef struct _slice {
     word base;
     word offset;
     word len;
 } Slice;
+
+typedef struct _interface {
+    word handle;  // for structs
+    word pointer;  // for everything else
+    const char* type;
+} Interface; 
 
 void F_BUILTIN_println(int i);
 
