@@ -308,6 +308,27 @@ type DefFunc struct {
 	Body *Block
 }
 
+func (d *DefFunc) Callable() *Callable {
+	return &Callable{
+		Def:  d,
+		Func: NameAndType{d.Name, d.T},
+		Ins:  d.Ins,
+		Outs: d.Outs,
+		Body: d.Body,
+	}
+}
+
+// A callable view of a node in a parse tree,
+// e.g. global func, lambda, bound method,
+// ... any expr of Func kind.
+type Callable struct {
+	Def  *DefFunc // nil, if not a global func.
+	Func NameAndType
+	Ins  []NameAndType
+	Outs []NameAndType
+	Body *Block
+}
+
 type NameAndType struct {
 	Name string
 	Type Type

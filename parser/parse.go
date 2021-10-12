@@ -540,14 +540,7 @@ func BootstrapModules(cg *CGen) {
 	}
 	cg.Mods["io"] = io_
 }
-
-func CompileToC(r io.Reader, sourceName string, w io.Writer) {
-	p := NewParser(r, sourceName)
-	p.ParseTop()
-	cg := NewCGen(w)
-	BootstrapModules(cg)
-	cm := cg.Mods["main"]
-
+func BootstrapBuiltins(cm *CMod) {
 	cm.GlobalDefs["println"] = &DefFunc{
 		DefCommon: DefCommon{
 			Name: "println",
@@ -573,6 +566,16 @@ func CompileToC(r io.Reader, sourceName string, w io.Writer) {
 			{"", "I"},
 		},
 	}
+
+}
+
+func CompileToC(r io.Reader, sourceName string, w io.Writer) {
+	p := NewParser(r, sourceName)
+	p.ParseTop()
+	cg := NewCGen(w)
+	BootstrapModules(cg)
+	cm := cg.Mods["main"]
+	BootstrapBuiltins(cm)
 
 	cm.P("#include <stdio.h>")
 	cm.P("#include \"runt.h\"")
@@ -929,22 +932,21 @@ func (cm *CMod) VisitAssign(ass *AssignS) {
 	}
 
 	switch {
-	// A lvalue followed by ++ or --.
 	case ass.B == nil:
+		// An lvalue followed by ++ or --.
 		if len(ass.A) != 1 {
 			Panicf("operator %v requires one lvalue on the left, got %v", ass.Op, ass.A)
 		}
 		// TODO check lvalue
 		cvar := ass.A[0].VisitExpr(cm).ToC()
 		cm.P("  (%s)%s;", cvar, ass.Op)
-		// No assignment.  Just a non-function.  Does this happen?
+
 	case ass.A == nil && bcall == nil:
+		// No assignment.  Just a non-function.  Does this happen?
 		panic(Format("Lone expr is not a funciton call: [%v]", ass.B))
-		//for _, val := range rvalues {
-		//cm.P("  (void)(%s);", val.ToC())
-		//}
-		// No assignment.  Just a function call.
+
 	case ass.A == nil && bcall != nil:
+		// No assignment.  Just a function call.
 		log.Printf("bcall=%#v", bcall)
 		visited := bcall.VisitExpr(cm)
 		log.Printf("visited=%#v", visited)
