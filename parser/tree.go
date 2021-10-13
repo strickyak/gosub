@@ -10,6 +10,12 @@ func Panicf(format string, args ...interface{}) string {
 	panic(s)
 }
 
+///////////
+
+type Options struct {
+	LibDir string
+}
+
 //////// Expr
 
 type ExprVisitor interface {
@@ -21,6 +27,7 @@ type ExprVisitor interface {
 	VisitType(*TypeX) Value
 	VisitSub(*SubX) Value
 	VisitDot(*DotX) Value
+	VisitConstructor(*ConstructorX) Value
 }
 type LvalVisitor interface {
 	VisitLvalIdent(*IdentX) LValue
@@ -86,6 +93,18 @@ func (o *BinOpX) String() string {
 }
 func (o *BinOpX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitBinOp(o)
+}
+
+type ConstructorX struct {
+	Name   string
+	Fields []NameAndType
+}
+
+func (o *ConstructorX) String() string {
+	return fmt.Sprintf("Ctor(%q [[[%v]]])", o.Name, o.Fields)
+}
+func (o *ConstructorX) VisitExpr(v ExprVisitor) Value {
+	return v.VisitConstructor(o)
 }
 
 type CallX struct {
@@ -300,12 +319,20 @@ type DefVar struct {
 }
 type DefType struct {
 	DefCommon
+	Details *TypeDetails
 }
 type DefFunc struct {
 	DefCommon
-	Ins  []NameAndType
-	Outs []NameAndType
-	Body *Block
+	Receiver     string
+	ReceiverType Type
+	Ins          []NameAndType
+	Outs         []NameAndType
+	Body         *Block
+}
+type TypeDetails struct {
+	StructDef    *StructDef
+	InterfaceDef *InterfaceDef
+	// function def
 }
 
 func (d *DefFunc) Callable() *Callable {
@@ -327,6 +354,16 @@ type Callable struct {
 	Ins  []NameAndType
 	Outs []NameAndType
 	Body *Block
+}
+
+type StructDef struct {
+	Name   string
+	Fields []NameAndType
+}
+
+type InterfaceDef struct {
+	Name   string
+	Fields []NameAndType
 }
 
 type NameAndType struct {
@@ -427,11 +464,18 @@ const MapPre = 'M'
 const ChanPre = 'C'
 const FuncPre = 'F'
 const HandlePre = 'H'
+const StructPre = 'R'
 const InterfacePre = 'I'
+
+// const PointerPre = 'P'
 
 const SliceForm = "S%s"
 const MapForm = "M%s%s"
 const ChanForm = "C%s"
+const TypeForm = "t(%s)"
 const FuncForm = "F(%s;%s)"
+const StructForm = "R{%s}"
 const HandleForm = "H{%s}"
 const InterfaceForm = "I{%s}"
+
+// const PointerForm = "P{%s}"

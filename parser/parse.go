@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 )
 
 var Format = fmt.Sprintf
@@ -59,10 +60,45 @@ func (o *Parser) ParsePrim() Expr {
 	}
 	if o.Kind == L_Punc {
 		if o.Word == "[" {
-			return &TypeX{o.ParseType()}
+			t, details := o.ParseType()
+			_ = details
+			return &TypeX{t}
+		}
+		if o.Word == "&" {
+			o.Next()
+			handleClass := o.TakeIdent()
+			return o.ParseConstructor(handleClass)
 		}
 	}
 	panic("bad ParsePrim")
+}
+
+func (o *Parser) ParseConstructor(handleClass string) Expr {
+	o.TakePunc("{")
+	ctor := &ConstructorX{
+		Name: handleClass,
+	}
+LOOP:
+	for {
+		switch o.Kind {
+		case L_Ident:
+			fieldName := o.TakeIdent()
+			fieldType, details := o.ParseType()
+			_ = details
+			ctor.Fields = append(ctor.Fields, NameAndType{fieldName, fieldType})
+		case L_EOL:
+			o.Next()
+		case L_Punc:
+			if o.Word == "}" {
+				break LOOP
+			}
+			panic(Format("Expected identifier or `}` but got %q", o.Word))
+		default:
+			panic(Format("Expected identifier or `}` but got %q", o.Word))
+		}
+	}
+	o.TakePunc("}")
+	return ctor
 }
 
 func (o *Parser) ParsePrimEtc() Expr {
@@ -153,19 +189,84 @@ func (o *Parser) ParseExpr() Expr {
 	return o.ParseOr()
 }
 
-func (o *Parser) ParseType() Type {
+func (o *Parser) ParseStructType(name string) *StructDef {
+	// name := o.TakeIdent()
+	o.TakePunc("{")
+	def := &StructDef{
+		Name: name,
+	}
+LOOP:
+	for {
+		switch o.Kind {
+		case L_Ident:
+			fieldName := o.TakeIdent()
+			fieldType, details := o.ParseType()
+			_ = details
+			def.Fields = append(def.Fields, NameAndType{fieldName, fieldType})
+		case L_EOL:
+			o.Next()
+		case L_Punc:
+			if o.Word == "}" {
+				break LOOP
+			}
+			panic(Format("Expected identifier or `}` but got %q", o.Word))
+		default:
+			panic(Format("Expected identifier or `}` but got %q", o.Word))
+		}
+	}
+	o.TakePunc("}")
+	return def
+}
+func (o *Parser) ParseInterfaceType(name string) *InterfaceDef {
+	// name := o.TakeIdent()
+	o.TakePunc("{")
+	def := &InterfaceDef{
+		Name: name,
+	}
+LOOP:
+	for {
+		switch o.Kind {
+		case L_Ident:
+			fieldName := o.TakeIdent()
+			sig := &DefFunc{}
+			o.ParseFuncSignature(sig)
+			fieldType := Type(Format(FuncForm, Format("#v", sig))) // standin value
+			def.Fields = append(def.Fields, NameAndType{fieldName, fieldType})
+		case L_EOL:
+			o.Next()
+		case L_Punc:
+			if o.Word == "}" {
+				break LOOP
+			}
+			panic(Format("Expected identifier or `}` but got %q", o.Word))
+		default:
+			panic(Format("Expected identifier or `}` but got %q", o.Word))
+		}
+	}
+	o.TakePunc("}")
+	return def
+}
+func (o *Parser) ParseType() (Type, *TypeDetails) {
 	switch o.Kind {
 	case L_Ident:
 		w := o.TakeIdent()
 		switch w {
 		case "bool":
-			return BoolType
+			return BoolType, nil
 		case "byte":
-			return ByteType
+			return ByteType, nil
 		case "int":
-			return IntType
+			return IntType, nil
 		case "uint":
-			return UintType
+			return UintType, nil
+		case "error":
+			return Type(Format(InterfaceForm, "error")), nil
+		case "struct":
+			def := o.ParseStructType("_anon_struct_type_")
+			return Type(Format(StructForm, def.Name)), &TypeDetails{StructDef: def}
+		case "interface":
+			def := o.ParseInterfaceType("_anon_interface_type_")
+			return Type(Format(InterfaceForm, def.Name)), &TypeDetails{InterfaceDef: def}
 		}
 		Panicf("expected a type, got %q", w)
 	case L_Punc:
@@ -175,8 +276,13 @@ func (o *Parser) ParseType() Type {
 				Panicf("for slice type, after [ expected ], got %v", o.Word)
 			}
 			o.Next()
-			memberType := o.ParseType()
-			return Type(Format(SliceForm, memberType))
+			memberType, _ := o.ParseType()
+			return Type(Format(SliceForm, memberType)), nil
+		}
+		if o.Word == "*" {
+			o.Next()
+			handleClass := o.TakeIdent()
+			return Type(Format(HandleForm, handleClass)), nil
 		}
 	}
 	Panicf("not a type: starts with %v", o.Word)
@@ -329,7 +435,7 @@ func (o *Parser) ParseBareBlock(fn *DefFunc) *Block {
 			case "var":
 				o.Next()
 				s := o.TakeIdent()
-				t := o.ParseType()
+				t, _ := o.ParseType()
 				b.Locals = append(b.Locals, NameAndType{s, t})
 			default:
 				stmt := o.ParseStmt(b)
@@ -343,11 +449,11 @@ func (o *Parser) ParseBareBlock(fn *DefFunc) *Block {
 	return b
 }
 
-func (o *Parser) ParseFunc(fn *DefFunc) {
+func (o *Parser) ParseFuncSignature(fn *DefFunc) {
 	o.TakePunc("(")
 	for o.Word != ")" {
 		s := o.TakeIdent()
-		t := o.ParseType()
+		t, _ := o.ParseType()
 		fn.Ins = append(fn.Ins, NameAndType{s, t})
 		if o.Word == "," {
 			o.TakePunc(",")
@@ -357,11 +463,11 @@ func (o *Parser) ParseFunc(fn *DefFunc) {
 	}
 	o.TakePunc(")")
 	if o.Word != "{" {
-		if o.Word == "{" {
+		if o.Word == "(" {
 			o.TakePunc("(")
 			for o.Word != ")" {
 				s := o.TakeIdent()
-				t := o.ParseType()
+				t, _ := o.ParseType()
 				fn.Outs = append(fn.Outs, NameAndType{s, t})
 				if o.Word == "," {
 					o.TakePunc(",")
@@ -371,10 +477,46 @@ func (o *Parser) ParseFunc(fn *DefFunc) {
 			}
 			o.TakePunc(")")
 		} else {
-			t := o.ParseType()
+			t, _ := o.ParseType()
 			fn.Outs = append(fn.Outs, NameAndType{"", t})
 		}
 	}
+}
+func (o *Parser) ParseFunc(fn *DefFunc) {
+	o.ParseFuncSignature(fn)
+	/*
+		o.TakePunc("(")
+		for o.Word != ")" {
+			s := o.TakeIdent()
+			t, _ := o.ParseType()
+			fn.Ins = append(fn.Ins, NameAndType{s, t})
+			if o.Word == "," {
+				o.TakePunc(",")
+			} else if o.Word != ")" {
+				Panicf("expected `,` or `)` but got %q", o.Word)
+			}
+		}
+		o.TakePunc(")")
+		if o.Word != "{" {
+			if o.Word == "(" {
+				o.TakePunc("(")
+				for o.Word != ")" {
+					s := o.TakeIdent()
+					t, _ := o.ParseType()
+					fn.Outs = append(fn.Outs, NameAndType{s, t})
+					if o.Word == "," {
+						o.TakePunc(",")
+					} else if o.Word != ")" {
+						Panicf("expected `,` or `)` but got %q", o.Word)
+					}
+				}
+				o.TakePunc(")")
+			} else {
+				t, _ := o.ParseType()
+				fn.Outs = append(fn.Outs, NameAndType{"", t})
+			}
+		}
+	*/
 	b := o.ParseBlock(fn)
 	fn.Body = b
 }
@@ -419,7 +561,7 @@ LOOP:
 				}
 			case "var":
 				w := o.TakeIdent()
-				t := o.ParseType()
+				t, _ := o.ParseType()
 				o.Vars[w] = &DefVar{
 					DefCommon: DefCommon{
 						Name: w,
@@ -429,24 +571,37 @@ LOOP:
 				}
 			case "type":
 				w := o.TakeIdent()
+				t, details := o.ParseType()
 				o.Types[w] = &DefType{
 					DefCommon: DefCommon{
 						Name: w,
 						C:    FullName("T", o.Package.Name, w),
-						T:    TypeType,
+						T:    Type(Format(TypeForm, t)),
 					},
+					Details: details,
 				}
 			case "func":
-				w := o.TakeIdent()
+				receiver := ""
+				receiverType := Type("")
+				switch o.Kind {
+				case L_Punc:
+					o.TakePunc("(")
+					receiver = o.TakeIdent()
+					receiverType, _ = o.ParseType()
+					o.TakePunc(")")
+				}
+				name := o.TakeIdent()
 				fn := &DefFunc{
 					DefCommon: DefCommon{
-						Name: w,
-						C:    FullName("F", o.Package.Name, w),
+						Name: name,
+						C:    FullName("F", o.Package.Name, name),
 						T:    "F",
 					},
+					Receiver:     receiver,
+					ReceiverType: receiverType,
 				}
 				o.ParseFunc(fn)
-				o.Funcs[w] = fn
+				o.Funcs[name] = fn
 			default:
 				Panicf("Expected top level decl, got %q", d)
 			}
@@ -497,7 +652,10 @@ func (lval *SimpleLValue) Type() Type {
 	return lval.T
 }
 
+/*
 func BootstrapModules(cg *CGen) {
+    return
+
 	log_ := &CMod{
 		Package: "log",
 		GlobalDefs: map[string]Def{
@@ -540,6 +698,7 @@ func BootstrapModules(cg *CGen) {
 	}
 	cg.Mods["io"] = io_
 }
+*/
 func BootstrapBuiltins(cm *CMod) {
 	cm.GlobalDefs["println"] = &DefFunc{
 		DefCommon: DefCommon{
@@ -569,17 +728,53 @@ func BootstrapBuiltins(cm *CMod) {
 
 }
 
-func CompileToC(r io.Reader, sourceName string, w io.Writer) {
+func (cg *CGen) LoadModule(name string) *CMod {
+	log.Printf("LoadModule: << %q", name)
+	if already, ok := cg.Mods[name]; ok {
+		log.Printf("LoadModule: short return: %v", already)
+		return already
+	}
+
+	filename := cg.Options.LibDir + "/" + name + ".go"
+	r, err := os.Open(filename)
+	if err != nil {
+		panic(Format("cannot open %q: %v", filename, err))
+	}
+	defer r.Close()
+
+	cm := &CMod{
+		pre:        &cPreMod{},
+		W:          cg.W,
+		Package:    name,
+		GlobalDefs: make(map[string]Def),
+		CGen:       cg,
+	}
+	cm.pre.cm = cm
+	cg.Mods[name] = cm
+
+	log.Printf("LoadModule: Parser")
+	p := NewParser(r, filename)
+	p.ParseTop()
+	log.Printf("LoadModule: Visit")
+	cm.BigVisit(p)
+	log.Printf("LoadModule: Done")
+	return cm
+}
+
+func CompileToC(opt *Options, r io.Reader, sourceName string, w io.Writer) {
 	p := NewParser(r, sourceName)
 	p.ParseTop()
-	cg := NewCGen(w)
-	BootstrapModules(cg)
+	cg := NewCGen(opt, w)
+	// BootstrapModules(cg)
 	cm := cg.Mods["main"]
 	BootstrapBuiltins(cm)
 
 	cm.P("#include <stdio.h>")
 	cm.P("#include \"runt.h\"")
+	cm.BigVisit(p)
+}
 
+func (cm *CMod) BigVisit(p *Parser) {
 	cm.pre.VisitDefPackage(p.Package)
 	for _, i := range p.Imports {
 		cm.pre.VisitDefImport(i)
@@ -642,6 +837,9 @@ func (pre *cPreMod) VisitDefImport(def *DefImport) {
 	pre.mustNotExistYet(def.Name)
 	pre.cm.GlobalDefs[def.Name] = def
 	pre.cm.P("\n// PRE VISIT %#v\n", def)
+	pre.cm.P("\n// MARCO")
+	pre.cm.CGen.LoadModule(def.Name)
+	pre.cm.P("\n// POLO")
 }
 func (pre *cPreMod) VisitDefConst(def *DefConst) {
 	pre.mustNotExistYet(def.Name)
@@ -692,19 +890,23 @@ type CMod struct {
 	CGen       *CGen
 }
 type CGen struct {
-	Mods map[string]*CMod
+	Mods    map[string]*CMod
+	Options *Options
+	W       *bufio.Writer
 }
 
-func NewCGen(w io.Writer) *CGen {
+func NewCGen(opt *Options, w io.Writer) *CGen {
 	mainMod := &CMod{
-		pre:        new(cPreMod),
+		pre:        &cPreMod{},
 		W:          bufio.NewWriter(w),
 		Package:    "main",
 		GlobalDefs: make(map[string]Def),
 	}
 	mainMod.pre.cm = mainMod
 	cg := &CGen{
-		Mods: map[string]*CMod{"main": mainMod},
+		Mods:    map[string]*CMod{"main": mainMod},
+		W:       mainMod.W,
+		Options: opt,
 	}
 	mainMod.CGen = cg
 	return cg
@@ -761,6 +963,12 @@ func (cm *CMod) VisitBinOp(x *BinOpX) Value {
 	return &SimpleValue{
 		C: Format("(%s) %s (%s)", a.ToC(), x.Op, b.ToC()),
 		T: IntType,
+	}
+}
+func (cm *CMod) VisitConstructor(x *ConstructorX) Value {
+	return &SimpleValue{
+		C: Format("(%s) alloc(C_%s)", x.Name, x.Name),
+		T: Type(Format(HandleForm, x.Name)),
 	}
 }
 

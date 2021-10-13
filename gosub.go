@@ -8,8 +8,12 @@ import (
 	"os"
 )
 
+var LibDir = flag.String("libdir", "lib", "where to import libs from")
+
 func main() {
 	flag.Parse()
-	CompileToC(os.Stdin, "stdin", os.Stdout)
+	CompileToC(&Options{
+		LibDir: *LibDir,
+	}, os.Stdin, "stdin", os.Stdout)
 	log.Printf("DONE")
 }
