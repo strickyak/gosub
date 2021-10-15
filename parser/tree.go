@@ -107,6 +107,9 @@ func (o *ConstructorX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitConstructor(o)
 }
 
+type FunctionX struct {
+	FunctionRec *FunctionRec
+}
 type CallX struct {
 	Func Expr
 	Args []Expr
@@ -274,6 +277,21 @@ func (o *IfS) VisitStmt(v StmtVisitor) {
 
 ////////////////////////
 
+type Named interface {
+	GetName() string
+}
+type NamedSlice []Named
+
+func (ns NamedSlice) Len() int {
+	return len(ns)
+}
+func (ns NamedSlice) Swap(a, b int) {
+	ns[a], ns[b] = ns[b], ns[a]
+}
+func (ns NamedSlice) Less(a, b int) bool {
+	return ns[a].GetName() < ns[b].GetName()
+}
+
 type Def interface {
 	VisitDef(DefVisitor)
 	Value
@@ -288,10 +306,11 @@ type DefVisitor interface {
 	VisitDefFunc(*DefFunc)
 }
 
-func (d *DefCommon) ToC() string  { return d.C }
-func (d *DefCommon) Type() Type   { return d.T }
-func (d *DefCommon) LToC() string { return "" }
-func (d *DefCommon) LType() Type  { return "" }
+func (d *DefCommon) ToC() string   { return d.C }
+func (d *DefCommon) Type() Type    { return d.T }
+func (d *DefCommon) LToC() string  { return "" }
+func (d *DefCommon) LType() Type   { return "" }
+func (d *DefCommon) Named() string { return d.Name }
 
 func (d *DefVar) LToC() string { return Format("&%s", d.ToC()) }
 func (d *DefVar) LType() Type  { return d.T }
@@ -323,45 +342,33 @@ type DefType struct {
 }
 type DefFunc struct {
 	DefCommon
-	Receiver     string
-	ReceiverType Type
-	Ins          []NameAndType
-	Outs         []NameAndType
-	Body         *Block
+	FunctionRec *FunctionRec
 }
 type TypeDetails struct {
-	StructDef    *StructDef
-	InterfaceDef *InterfaceDef
-	// function def
-}
-
-func (d *DefFunc) Callable() *Callable {
-	return &Callable{
-		Def:  d,
-		Func: NameAndType{d.Name, d.T},
-		Ins:  d.Ins,
-		Outs: d.Outs,
-		Body: d.Body,
-	}
+	StructRec    *StructRec
+	InterfaceRec *InterfaceRec
+	FunctionRec  *FunctionRec
 }
 
 // A callable view of a node in a parse tree,
 // e.g. global func, lambda, bound method,
 // ... any expr of Func kind.
-type Callable struct {
-	Def  *DefFunc // nil, if not a global func.
-	Func NameAndType
-	Ins  []NameAndType
-	Outs []NameAndType
-	Body *Block
+type FunctionRec struct {
+	Def        *DefFunc // nil, if not a global func.
+	Function   NameAndType
+	IsMethod   bool
+	Ins        []NameAndType
+	Outs       []NameAndType
+	IsEllipsis bool
+	Body       *Block
 }
 
-type StructDef struct {
+type StructRec struct {
 	Name   string
 	Fields []NameAndType
 }
 
-type InterfaceDef struct {
+type InterfaceRec struct {
 	Name   string
 	Fields []NameAndType
 }
@@ -371,10 +378,10 @@ type NameAndType struct {
 	Type Type
 }
 type Block struct {
-	Locals []NameAndType
-	Stmts  []Stmt
-	Parent *Block
-	Func   *DefFunc
+	Locals      []NameAndType
+	Stmts       []Stmt
+	Parent      *Block
+	FunctionRec *FunctionRec
 }
 
 func (o *Block) VisitStmt(v StmtVisitor) {
@@ -428,7 +435,7 @@ func TypeNameInC(type_ Type) string {
 	case HandlePre:
 		return "Handle"
 	case InterfacePre:
-		return "Interface"
+		return "InterfaceRec"
 	case TypePre:
 		return "type"
 	default:

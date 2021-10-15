@@ -7,6 +7,8 @@ import (
 	"io"
 	"log"
 	"os"
+	"reflect"
+	"sort"
 )
 
 var Format = fmt.Sprintf
@@ -89,6 +91,10 @@ LOOP:
 		case L_EOL:
 			o.Next()
 		case L_Punc:
+			if o.Word == "," {
+				o.Next()
+				continue LOOP
+			}
 			if o.Word == "}" {
 				break LOOP
 			}
@@ -108,11 +114,12 @@ LOOP:
 		switch o.Word {
 		case "(":
 			o.TakePunc("(")
+			var args []Expr
 			if o.Word != ")" {
-				args := o.ParseList()
-				a = &CallX{a, args}
+				args = o.ParseList()
 			}
 			o.TakePunc(")")
+			a = &CallX{a, args}
 		case "[":
 			o.TakePunc("[")
 			sub := o.ParseExpr()
@@ -189,10 +196,10 @@ func (o *Parser) ParseExpr() Expr {
 	return o.ParseOr()
 }
 
-func (o *Parser) ParseStructType(name string) *StructDef {
+func (o *Parser) ParseStructType(name string) *StructRec {
 	// name := o.TakeIdent()
 	o.TakePunc("{")
-	def := &StructDef{
+	def := &StructRec{
 		Name: name,
 	}
 LOOP:
@@ -217,10 +224,10 @@ LOOP:
 	o.TakePunc("}")
 	return def
 }
-func (o *Parser) ParseInterfaceType(name string) *InterfaceDef {
+func (o *Parser) ParseInterfaceType(name string) *InterfaceRec {
 	// name := o.TakeIdent()
 	o.TakePunc("{")
-	def := &InterfaceDef{
+	def := &InterfaceRec{
 		Name: name,
 	}
 LOOP:
@@ -228,8 +235,8 @@ LOOP:
 		switch o.Kind {
 		case L_Ident:
 			fieldName := o.TakeIdent()
-			sig := &DefFunc{}
-			o.ParseFuncSignature(sig)
+			sig := &FunctionRec{}
+			o.ParseFunctionSignature(sig)
 			fieldType := Type(Format(FuncForm, Format("#v", sig))) // standin value
 			def.Fields = append(def.Fields, NameAndType{fieldName, fieldType})
 		case L_EOL:
@@ -259,14 +266,16 @@ func (o *Parser) ParseType() (Type, *TypeDetails) {
 			return IntType, nil
 		case "uint":
 			return UintType, nil
+		case "string":
+			return StringType, nil
 		case "error":
 			return Type(Format(InterfaceForm, "error")), nil
 		case "struct":
 			def := o.ParseStructType("_anon_struct_type_")
-			return Type(Format(StructForm, def.Name)), &TypeDetails{StructDef: def}
+			return Type(Format(StructForm, def.Name)), &TypeDetails{StructRec: def}
 		case "interface":
 			def := o.ParseInterfaceType("_anon_interface_type_")
-			return Type(Format(InterfaceForm, def.Name)), &TypeDetails{InterfaceDef: def}
+			return Type(Format(InterfaceForm, def.Name)), &TypeDetails{InterfaceRec: def}
 		}
 		Panicf("expected a type, got %q", w)
 	case L_Punc:
@@ -347,10 +356,10 @@ func (o *Parser) ParseStmt(b *Block) Stmt {
 	case "if":
 		o.Next()
 		pred := o.ParseExpr()
-		yes := o.ParseBlock(b.Func)
+		yes := o.ParseBlock(b.FunctionRec)
 		var no *Block
 		if o.Word == "else" {
-			no = o.ParseBlock(b.Func)
+			no = o.ParseBlock(b.FunctionRec)
 		}
 		return &IfS{pred, yes, no}
 	case "for":
@@ -359,7 +368,7 @@ func (o *Parser) ParseStmt(b *Block) Stmt {
 		if o.Word != "{" {
 			pred = o.ParseExpr()
 		}
-		b2 := o.ParseBlock(b.Func)
+		b2 := o.ParseBlock(b.FunctionRec)
 		return &WhileS{pred, b2}
 	case "switch":
 		o.Next()
@@ -378,11 +387,11 @@ func (o *Parser) ParseStmt(b *Block) Stmt {
 			case "case":
 				matches := o.ParseList()
 				o.TakePunc(":")
-				bare := o.ParseBareBlock(b.Func)
+				bare := o.ParseBareBlock(b.FunctionRec)
 				sws.Cases = append(sws.Cases, &Case{matches, bare})
 			case "default":
 				o.TakePunc(":")
-				bare := o.ParseBareBlock(b.Func)
+				bare := o.ParseBareBlock(b.FunctionRec)
 				sws.Default = bare
 			default:
 				panic(cOrD)
@@ -418,14 +427,14 @@ func (o *Parser) ParseStmt(b *Block) Stmt {
 		return a
 	}
 }
-func (o *Parser) ParseBlock(fn *DefFunc) *Block {
+func (o *Parser) ParseBlock(fn *FunctionRec) *Block {
 	o.TakePunc("{")
 	b := o.ParseBareBlock(fn)
 	o.TakePunc("}")
 	return b
 }
-func (o *Parser) ParseBareBlock(fn *DefFunc) *Block {
-	b := &Block{Func: fn}
+func (o *Parser) ParseBareBlock(fn *FunctionRec) *Block {
+	b := &Block{FunctionRec: fn}
 	for o.Word != "}" && o.Word != "case" && o.Word != "default" {
 		switch o.Kind {
 		case L_EOL:
@@ -449,10 +458,16 @@ func (o *Parser) ParseBareBlock(fn *DefFunc) *Block {
 	return b
 }
 
-func (o *Parser) ParseFuncSignature(fn *DefFunc) {
+func (o *Parser) ParseFunctionSignature(fn *FunctionRec) {
 	o.TakePunc("(")
 	for o.Word != ")" {
 		s := o.TakeIdent()
+		if o.Word == "." {
+			o.TakePunc(".")
+			o.TakePunc(".")
+			o.TakePunc(".")
+			fn.IsEllipsis = true
+		}
 		t, _ := o.ParseType()
 		fn.Ins = append(fn.Ins, NameAndType{s, t})
 		if o.Word == "," {
@@ -460,9 +475,16 @@ func (o *Parser) ParseFuncSignature(fn *DefFunc) {
 		} else if o.Word != ")" {
 			Panicf("expected `,` or `)` but got %q", o.Word)
 		}
+		if fn.IsEllipsis {
+			if o.Word != ")" {
+				panic(Format("Expected `)` after ellipsis arg, but got `%v`", o.Word))
+			}
+			numIns := len(fn.Ins)
+			fn.Ins[numIns-1].Type = Type(Format(SliceForm, fn.Ins[numIns-1].Type))
+		}
 	}
 	o.TakePunc(")")
-	if o.Word != "{" {
+	if o.Word != "{" && o.Kind != L_EOL {
 		if o.Word == "(" {
 			o.TakePunc("(")
 			for o.Word != ")" {
@@ -482,43 +504,12 @@ func (o *Parser) ParseFuncSignature(fn *DefFunc) {
 		}
 	}
 }
-func (o *Parser) ParseFunc(fn *DefFunc) {
-	o.ParseFuncSignature(fn)
-	/*
-		o.TakePunc("(")
-		for o.Word != ")" {
-			s := o.TakeIdent()
-			t, _ := o.ParseType()
-			fn.Ins = append(fn.Ins, NameAndType{s, t})
-			if o.Word == "," {
-				o.TakePunc(",")
-			} else if o.Word != ")" {
-				Panicf("expected `,` or `)` but got %q", o.Word)
-			}
-		}
-		o.TakePunc(")")
-		if o.Word != "{" {
-			if o.Word == "(" {
-				o.TakePunc("(")
-				for o.Word != ")" {
-					s := o.TakeIdent()
-					t, _ := o.ParseType()
-					fn.Outs = append(fn.Outs, NameAndType{s, t})
-					if o.Word == "," {
-						o.TakePunc(",")
-					} else if o.Word != ")" {
-						Panicf("expected `,` or `)` but got %q", o.Word)
-					}
-				}
-				o.TakePunc(")")
-			} else {
-				t, _ := o.ParseType()
-				fn.Outs = append(fn.Outs, NameAndType{"", t})
-			}
-		}
-	*/
-	b := o.ParseBlock(fn)
-	fn.Body = b
+func (o *Parser) ParseFunc(df *DefFunc) {
+	fn := df.FunctionRec
+	o.ParseFunctionSignature(fn)
+	if o.Kind != L_EOL {
+		fn.Body = o.ParseBlock(fn)
+	}
 }
 
 func (o *Parser) ParseTop() {
@@ -581,27 +572,28 @@ LOOP:
 					Details: details,
 				}
 			case "func":
-				receiver := ""
-				receiverType := Type("")
+				fn := &FunctionRec{}
 				switch o.Kind {
 				case L_Punc:
 					o.TakePunc("(")
-					receiver = o.TakeIdent()
-					receiverType, _ = o.ParseType()
+					receiver := o.TakeIdent()
+					receiverType, _ := o.ParseType()
 					o.TakePunc(")")
+					fn.Ins = append(fn.Ins, NameAndType{receiver, receiverType})
+					fn.IsMethod = true
 				}
 				name := o.TakeIdent()
-				fn := &DefFunc{
+				df := &DefFunc{
 					DefCommon: DefCommon{
 						Name: name,
 						C:    FullName("F", o.Package.Name, name),
 						T:    "F",
 					},
-					Receiver:     receiver,
-					ReceiverType: receiverType,
+					FunctionRec: fn,
 				}
-				o.ParseFunc(fn)
-				o.Funcs[name] = fn
+				fn.Def = df
+				o.ParseFunc(df)
+				o.Funcs[name] = df
 			default:
 				Panicf("Expected top level decl, got %q", d)
 			}
@@ -699,6 +691,7 @@ func BootstrapModules(cg *CGen) {
 	cg.Mods["io"] = io_
 }
 */
+/*
 func BootstrapBuiltins(cm *CMod) {
 	cm.GlobalDefs["println"] = &DefFunc{
 		DefCommon: DefCommon{
@@ -725,8 +718,8 @@ func BootstrapBuiltins(cm *CMod) {
 			{"", "I"},
 		},
 	}
-
 }
+*/
 
 func (cg *CGen) LoadModule(name string) *CMod {
 	log.Printf("LoadModule: << %q", name)
@@ -767,51 +760,72 @@ func CompileToC(opt *Options, r io.Reader, sourceName string, w io.Writer) {
 	cg := NewCGen(opt, w)
 	// BootstrapModules(cg)
 	cm := cg.Mods["main"]
-	BootstrapBuiltins(cm)
+	// BootstrapBuiltins(cm)
+	cg.LoadModule("builtin")
 
 	cm.P("#include <stdio.h>")
 	cm.P("#include \"runt.h\"")
 	cm.BigVisit(p)
 }
 
+func Sorted(aMap interface{}) []interface{} {
+	var z []interface{}
+
+	for _, key := range reflect.ValueOf(aMap).MapKeys() {
+		value := reflect.ValueOf(aMap).MapIndex(key)
+		z = append(z, value.Interface())
+	}
+
+	sort.Slice(z, func(i, j int) bool { // Less Than function
+		a := reflect.ValueOf(z[i]).Elem().FieldByName("Name").Interface().(string)
+		b := reflect.ValueOf(z[j]).Elem().FieldByName("Name").Interface().(string)
+		return a < b
+	})
+
+	return z
+}
+func Sort(defs []Named) {
+	sort.Sort(NamedSlice(defs))
+}
+
 func (cm *CMod) BigVisit(p *Parser) {
 	cm.pre.VisitDefPackage(p.Package)
-	for _, i := range p.Imports {
-		cm.pre.VisitDefImport(i)
+	for _, i := range Sorted(p.Imports) {
+		cm.pre.VisitDefImport(i.(*DefImport))
 	}
-	for _, c := range p.Consts {
-		cm.pre.VisitDefConst(c)
+	for _, c := range Sorted(p.Consts) {
+		cm.pre.VisitDefConst(c.(*DefConst))
 	}
-	for _, t := range p.Types {
-		cm.pre.VisitDefType(t)
+	for _, t := range Sorted(p.Types) {
+		cm.pre.VisitDefType(t.(*DefType))
 	}
-	for _, v := range p.Vars {
-		cm.pre.VisitDefVar(v)
+	for _, v := range Sorted(p.Vars) {
+		cm.pre.VisitDefVar(v.(*DefVar))
 	}
-	for _, f := range p.Funcs {
-		cm.pre.VisitDefFunc(f)
+	for _, f := range Sorted(p.Funcs) {
+		cm.pre.VisitDefFunc(f.(*DefFunc))
 	}
 
 	cm.VisitDefPackage(p.Package)
 	cm.P("// ..... Imports .....")
-	for _, i := range p.Imports {
-		cm.VisitDefImport(i)
+	for _, i := range Sorted(p.Imports) {
+		cm.VisitDefImport(i.(*DefImport))
 	}
 	cm.P("// ..... Consts .....")
-	for _, c := range p.Consts {
-		cm.VisitDefConst(c)
+	for _, c := range Sorted(p.Consts) {
+		cm.VisitDefConst(c.(*DefConst))
 	}
 	cm.P("// ..... Types .....")
-	for _, t := range p.Types {
-		cm.VisitDefType(t)
+	for _, t := range Sorted(p.Types) {
+		cm.VisitDefType(t.(*DefType))
 	}
 	cm.P("// ..... Vars .....")
-	for _, v := range p.Vars {
-		cm.VisitDefVar(v)
+	for _, v := range Sorted(p.Vars) {
+		cm.VisitDefVar(v.(*DefVar))
 	}
 	cm.P("// ..... Funcs .....")
-	for _, f := range p.Funcs {
-		cm.VisitDefFunc(f)
+	for _, f := range Sorted(p.Funcs) {
+		cm.VisitDefFunc(f.(*DefFunc))
 	}
 	cm.P("// ..... Done .....")
 
@@ -858,15 +872,16 @@ func (pre *cPreMod) VisitDefType(def *DefType) {
 	pre.cm.P("\n// PRE VISIT %#v\n", def)
 }
 func (pre *cPreMod) VisitDefFunc(def *DefFunc) {
+	fn := def.FunctionRec
 	pre.mustNotExistYet(def.Name)
 	pre.cm.GlobalDefs[def.Name] = def
 
 	// TODO -- dedup
 	var b Buf
 	b.P("void %s(", def.C)
-	if len(def.Ins) > 0 {
+	if len(fn.Ins) > 0 {
 		firstTime := true
-		for _, name_and_type := range def.Ins {
+		for _, name_and_type := range fn.Ins {
 			if !firstTime {
 				b.P(", ")
 			}
@@ -1017,12 +1032,12 @@ func (cm *CMod) VisitCall(x *CallX) Value {
 	log.Printf("x.Func: %#v", x.Func)
 	funcX := x.Func.VisitExpr(cm)
 	log.Printf("funcX: %#v", funcX)
-	funcDef := funcX.(*DefFunc)
-	funcname := funcDef.Name
+	funcRec := funcX.(*DefFunc).FunctionRec
+	funcname := funcRec.Function.Name
 	c2 := ""
 	c := Format(" %s( fp", funcname)
 
-	for i, in := range funcDef.Ins {
+	for i, in := range funcRec.Ins {
 		val := x.Args[i].VisitExpr(cm)
 		expectedType := in.Type
 
@@ -1050,18 +1065,18 @@ func (cm *CMod) VisitCall(x *CallX) Value {
 		}
 
 	}
-	for i, out := range funcDef.Outs {
+	for i, out := range funcRec.Outs {
 		cm.P("  %s %s_out_%d;", TypeNameInC(out.Type), ser, i)
 		c += Format(", &%s_out_%d", ser, i)
 	}
 	c += " );"
 	cm.P("[[[%s]]]  %s\n} // %s", c2, c, ser)
 
-	switch len(funcDef.Outs) {
+	switch len(funcRec.Outs) {
 	case 0:
 		return &SimpleValue{"VOID", VoidType}
 	case 1:
-		return &SimpleValue{Format("%s_out_0", ser), funcDef.Outs[0].Type}
+		return &SimpleValue{Format("%s_out_0", ser), funcRec.Outs[0].Type}
 	default:
 		return &SimpleValue{ser, ListType}
 	}
@@ -1159,9 +1174,9 @@ func (cm *CMod) VisitAssign(ass *AssignS) {
 		visited := bcall.VisitExpr(cm)
 		log.Printf("visited=%#v", visited)
 
-		funcDef := visited.(*DefFunc)
+		funcRec := visited.(*DefFunc).FunctionRec
 
-		funcname := funcDef.ToC()
+		funcname := funcRec.Function.Name
 		log.Printf("funcname=%s", funcname)
 
 		// functype := fn.Type()
@@ -1171,7 +1186,7 @@ func (cm *CMod) VisitAssign(ass *AssignS) {
 		ser := Serial("call")
 		cm.P("{ // %s", ser)
 		c := Format(" %s( fp", funcname)
-		for i, in := range funcDef.Ins {
+		for i, in := range funcRec.Ins {
 			val := ass.B[i].VisitExpr(cm)
 			expectedType := in.Type
 			if expectedType != val.Type() {
@@ -1180,7 +1195,7 @@ func (cm *CMod) VisitAssign(ass *AssignS) {
 			cm.P("  %s %s_in_%d = %s;", TypeNameInC(in.Type), ser, i, val.ToC())
 			c += Format(", %s_in_%d", ser, i)
 		}
-		for i, out := range funcDef.Outs {
+		for i, out := range funcRec.Outs {
 			cm.P("  %s %s_out_%d;", TypeNameInC(out.Type), ser, i)
 			c += Format(", &%s_out_%d", ser, i)
 		}
@@ -1336,13 +1351,14 @@ func (buf *Buf) String() string {
 	return buf.W.String()
 }
 func (cm *CMod) VisitDefFunc(def *DefFunc) {
+	fn := def.FunctionRec
 	log.Printf("// func %s: %#v", def.Name, def)
 	var b Buf
 	cfunc := Format("F_%s__%s", cm.Package, def.Name)
 	b.P("void %s(", cfunc)
-	if len(def.Ins) > 0 {
+	if len(fn.Ins) > 0 {
 		firstTime := true
-		for _, name_and_type := range def.Ins {
+		for _, name_and_type := range fn.Ins {
 			if !firstTime {
 				b.P(", ")
 			}
@@ -1352,7 +1368,7 @@ func (cm *CMod) VisitDefFunc(def *DefFunc) {
 	}
 	b.P(") {\n")
 	cm.P(b.String())
-	def.Body.VisitStmt(cm)
+	fn.Body.VisitStmt(cm)
 	cm.P("}\n")
 }
 
