@@ -45,6 +45,17 @@ type Lval interface {
 	VisitLVal(LvalVisitor) Value
 }
 
+type TypeX struct {
+	T Type
+}
+
+func (o *TypeX) String() string {
+	return fmt.Sprintf("TypeX(%q)", o.T)
+}
+func (o *TypeX) VisitExpr(v ExprVisitor) Value {
+	return v.VisitType(o)
+}
+
 type LitIntX struct {
 	X int
 }
@@ -151,17 +162,6 @@ func (o *SubX) VisitExpr(v ExprVisitor) Value {
 
 func (o *SubX) VisitLval(v LvalVisitor) LValue {
 	return v.VisitLvalSub(o)
-}
-
-type TypeX struct {
-	T Type
-}
-
-func (o *TypeX) String() string {
-	return fmt.Sprintf("TypeX(%s)", o.T)
-}
-func (o *TypeX) VisitExpr(v ExprVisitor) Value {
-	return v.VisitType(o)
 }
 
 /////////// Stmt

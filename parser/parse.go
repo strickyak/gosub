@@ -61,10 +61,19 @@ func (o *Parser) ParsePrim() Expr {
 		return z
 	}
 	if o.Kind == L_Punc {
+		if o.Word == "*" {
+			o.Next()
+			handleClass := o.TakeIdent()
+			return &TypeX{Type(Format(HandleForm, handleClass))}
+		}
 		if o.Word == "[" {
-			t, details := o.ParseType()
-			_ = details
-			return &TypeX{t}
+			o.Next()
+			if o.Word != "]" {
+				Panicf("for slice type, after [ expected ], got %v", o.Word)
+			}
+			o.Next()
+			memberType, _ := o.ParseType()
+			return &TypeX{Type(Format(SliceForm, memberType))}
 		}
 		if o.Word == "&" {
 			o.Next()
@@ -903,6 +912,9 @@ type CMod struct {
 	BreakTo    string
 	ContinueTo string
 	CGen       *CGen
+	Structs    *StructRec
+	Interfaces *InterfaceRec
+	Functions  *FunctionRec
 }
 type CGen struct {
 	Mods    map[string]*CMod
