@@ -24,7 +24,6 @@ type ExprVisitor interface {
 	VisitIdent(*IdentX) Value
 	VisitBinOp(*BinOpX) Value
 	VisitCall(*CallX) Value
-	VisitType(*TypeX) Value
 	VisitSub(*SubX) Value
 	VisitDot(*DotX) Value
 	VisitConstructor(*ConstructorX) Value
@@ -45,16 +44,140 @@ type Lval interface {
 	VisitLVal(LvalVisitor) Value
 }
 
-type TypeX struct {
-	T Type
+//
+
+type WrapperTypeX struct {
+	TV TypeValue
 }
 
+func (o *WrapperTypeX) VisitExpr(v ExprVisitor) Value {
+	return o.TV
+}
+func (o *WrapperTypeX) String() string {
+	return Format("Wrap{%v}", o.TV)
+}
+
+//
+
+type TypeValue interface {
+	Expr
+	AsTStr() TStr
+}
+
+type PrimTV struct {
+	S TStr
+}
+type PointerTV struct {
+	E TypeValue
+}
+type SliceTV struct {
+	E TypeValue
+}
+type MapTV struct {
+	K TypeValue
+	V TypeValue
+}
+type NamedTV struct {
+	Name string
+}
+type StructTV struct {
+	StructRec *StructRec
+}
+type InterfaceTV struct {
+	InterfaceRec *InterfaceRec
+}
+type FunctionTV struct {
+	FunctionRec *FunctionRec
+}
+
+// a
+func (tv *PrimTV) AsTStr() TStr {
+	return tv.S
+}
+func (tv *PointerTV) AsTStr() TStr {
+	return TStr(Format(PointerForm, tv.E.TStr()))
+}
+func (tv *SliceTV) AsTStr() TStr {
+	return TStr(Format(SliceForm, tv.E.TStr()))
+}
+func (tv *MapTV) AsTStr() TStr {
+	return TStr(Format(MapForm, tv.K.TStr(), tv.V.TStr()))
+}
+func (tv *NamedTV) AsTStr() TStr {
+	return Format("-named-%s", tv.Name) // TODO
+}
+func (tv *StructTV) AsTStr() TStr {
+	return TStr(Format(StructForm, tv.Name))
+}
+func (tv *InterfaceTV) AsTStr() TStr {
+	return TStr(Format(InterfaceForm, tv.Name))
+}
+func (tv *FunctionTV) AsTStr() TStr {
+	return TStr(Format(FuncForm, "-in", "-")) // TODO
+}
+
+// b
+func (tv *PrimTV) String() string {
+	return Format("%T(%s)", *tv, tv.TStr())
+}
+func (tv *PointerTV) String() string {
+	return Format("%T(%s)", *tv, tv.TStr())
+}
+func (tv *SliceTV) String() string {
+	return Format("%T(%s)", *tv, tv.TStr())
+}
+func (tv *MapTV) String() string {
+	return Format("%T(%s)", *tv, tv.TStr())
+}
+func (tv *NamedTV) String() string {
+	return Format("%T(%s)", *tv, tv.TStr())
+}
+func (tv *StructTV) String() string {
+	return Format("%T(%s)", *tv, tv.TStr())
+}
+func (tv *InterfaceTV) String() string {
+	return Format("%T(%s)", *tv, tv.TStr())
+}
+func (tv *FunctionTV) String() string {
+	return Format("%T(%s)", *tv, tv.TStr())
+}
+
+// c
+func (tv *PrimTV) VisitExpr(v ExprVisitor) Value {
+	return tv
+}
+func (tv *PointerTV) VisitExpr(v ExprVisitor) Value {
+	return tv
+}
+func (tv *SliceTV) VisitExpr(v ExprVisitor) Value {
+	return tv
+}
+func (tv *MapTV) VisitExpr(v ExprVisitor) Value {
+	return tv
+}
+func (tv *NamedTV) VisitExpr(v ExprVisitor) Value {
+	return tv
+}
+func (tv *StructTV) VisitExpr(v ExprVisitor) Value {
+	return tv
+}
+func (tv *InterfaceTV) VisitExpr(v ExprVisitor) Value {
+	return tv
+}
+func (tv *FunctionTV) VisitExpr(v ExprVisitor) Value {
+	return tv
+}
+
+// d
+
+/*
 func (o *TypeX) String() string {
 	return fmt.Sprintf("TypeX(%q)", o.T)
 }
 func (o *TypeX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitType(o)
 }
+*/
 
 type LitIntX struct {
 	X int
@@ -306,20 +429,22 @@ type DefVisitor interface {
 	VisitDefFunc(*DefFunc)
 }
 
-func (d *DefCommon) ToC() string   { return d.C }
-func (d *DefCommon) Type() Type    { return d.T }
-func (d *DefCommon) LToC() string  { return "" }
-func (d *DefCommon) LType() Type   { return "" }
-func (d *DefCommon) Named() string { return d.Name }
+func (d *DefCommon) TStr() TStr { return "?common?" }
 
-func (d *DefVar) LToC() string { return Format("&%s", d.ToC()) }
-func (d *DefVar) LType() Type  { return d.T }
+func (d *DefCommon) ToC() string      { return d.C }
+func (d *DefCommon) Type() TypeValue  { return d.T }
+func (d *DefCommon) LToC() string     { return "" }
+func (d *DefCommon) LType() TypeValue { return "" }
+func (d *DefCommon) Named() string    { return d.Name }
+
+func (d *DefVar) LToC() string     { return Format("&%s", d.ToC()) }
+func (d *DefVar) LType() TypeValue { return d.T }
 
 type DefCommon struct {
 	CMod *CMod
 	Name string
 	C    string
-	T    Type
+	T    TypeValue
 }
 
 type DefPackage struct {
@@ -338,16 +463,12 @@ type DefVar struct {
 }
 type DefType struct {
 	DefCommon
-	Details *TypeDetails
+	Expr Expr
+	TV   TypeValue
 }
 type DefFunc struct {
 	DefCommon
 	FunctionRec *FunctionRec
-}
-type TypeDetails struct {
-	StructRec    *StructRec
-	InterfaceRec *InterfaceRec
-	FunctionRec  *FunctionRec
 }
 
 // A callable view of a node in a parse tree,
@@ -375,7 +496,7 @@ type InterfaceRec struct {
 
 type NameAndType struct {
 	Name string
-	Type Type
+	TV   TypeValue
 }
 type Block struct {
 	Locals      []NameAndType
@@ -407,9 +528,9 @@ func (o *DefFunc) VisitDef(v DefVisitor) {
 	v.VisitDefFunc(o)
 }
 
-type Type string
+type TStr string
 
-func TypeNameInC(type_ Type) string {
+func TypeNameInC(type_ TStr) string {
 	switch type_[0] {
 	case BoolPre:
 		return "bool"

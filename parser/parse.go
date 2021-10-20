@@ -39,6 +39,24 @@ func NewParser(r io.Reader, filename string) *Parser {
 	}
 }
 
+var ErrorTV = &InterfaceTV{
+	InterfaceRec: &InterfaceRec{
+		Name:   "error",
+		Fields: []NameAndType{
+			// TODO: Error func() string
+		},
+	},
+}
+var BuiltinTypeIdentifiers = map[string]TypeValue{
+	"bool":   &PrimTV{BoolType},
+	"byte":   &PrimTV{ByteType},
+	"int":    &PrimTV{IntType},
+	"uint":   &PrimTV{UintType},
+	"string": &PrimTV{StringType},
+	"type":   &PrimTV{TypeType},
+	"error":  ErrorTV,
+}
+
 func (o *Parser) ParsePrim() Expr {
 	if o.Kind == L_Int {
 		z := &LitIntX{o.Num}
@@ -63,8 +81,8 @@ func (o *Parser) ParsePrim() Expr {
 	if o.Kind == L_Punc {
 		if o.Word == "*" {
 			o.Next()
-			handleClass := o.TakeIdent()
-			return &TypeX{Type(Format(HandleForm, handleClass))}
+			elemX := o.ParseExpr().(TypeValue)
+			return &PointerTV{elemX}
 		}
 		if o.Word == "[" {
 			o.Next()
@@ -72,8 +90,8 @@ func (o *Parser) ParsePrim() Expr {
 				Panicf("for slice type, after [ expected ], got %v", o.Word)
 			}
 			o.Next()
-			memberType, _ := o.ParseType()
-			return &TypeX{Type(Format(SliceForm, memberType))}
+			elemX := o.ParseExpr().(TypeValue)
+			return &SliceTV{elemX}
 		}
 		if o.Word == "&" {
 			o.Next()
@@ -94,8 +112,7 @@ LOOP:
 		switch o.Kind {
 		case L_Ident:
 			fieldName := o.TakeIdent()
-			fieldType, details := o.ParseType()
-			_ = details
+			fieldType := o.ParseType()
 			ctor.Fields = append(ctor.Fields, NameAndType{fieldName, fieldType})
 		case L_EOL:
 			o.Next()
@@ -205,6 +222,14 @@ func (o *Parser) ParseExpr() Expr {
 	return o.ParseOr()
 }
 
+func (o *Parser) ParseType() TypeValue {
+	x := o.ParseExpr()
+	if t, ok := x.(TypeValue); ok {
+		return t
+	}
+	panic(Format("Expected type expression; got %v", x))
+}
+
 func (o *Parser) ParseStructType(name string) *StructRec {
 	// name := o.TakeIdent()
 	o.TakePunc("{")
@@ -216,8 +241,7 @@ LOOP:
 		switch o.Kind {
 		case L_Ident:
 			fieldName := o.TakeIdent()
-			fieldType, details := o.ParseType()
-			_ = details
+			fieldType := o.ParseType()
 			def.Fields = append(def.Fields, NameAndType{fieldName, fieldType})
 		case L_EOL:
 			o.Next()
@@ -246,7 +270,7 @@ LOOP:
 			fieldName := o.TakeIdent()
 			sig := &FunctionRec{}
 			o.ParseFunctionSignature(sig)
-			fieldType := Type(Format(FuncForm, Format("#v", sig))) // standin value
+			fieldType := &FunctionTV{sig}
 			def.Fields = append(def.Fields, NameAndType{fieldName, fieldType})
 		case L_EOL:
 			o.Next()
@@ -261,50 +285,6 @@ LOOP:
 	}
 	o.TakePunc("}")
 	return def
-}
-func (o *Parser) ParseType() (Type, *TypeDetails) {
-	switch o.Kind {
-	case L_Ident:
-		w := o.TakeIdent()
-		switch w {
-		case "bool":
-			return BoolType, nil
-		case "byte":
-			return ByteType, nil
-		case "int":
-			return IntType, nil
-		case "uint":
-			return UintType, nil
-		case "string":
-			return StringType, nil
-		case "error":
-			return Type(Format(InterfaceForm, "error")), nil
-		case "struct":
-			def := o.ParseStructType("_anon_struct_type_")
-			return Type(Format(StructForm, def.Name)), &TypeDetails{StructRec: def}
-		case "interface":
-			def := o.ParseInterfaceType("_anon_interface_type_")
-			return Type(Format(InterfaceForm, def.Name)), &TypeDetails{InterfaceRec: def}
-		}
-		Panicf("expected a type, got %q", w)
-	case L_Punc:
-		if o.Word == "[" {
-			o.Next()
-			if o.Word != "]" {
-				Panicf("for slice type, after [ expected ], got %v", o.Word)
-			}
-			o.Next()
-			memberType, _ := o.ParseType()
-			return Type(Format(SliceForm, memberType)), nil
-		}
-		if o.Word == "*" {
-			o.Next()
-			handleClass := o.TakeIdent()
-			return Type(Format(HandleForm, handleClass)), nil
-		}
-	}
-	Panicf("not a type: starts with %v", o.Word)
-	panic("notreached")
 }
 
 func (o *Parser) ParseList() []Expr {
@@ -453,7 +433,7 @@ func (o *Parser) ParseBareBlock(fn *FunctionRec) *Block {
 			case "var":
 				o.Next()
 				s := o.TakeIdent()
-				t, _ := o.ParseType()
+				t := o.ParseType()
 				b.Locals = append(b.Locals, NameAndType{s, t})
 			default:
 				stmt := o.ParseStmt(b)
@@ -477,7 +457,7 @@ func (o *Parser) ParseFunctionSignature(fn *FunctionRec) {
 			o.TakePunc(".")
 			fn.IsEllipsis = true
 		}
-		t, _ := o.ParseType()
+		t := o.ParseType()
 		fn.Ins = append(fn.Ins, NameAndType{s, t})
 		if o.Word == "," {
 			o.TakePunc(",")
@@ -489,7 +469,7 @@ func (o *Parser) ParseFunctionSignature(fn *FunctionRec) {
 				panic(Format("Expected `)` after ellipsis arg, but got `%v`", o.Word))
 			}
 			numIns := len(fn.Ins)
-			fn.Ins[numIns-1].Type = Type(Format(SliceForm, fn.Ins[numIns-1].Type))
+			fn.Ins[numIns-1].TV = &SliceTV{fn.Ins[numIns-1].TV}
 		}
 	}
 	o.TakePunc(")")
@@ -498,7 +478,7 @@ func (o *Parser) ParseFunctionSignature(fn *FunctionRec) {
 			o.TakePunc("(")
 			for o.Word != ")" {
 				s := o.TakeIdent()
-				t, _ := o.ParseType()
+				t := o.ParseType()
 				fn.Outs = append(fn.Outs, NameAndType{s, t})
 				if o.Word == "," {
 					o.TakePunc(",")
@@ -508,7 +488,7 @@ func (o *Parser) ParseFunctionSignature(fn *FunctionRec) {
 			}
 			o.TakePunc(")")
 		} else {
-			t, _ := o.ParseType()
+			t := o.ParseType()
 			fn.Outs = append(fn.Outs, NameAndType{"", t})
 		}
 	}
@@ -545,7 +525,7 @@ LOOP:
 					DefCommon: DefCommon{
 						Name: w,
 						C:    w,
-						T:    ImportType,
+						T:    &PrimTV{ImportType},
 					},
 				}
 			case "const":
@@ -561,7 +541,7 @@ LOOP:
 				}
 			case "var":
 				w := o.TakeIdent()
-				t, _ := o.ParseType()
+				t := o.ParseType()
 				o.Vars[w] = &DefVar{
 					DefCommon: DefCommon{
 						Name: w,
@@ -571,14 +551,15 @@ LOOP:
 				}
 			case "type":
 				w := o.TakeIdent()
-				t, details := o.ParseType()
+				t := o.ParseType()
 				o.Types[w] = &DefType{
 					DefCommon: DefCommon{
 						Name: w,
 						C:    FullName("T", o.Package.Name, w),
-						T:    Type(Format(TypeForm, t)),
+						T:    &PrimTV{TypeType},
 					},
-					Details: details,
+					Expr: t,
+					TV:   nil, // TODO
 				}
 			case "func":
 				fn := &FunctionRec{}
@@ -586,7 +567,7 @@ LOOP:
 				case L_Punc:
 					o.TakePunc("(")
 					receiver := o.TakeIdent()
-					receiverType, _ := o.ParseType()
+					receiverType := o.ParseType()
 					o.TakePunc(")")
 					fn.Ins = append(fn.Ins, NameAndType{receiver, receiverType})
 					fn.IsMethod = true
@@ -596,7 +577,7 @@ LOOP:
 					DefCommon: DefCommon{
 						Name: name,
 						C:    FullName("F", o.Package.Name, name),
-						T:    "F",
+						T:    &FunctionTV{fn},
 					},
 					FunctionRec: fn,
 				}
@@ -619,116 +600,39 @@ LOOP:
 }
 
 type Value interface {
-	Type() Type
+	TStr() TStr
 	ToC() string
 }
 
 type LValue interface {
-	Type() Type
+	TStr() TStr
 	LToC() string
 }
 
 type SimpleValue struct {
 	C string // C language expression
-	T Type
+	T TStr
 	// GlobalDef Def
 }
 
 type SimpleLValue struct {
 	LC string // C language expression
-	T  Type
+	T  TStr
 	// GlobalDef Def
 }
 
 func (val *SimpleValue) ToC() string {
 	return val.C
 }
-func (val *SimpleValue) Type() Type {
+func (val *SimpleValue) TStr() TStr {
 	return val.T
 }
 func (lval *SimpleLValue) LToC() string {
 	return lval.LC
 }
-func (lval *SimpleLValue) Type() Type {
+func (lval *SimpleLValue) TStr() TStr {
 	return lval.T
 }
-
-/*
-func BootstrapModules(cg *CGen) {
-    return
-
-	log_ := &CMod{
-		Package: "log",
-		GlobalDefs: map[string]Def{
-			"Fatalf": &DefFunc{
-				DefCommon: DefCommon{
-					Name: "Fatalf",
-					T:    "F",
-				},
-				Ins: []NameAndType{
-					{"format", "s"},
-					{"args", ".SI"},
-				},
-				Outs: []NameAndType{},
-			},
-		},
-	}
-	cg.Mods["log"] = log_
-	os_ := &CMod{
-		Package: "os",
-		GlobalDefs: map[string]Def{
-			"Stdin": &DefVar{
-				DefCommon: DefCommon{
-					Name: "Stdin",
-					T:    "H",
-				},
-			},
-		},
-	}
-	cg.Mods["os"] = os_
-	io_ := &CMod{
-		Package: "io",
-		GlobalDefs: map[string]Def{
-			"EOF": &DefVar{
-				DefCommon: DefCommon{
-					Name: "EOF",
-					T:    "H",
-				},
-			},
-		},
-	}
-	cg.Mods["io"] = io_
-}
-*/
-/*
-func BootstrapBuiltins(cm *CMod) {
-	cm.GlobalDefs["println"] = &DefFunc{
-		DefCommon: DefCommon{
-			Name: "println",
-			C:    "F_BUILTIN__println",
-			T:    "F*",
-		},
-		Ins: []NameAndType{
-			{"args", ".I"},
-		},
-	}
-
-	cm.GlobalDefs["make"] = &DefFunc{
-		DefCommon: DefCommon{
-			Name: "make",
-			C:    "F_BUILTIN__make",
-			T:    "F*",
-		},
-		Ins: []NameAndType{
-			{"type_", "t"},
-			{"args", ".i"},
-		},
-		Outs: []NameAndType{
-			{"", "I"},
-		},
-	}
-}
-*/
 
 func (cg *CGen) LoadModule(name string) *CMod {
 	log.Printf("LoadModule: << %q", name)
@@ -894,7 +798,7 @@ func (pre *cPreMod) VisitDefFunc(def *DefFunc) {
 			if !firstTime {
 				b.P(", ")
 			}
-			b.P("%s %s", TypeNameInC(name_and_type.Type), "v_"+name_and_type.Name)
+			b.P("%s %s", TypeNameInC(name_and_type.TV.AsTStr()), "v_"+name_and_type.Name)
 			firstTime = false
 		}
 	}
@@ -948,15 +852,15 @@ func (cm *CMod) Flush() {
 
 func (cm *CMod) VisitLvalIdent(x *IdentX) LValue {
 	value := cm.VisitIdent(x)
-	return &SimpleLValue{LC: Format("&(%s)", value.ToC()), T: value.Type()}
+	return &SimpleLValue{LC: Format("&(%s)", value.ToC()), T: value.TStr()}
 }
 func (cm *CMod) VisitLValSub(x *SubX) LValue {
 	value := cm.VisitSub(x)
-	return &SimpleLValue{LC: Format("TODO_LValue(%s)", value.ToC()), T: value.Type()}
+	return &SimpleLValue{LC: Format("TODO_LValue(%s)", value.ToC()), T: value.TStr()}
 }
 func (cm *CMod) VisitLvalDot(x *DotX) LValue {
 	value := cm.VisitDot(x)
-	return &SimpleLValue{LC: Format("&(%s)", value.ToC()), T: value.Type()}
+	return &SimpleLValue{LC: Format("&(%s)", value.ToC()), T: value.TStr()}
 }
 
 func (cm *CMod) VisitLitInt(x *LitIntX) Value {
@@ -995,11 +899,11 @@ func (cm *CMod) VisitBinOp(x *BinOpX) Value {
 func (cm *CMod) VisitConstructor(x *ConstructorX) Value {
 	return &SimpleValue{
 		C: Format("(%s) alloc(C_%s)", x.Name, x.Name),
-		T: Type(Format(HandleForm, x.Name)),
+		T: TStr(Format(HandleForm, x.Name)),
 	}
 }
 
-func Intlike(ty Type) bool {
+func Intlike(ty TStr) bool {
 	switch ty {
 	case ByteType, IntType, UintType, ConstIntType:
 		return true
@@ -1009,23 +913,23 @@ func Intlike(ty Type) bool {
 }
 
 func CopyAndSoftConvert(in NameAndType, out NameAndType) string {
-	switch out.Type[0] {
+	switch out.TV.AsTStr()[0] {
 	case InterfacePre: // Create an interface.
 		handle, pointer := "0", "0"
-		switch in.Type[0] {
+		switch in.TV.AsTStr()[0] {
 		case HandlePre:
 			handle = in.Name
 		default:
 			pointer = Format("(word)(&%s)" + in.Name) // broken for int constants
 		}
-		return Format("Interface %s = {%s, %s, %q};", out.Name, handle, pointer, in.Type)
+		return Format("Interface %s = {%s, %s, %q};", out.Name, handle, pointer, in.TV)
 
 	default:
-		outCType := TypeNameInC(out.Type)
-		if Intlike(in.Type) && Intlike(out.Type) {
+		outCType := TypeNameInC(out.TV.AsTStr())
+		if Intlike(in.TV.AsTStr()) && Intlike(out.TV.AsTStr()) {
 			return Format("%s %s = (%s)%s;", outCType, out.Name, outCType, in.Name)
 		}
-		if in.Type == out.Type {
+		if in.TV == out.TV {
 			return Format("%s %s = %s;", outCType, out.Name, in.Name)
 		}
 	}
@@ -1051,34 +955,34 @@ func (cm *CMod) VisitCall(x *CallX) Value {
 
 	for i, in := range funcRec.Ins {
 		val := x.Args[i].VisitExpr(cm)
-		expectedType := in.Type
+		expectedType := in.TV
 
-		if expectedType[0] == '.' {
-			memberType := expectedType[1:]
+		if expectedType.AsTStr()[0] == '.' {
+			memberType := expectedType.AsTStr()[1:]
 			sliceType := "S" + memberType
 			c2 += Format("Slice %s_in_rest = CreateSlice();", ser)
 			for j := i; j < len(x.Args); j++ {
 				CopyAndSoftConvert(
-					NameAndType{val.ToC(), val.Type()},
+					NameAndType{val.ToC(), val},
 					NameAndType{Format("%s_in_%d", ser, j), sliceType})
 				c2 += Format("AppendSlice(%d_in_rest,  %s_in_%d);", ser, ser, j)
 			}
 			c += Format("FINISH(%s_in_rest);", ser)
 
 		} else {
-			//##if expectedType != val.Type() {
-			//##panic(Format("bad type: expected %s, got %s", expectedType, val.Type()))
+			//##if expectedType != val.TStr() {
+			//##panic(Format("bad type: expected %s, got %s", expectedType, val.TStr()))
 			//##}
 			CopyAndSoftConvert(
-				NameAndType{val.ToC(), val.Type()},
+				NameAndType{val.ToC(), val},
 				NameAndType{Format("%s_in_%d", ser, i), expectedType})
-			//##cm.P("  %s %s_in_%d = %s;", TypeNameInC(in.Type), ser, i, val.ToC())
+			//##cm.P("  %s %s_in_%d = %s;", TypeNameInC(in.TStr), ser, i, val.ToC())
 			c += Format(", %s_in_%d", ser, i)
 		}
 
 	}
 	for i, out := range funcRec.Outs {
-		cm.P("  %s %s_out_%d;", TypeNameInC(out.Type), ser, i)
+		cm.P("  %s %s_out_%d;", TypeNameInC(out.TV.AsTStr()), ser, i)
 		c += Format(", &%s_out_%d", ser, i)
 	}
 	c += " );"
@@ -1088,7 +992,7 @@ func (cm *CMod) VisitCall(x *CallX) Value {
 	case 0:
 		return &SimpleValue{"VOID", VoidType}
 	case 1:
-		return &SimpleValue{Format("%s_out_0", ser), funcRec.Outs[0].Type}
+		return &SimpleValue{Format("%s_out_0", ser), funcRec.Outs[0].TV}
 	default:
 		return &SimpleValue{ser, ListType}
 	}
@@ -1110,12 +1014,15 @@ func (cm *CMod) VisitCall(x *CallX) Value {
 		}
 	*/
 }
+
+/*
 func (cm *CMod) VisitType(x *TypeX) Value {
 	return &SimpleValue{
 		C: string(x.T),
 		T: TypeType,
 	}
 }
+*/
 func (cm *CMod) VisitSub(x *SubX) Value {
 	return &SimpleValue{
 		C: Format("SubXXX(%v)", x),
@@ -1126,7 +1033,7 @@ func (cm *CMod) VisitDot(dot *DotX) Value {
 	log.Printf("VisitDot: <------ %#v", dot)
 	val := dot.X.VisitExpr(cm)
 	log.Printf("VisitDot: val---- %#v", val)
-	if val.Type() == ImportType {
+	if val.TStr() == ImportType {
 		modName := val.ToC() // is there a better way?
 		println("DOT", modName, dot.Member)
 		otherMod := cm.CGen.Mods[modName] // TODO: import aliases.
@@ -1191,7 +1098,7 @@ func (cm *CMod) VisitAssign(ass *AssignS) {
 		funcname := funcRec.Function.Name
 		log.Printf("funcname=%s", funcname)
 
-		// functype := fn.Type()
+		// functype := fn.TStr()
 		if lenB != len(bcall.Args) {
 			panic(Format("Function %s wants %d args, got %d", funcname, len(bcall.Args), lenB))
 		}
@@ -1200,15 +1107,15 @@ func (cm *CMod) VisitAssign(ass *AssignS) {
 		c := Format(" %s( fp", funcname)
 		for i, in := range funcRec.Ins {
 			val := ass.B[i].VisitExpr(cm)
-			expectedType := in.Type
-			if expectedType != val.Type() {
-				panic(Format("bad type: expected %s, got %s", expectedType, val.Type()))
+			expectedType := in.TV
+			if expectedType != val.TStr() {
+				panic(Format("bad type: expected %s, got %s", expectedType, val.TStr()))
 			}
-			cm.P("  %s %s_in_%d = %s;", TypeNameInC(in.Type), ser, i, val.ToC())
+			cm.P("  %s %s_in_%d = %s;", TypeNameInC(in.TV.AsTStr()), ser, i, val.ToC())
 			c += Format(", %s_in_%d", ser, i)
 		}
 		for i, out := range funcRec.Outs {
-			cm.P("  %s %s_out_%d;", TypeNameInC(out.Type), ser, i)
+			cm.P("  %s %s_out_%d;", TypeNameInC(out.TV.AsTStr()), ser, i)
 			c += Format(", &%s_out_%d", ser, i)
 		}
 		c += " );"
@@ -1244,11 +1151,11 @@ func (cm *CMod) VisitAssign(ass *AssignS) {
 				case "=":
 					// TODO check Globals
 					cvar := "v_" + t.X
-					cm.P("  %s = (%s)(%s);", cvar, TypeNameInC(val.Type()), val.ToC())
+					cm.P("  %s = (%s)(%s);", cvar, TypeNameInC(val.TStr()), val.ToC())
 				case ":=":
 					// TODO check Globals
-					cvar := Format("%s %s", TypeNameInC(val.Type()), "v_"+t.X)
-					cm.P("  %s = (%s)(%s);", cvar, TypeNameInC(val.Type()), val.ToC())
+					cvar := Format("%s %s", TypeNameInC(val.TStr()), "v_"+t.X)
+					cm.P("  %s = (%s)(%s);", cvar, TypeNameInC(val.TStr()), val.ToC())
 				}
 			default:
 				log.Fatal("bad VisitAssign LHS: %#v", ass.A)
@@ -1374,7 +1281,7 @@ func (cm *CMod) VisitDefFunc(def *DefFunc) {
 			if !firstTime {
 				b.P(", ")
 			}
-			b.P("%s %s", TypeNameInC(name_and_type.Type), "v_"+name_and_type.Name)
+			b.P("%s %s", TypeNameInC(name_and_type.TV), "v_"+name_and_type.Name)
 			firstTime = false
 		}
 	}
