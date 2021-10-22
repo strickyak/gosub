@@ -568,8 +568,6 @@ type DefVisitor interface {
 	VisitDefFunc(*DefFunc)
 }
 
-// func (d *DefCommon) TStr() TStr { return "?common?" }
-
 func (d *DefCommon) ToC() string      { return d.C }
 func (d *DefCommon) Type() TypeValue  { return d.T }
 func (d *DefCommon) LToC() string     { return "" }
@@ -667,89 +665,49 @@ func (o *DefFunc) VisitDef(v DefVisitor) {
 	v.VisitDefFunc(o)
 }
 
-type TStr complex128
-
 /*
+const XX_BoolType = "a"
+const XX_ByteType = "b"
+const XX_UintType = "u"
+const XX_IntType = "i"
+const XX_ConstIntType = "c"
+const XX_StringType = "s"
+const XX_TypeType = "t"
+const XX_ImportType = "@"
+const XX_VoidType = "v"
+const XX_ListType = "l"
 
-func TypeNameInC(type_ TStr) string {
-	switch type_[0] {
-	case BoolPre:
-		return "bool"
-	case BytePre:
-		return "byte"
-	case UintPre:
-		return "word"
-	case IntPre:
-		return "int"
-	case ConstIntPre:
-		return "int"
-	case StringPre:
-		return "String"
+const XX_BoolPre = 'a'
+const XX_BytePre = 'b'
+const XX_UintPre = 'u'
+const XX_IntPre = 'i'
+const XX_ConstIntPre = 'c'
+const XX_StringPre = 's'
+const XX_TypePre = 't'
+const XX_ImportPre = '@'
+const XX_VoidPre = 'v'
+const XX_ListPre = 'l'
 
-	case SlicePre:
-		return "Slice"
-	case MapPre:
-		return "Map"
-	case ChanPre:
-		return "Chan"
-	case FuncPre:
-		return "Func"
-	//case HandlePre:
-		//return "Handle"
-	case InterfacePre:
-		return "InterfaceRec"
-	case TypePre:
-		return "type"
-	default:
-		Panicf("unknown type: %q", type_)
-	}
-	panic(0)
-}
-*/
-
-/*
-const BoolType = "a"
-const ByteType = "b"
-const UintType = "u"
-const IntType = "i"
-const ConstIntType = "c"
-const StringType = "s"
-const TypeType = "t"
-const ImportType = "@"
-const VoidType = "v"
-const ListType = "l"
-
-const BoolPre = 'a'
-const BytePre = 'b'
-const UintPre = 'u'
-const IntPre = 'i'
-const ConstIntPre = 'c'
-const StringPre = 's'
-const TypePre = 't'
-const ImportPre = '@'
-const VoidPre = 'v'
-const ListPre = 'l'
-
-const SlicePre = 'S'
-const DotDotDotSlicePre = 'E'
-const MapPre = 'M'
-const ChanPre = 'C'
-const FuncPre = 'F'
+const XX_SlicePre = 'S'
+const XX_DotDotDotSlicePre = 'E'
+const XX_MapPre = 'M'
+const XX_ChanPre = 'C'
+const XX_FuncPre = 'F'
 //const HandlePre = 'H'
-const StructPre = 'R'
-const InterfacePre = 'I'
-const PointerPre = 'P'
+const XX_StructPre = 'R'
+const XX_InterfacePre = 'I'
+const XX_PointerPre = 'P'
 
-const SliceForm = "S:%s"
-const DotDotDotSliceForm = "E:%s"
-const MapForm = "M:%s:%s"
-const ChanForm = "C:%s"
-const TypeForm = "t(%s)"
-const FuncForm = "F(%s;%s)"
-const StructForm = "R{%s}"
+const XX_SliceForm = "S:%s"
+const XX_DotDotDotSliceForm = "E:%s"
+const XX_MapForm = "M:%s:%s"
+const XX_ChanForm = "C:%s"
+const XX_TypeForm = "t(%s)"
+const XX_FuncForm = "F(%s;%s)"
+const XX_StructForm = "R{%s}"
 //const HandleForm = "H{%s}"
-const InterfaceForm = "I{%s}"
-const PointerForm = "P{%s}"
+const XX_InterfaceForm = "I{%s}"
+const XX_PointerForm = "P{%s}"
 */
 
 // #################################################
@@ -1753,9 +1711,6 @@ func (cm *CMod) VisitCall(x *CallX) Value {
 			c += Format("FINISH(%s_in_rest);", ser)
 
 		} else {
-			//##if expectedType != val.TStr() {
-			//##panic(Format("bad type: expected %s, got %s", expectedType, val.TStr()))
-			//##}
 			cm.P(AssignNewVar(
 				NameAndType{val.ToC(), val.Type()},
 				NameAndType{Format("%s_in_%d", ser, i), expectedType}))
@@ -1856,7 +1811,6 @@ func (cm *CMod) VisitAssign(ass *AssignS) {
 		funcname := funcRec.Function.Name
 		log.Printf("funcname=%s", funcname)
 
-		// functype := fn.TStr()
 		if lenB != len(bcall.Args) {
 			panic(Format("Function %s wants %d args, got %d", funcname, len(bcall.Args), lenB))
 		}
@@ -2046,14 +2000,14 @@ func (cm *CMod) VisitDefFunc(def *DefFunc) {
 			firstTime = false
 		}
 	}
-    if fn.Body != nil {
-	    b.P(") {\n")
-	    cm.P(b.String())
-	    fn.Body.VisitStmt(cm)
-	    cm.P("}\n")
-    } else {
-	    b.P("); /*NATIVE*/\n")
-    }
+	if fn.Body != nil {
+		b.P(") {\n")
+		cm.P(b.String())
+		fn.Body.VisitStmt(cm)
+		cm.P("}\n")
+	} else {
+		b.P("); /*NATIVE*/\n")
+	}
 }
 
 var SerialNum uint
