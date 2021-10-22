@@ -1779,33 +1779,8 @@ func (cm *CMod) VisitCall(x *CallX) Value {
 	default:
 		return &SimpleValue{ser, ListTO}
 	}
-	/*
-		cargs := ""
-		firstTime := true
-		for _, e := range x.Args {
-			if !firstTime {
-				cargs += ", "
-			}
-			cargs += e.VisitExpr(cm).ToC()
-			firstTime = false
-		}
-		cfunc := x.Func.VisitExpr(cm).ToC()
-		ccall := Format("(%s(%s))", cfunc, cargs)
-		return &SimpleValue{
-			C: ccall,
-			T: "dunno",
-		}
-	*/
 }
 
-/*
-func (cm *CMod) VisitType(x *TypeX) Value {
-	return &SimpleValue{
-		C: string(x.T),
-		T: TypeType,
-	}
-}
-*/
 func (cm *CMod) VisitSub(x *SubX) Value {
 	return &SimpleValue{
 		C: Format("SubXXX(%v)", x),
@@ -2056,7 +2031,7 @@ func (buf *Buf) String() string {
 }
 func (cm *CMod) VisitDefFunc(def *DefFunc) {
 	fn := def.FunctionRec
-	fn.Body = &Block{FunctionRec: fn}
+	//fn.Body = &Block{FunctionRec: fn}
 	log.Printf("// func %s: %#v", def.Name, def)
 	var b Buf
 	cfunc := Format("F_%s__%s", cm.Package, def.Name)
@@ -2071,10 +2046,14 @@ func (cm *CMod) VisitDefFunc(def *DefFunc) {
 			firstTime = false
 		}
 	}
-	b.P(") {\n")
-	cm.P(b.String())
-	fn.Body.VisitStmt(cm)
-	cm.P("}\n")
+    if fn.Body != nil {
+	    b.P(") {\n")
+	    cm.P(b.String())
+	    fn.Body.VisitStmt(cm)
+	    cm.P("}\n")
+    } else {
+	    b.P("); /*NATIVE*/\n")
+    }
 }
 
 var SerialNum uint

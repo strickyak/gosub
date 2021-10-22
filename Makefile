@@ -1,4 +1,4 @@
-DEMO=2.g
+DEMO=demo/wc.go
 all:
 	go run gosub.go  < $(DEMO)   > $(DEMO).c 
 	clang-format -i --style=Google $(DEMO).c
