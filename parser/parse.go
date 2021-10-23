@@ -1522,20 +1522,26 @@ func (pre *cPreMod) VisitDefImport(def *DefImport) {
 	pre.mustNotExistYet(def.Name)
 	pre.cm.GlobalDefs[def.Name] = def
 	pre.cm.P("\n// PRE VISIT %#v\n", def)
-	pre.cm.P("\n// MARCO")
+	pre.cm.P("\n// MARCO: %s", def.Name)
 	pre.cm.CGen.LoadModule(def.Name)
-	pre.cm.P("\n// POLO")
+	pre.cm.P("\n// POLO: %s", def.Name)
 }
 func (pre *cPreMod) VisitDefConst(def *DefConst) {
 	pre.mustNotExistYet(def.Name)
 	pre.cm.GlobalDefs[def.Name] = def
 	pre.cm.CGen.GlobalDefs[GlobalName(pre.cm.Package, def.Name)] = def
+    if pre.cm.Package == "builtin" {
+	    pre.cm.CGen.GlobalDefs[def.Name] = def
+    }
 	pre.cm.P("\n// PRE VISIT %#v\n", def)
 }
 func (pre *cPreMod) VisitDefVar(def *DefVar) {
 	pre.mustNotExistYet(def.Name)
 	pre.cm.GlobalDefs[def.Name] = def
 	pre.cm.CGen.GlobalDefs[GlobalName(pre.cm.Package, def.Name)] = def
+    if pre.cm.Package == "builtin" {
+	    pre.cm.CGen.GlobalDefs[def.Name] = def
+    }
 	log.Printf("pre visit DefVar: %v => %v", def, pre.cm.GlobalDefs)
 	pre.cm.P("\n// PRE VISIT %#v\n", def)
 }
@@ -1543,6 +1549,9 @@ func (pre *cPreMod) VisitDefType(def *DefType) {
 	pre.mustNotExistYet(def.Name)
 	pre.cm.GlobalDefs[def.Name] = def
 	pre.cm.CGen.GlobalDefs[GlobalName(pre.cm.Package, def.Name)] = def
+    if pre.cm.Package == "builtin" {
+	    pre.cm.CGen.GlobalDefs[def.Name] = def
+    }
 	pre.cm.P("\n// PRE VISIT %#v\n", def)
 }
 func (pre *cPreMod) VisitDefFunc(def *DefFunc) {
@@ -1550,6 +1559,9 @@ func (pre *cPreMod) VisitDefFunc(def *DefFunc) {
 	pre.mustNotExistYet(def.Name)
 	pre.cm.GlobalDefs[def.Name] = def
 	pre.cm.CGen.GlobalDefs[GlobalName(pre.cm.Package, def.Name)] = def
+    if pre.cm.Package == "builtin" {
+	    pre.cm.CGen.GlobalDefs[def.Name] = def
+    }
 
 	// TODO -- dedup
 	var b Buf
@@ -1647,6 +1659,9 @@ func (cm *CMod) VisitIdent(x *IdentX) Value {
 }
 func (cm *CMod) _VisitIdent_(x *IdentX) Value {
 	if gd, ok := cm.GlobalDefs[x.X]; ok {
+		return gd
+	}
+	if gd, ok := cm.CGen.GlobalDefs[x.X]; ok {
 		return gd
 	}
 	// Else, assume it is a local variable.
