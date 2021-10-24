@@ -4,11 +4,19 @@ package parser
 
 Simplifications to Go:
 
+No shadowing of identifiers in nested scopes.
+Cannot reuse builtin names.  Cannot reuse global names.
+
 `const` and `type` are only allowed at outer level.
 
 `const` are untyped bool, integer, or string.
 
 `type` is only used to define struct and interface.
+Structs can only be defined by `type` at the global level;
+there are no anonymous structs.  Similarly, interfaces can only
+be defined by `type` at the global level, with the exception
+of `interface {}`.   Thus with the exception of `interface {}`,
+all structs and interfaces have a global type name.
 
 `struct` is never used as a bare type; only pointer-to-struct
 can be used.
@@ -76,5 +84,9 @@ Goroutines are not supported (yet).
 When they are supported, they will be global function calls
 or method invocations, not lambdas (since lambdas do not
 survive their scope).  They will have to have their own C stack.
+
+No renaming imports.  No "/" in import names (use a flat space).
+No groups with ( and ) for imports, const, var, or type.
+No types for enums.  No definitions with iota.
 
 */
