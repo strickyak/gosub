@@ -71,7 +71,7 @@ struct type.
 Interfaces can be implemented as two cases:
 (1) `interface {}`
 (2) interfaces that point to structs.
-This is because only structs and interfaces can be defined with `type`.  
+This is because only structs and interfaces can be defined with `type`.
 Case 1 will have to be big enough to hold a slice or string triple
 and a type pointer.  Case 2 only needs to hold a handle, since
 we can ask the class of the Heap object referenced by the handle.
