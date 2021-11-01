@@ -12,6 +12,7 @@ import (
 )
 
 var Format = fmt.Sprintf
+var P = fmt.Fprintf
 
 // #################################################
 
@@ -24,6 +25,10 @@ func assert(b bool) {
 func Panicf(format string, args ...interface{}) string {
 	s := Format(format, args...)
 	panic(s)
+}
+
+func FullName(a string, b string) string {
+	return a + "__" + b
 }
 
 ///////////
@@ -570,17 +575,6 @@ func (ns NamedSlice) Less(a, b int) bool {
 	return ns[a].GetName() < ns[b].GetName()
 }
 
-type GDef struct {
-	CGen     *CGen
-	Package  string
-	Name     string
-	FullName string
-	C        string
-	T        TypeValue
-	Expr     Expr  // At parse time, build the Expr.
-	Value    Value // Next resolve global names to Values.
-}
-
 // A callable view of a node in a parse tree,
 // e.g. global func, lambda, bound method,
 // ... any expr of Func kind.
@@ -693,21 +687,30 @@ func GlobalName(pkg string, name string) string {
 type Parser struct {
 	*Lex
 	Package string
-	Imports map[string]*GDef
-	Consts  map[string]*GDef
-	Vars    map[string]*GDef
-	Types   map[string]*GDef
-	Funcs   map[string]*GDef
+
+	// For lookup by local name.
+	ImportsMap map[string]*GDef
+	ConstsMap  map[string]*GDef
+	VarsMap    map[string]*GDef
+	TypesMap   map[string]*GDef
+	FuncsMap   map[string]*GDef
+
+	// For ordered traversal:
+	Imports []*GDef
+	Consts  []*GDef
+	Vars    []*GDef
+	Types   []*GDef
+	Funcs   []*GDef
 }
 
 func NewParser(r io.Reader, filename string) *Parser {
 	return &Parser{
-		Lex:     NewLex(r, filename),
-		Imports: make(map[string]*GDef),
-		Consts:  make(map[string]*GDef),
-		Vars:    make(map[string]*GDef),
-		Types:   make(map[string]*GDef),
-		Funcs:   make(map[string]*GDef),
+		Lex:        NewLex(r, filename),
+		ImportsMap: make(map[string]*GDef),
+		ConstsMap:  make(map[string]*GDef),
+		VarsMap:    make(map[string]*GDef),
+		TypesMap:   make(map[string]*GDef),
+		FuncsMap:   make(map[string]*GDef),
 	}
 }
 
@@ -1242,32 +1245,40 @@ LOOP:
 				}
 				w := o.Word
 				o.Next()
-				o.Imports[w] = &GDef{
+				gd := &GDef{
 					Name: w,
-					Expr: &IdentX{w},
 				}
+				o.Imports = append(o.Imports, gd)
+				o.ImportsMap[w] = gd
 			case "const":
 				w := o.TakeIdent()
 				o.TakePunc("=")
 				x := o.ParseExpr()
-				o.Consts[w] = &GDef{
+				gd := &GDef{
 					Package: o.Package,
 					Name:    w,
-					Expr:    x,
+					Init:    x,
 				}
+				o.Consts = append(o.Consts, gd)
+				o.ConstsMap[w] = gd
 			case "var":
 				w := o.TakeIdent()
-				t := o.ParseType()
-				// TODO: initialization.
-				o.Vars[w] = &GDef{
-					Package: o.Package,
-					Name:    w,
-					Value: &SimpleLValue{
-						C:  GlobalName(o.Package, w),
-						LC: "&" + GlobalName(o.Package, w),
-						T:  t,
-					},
+				var t TypeValue
+				if o.Word != "=" {
+					t = o.ParseType()
 				}
+				var i Expr
+				if o.Word == "=" {
+					o.Next()
+					i = o.ParseExpr()
+				}
+				gd := &GDef{
+					Name: w,
+					Type: t,
+					Init: i,
+				}
+				o.Vars = append(o.Vars, gd)
+				o.VarsMap[w] = gd
 			case "type":
 				w := o.TakeIdent()
 				var tv TypeValue
@@ -1282,12 +1293,12 @@ LOOP:
 				} else {
 					tv = o.ParseType()
 				}
-				o.Types[w] = &GDef{
-					Package: o.Package,
-					Name:    w,
-					Expr:    tv,
-					Value:   tv,
+				gd := &GDef{
+					Name: w,
+					Init: tv,
 				}
+				o.Types = append(o.Types, gd)
+				o.TypesMap[w] = gd
 			case "func":
 				var receiver *NameAndType
 				switch o.Kind {
@@ -1302,12 +1313,12 @@ LOOP:
 				name := o.TakeIdent()
 				fn := o.ParseFunc()
 				fn.Receiver = receiver // may be nil
-				df := &GDef{
-					Package: o.Package,
-					Name:    name,
-					Expr:    &FunctionX{fn},
+				gd := &GDef{
+					Name: name,
+					Init: &FunctionX{fn},
 				}
-				o.Funcs[name] = df
+				o.Funcs = append(o.Funcs, gd)
+				o.FuncsMap[name] = gd
 			default:
 				Panicf("Expected top level decl, got %q", d)
 			}
@@ -1350,6 +1361,7 @@ func (val *SimpleValue) ToC() string {
 func (val *SimpleValue) Type() TypeValue {
 	return val.T
 }
+
 func (lval *SimpleLValue) ToC() string {
 	return lval.C
 }
@@ -1358,6 +1370,17 @@ func (lval *SimpleLValue) LToC() string {
 }
 func (lval *SimpleLValue) Type() TypeValue {
 	return lval.T
+}
+
+type ImportValue struct {
+	Name string
+}
+
+func (val *ImportValue) ToC() string {
+	panic(Format("cannot use import %q as a value", val.Name))
+}
+func (val *ImportValue) Type() TypeValue {
+	return ImportTO
 }
 
 func (cg *CGen) LoadModule(name string) *CMod {
@@ -1375,21 +1398,19 @@ func (cg *CGen) LoadModule(name string) *CMod {
 	defer r.Close()
 
 	cm := &CMod{
-		pre:     &cPreMod{},
 		W:       cg.W,
 		Package: name,
 		GDefs:   make(map[string]*GDef),
 		CGen:    cg,
 	}
-	cm.pre.cm = cm
 	cg.Mods[name] = cm
 
 	log.Printf("LoadModule: Parser")
 	p := NewParser(r, filename)
 	p.ParseTop(cm, cg)
-	log.Printf("LoadModule: Visit")
-	cm.BigVisit(p)
-	log.Printf("LoadModule: Done")
+	log.Printf("LoadModule: VisitGlobals")
+	cm.VisitGlobals(p)
+	log.Printf("LoadModule: VisitGlobals Done")
 	return cm
 }
 
@@ -1404,7 +1425,7 @@ func CompileToC(opt *Options, r io.Reader, sourceName string, w io.Writer) {
 
 	cm.P("#include <stdio.h>")
 	cm.P("#include \"runt.h\"")
-	cm.BigVisit(p)
+	cm.VisitGlobals(p)
 }
 
 func Sorted(aMap interface{}) []interface{} {
@@ -1427,62 +1448,134 @@ func Sort(defs []Named) {
 	sort.Sort(NamedSlice(defs))
 }
 
-func (cm *CMod) BigVisit(p *Parser) {
-	/*
-		cm.pre.VisitDefPackage(p.Package)
-		for _, i := range Sorted(p.Imports) {
-			cm.pre.VisitDefImport(i.(*DefImport))
-		}
-		for _, c := range Sorted(p.Consts) {
-			cm.pre.VisitDefConst(c.(*DefConst))
-		}
-		for _, t := range Sorted(p.Types) {
-			cm.pre.VisitDefType(t.(*DefType))
-		}
-		for _, v := range Sorted(p.Vars) {
-			cm.pre.VisitDefVar(v.(*DefVar))
-		}
-		for _, f := range Sorted(p.Funcs) {
-			cm.pre.VisitDefFunc(f.(*DefFunc))
-		}
-
-		cm.VisitDefPackage(p.Package)
-		cm.P("// ..... Imports .....")
-		for _, i := range Sorted(p.Imports) {
-			cm.VisitDefImport(i.(*DefImport))
-		}
-		cm.P("// ..... Consts .....")
-		for _, c := range Sorted(p.Consts) {
-			cm.VisitDefConst(c.(*DefConst))
-		}
-		cm.P("// ..... Types .....")
-		for _, t := range Sorted(p.Types) {
-			cm.VisitDefType(t.(*DefType))
-		}
-		cm.P("// ..... Vars .....")
-		for _, v := range Sorted(p.Vars) {
-			cm.VisitDefVar(v.(*DefVar))
-		}
-		cm.P("// ..... Funcs .....")
-		for _, f := range Sorted(p.Funcs) {
-			cm.VisitDefFunc(f.(*DefFunc))
-		}
-		cm.P("// ..... Done .....")
-
-	*/
-	cm.Flush()
-}
-
-type cPreMod struct {
-	cm *CMod
-	// cg *CGen
-}
-
-func (pre *cPreMod) mustNotExistYet(s string) {
-	if _, ok := pre.cm.GDefs[s]; ok {
+func (cm *CMod) mustNotExistYet(s string) {
+	if _, ok := cm.GDefs[s]; ok {
 		Panicf("redefined global name: %s", s)
 	}
 }
+
+func (cm *CMod) FirstSlotGlobals(p *Parser) {
+	// first visit: Slot the globals.
+	slot := func(g *GDef) {
+		g.Package = cm.Package
+		g.FullName = FullName(g.Package, g.Name)
+		cm.mustNotExistYet(g.FullName)
+	}
+	for _, g := range p.Imports {
+		slot(g)
+	}
+	for _, g := range p.Types {
+		slot(g)
+	}
+	for _, g := range p.Consts {
+		slot(g)
+	}
+	for _, g := range p.Vars {
+		slot(g)
+	}
+	for _, g := range p.Funcs {
+		slot(g)
+	}
+}
+
+func (cm *CMod) SecondBuildGlobals(p *Parser) {
+	for _, g := range p.Imports {
+		cm.CGen.LoadModule(g.Name)
+		g.Value = &ImportValue{g.Name}
+	}
+	for _, g := range p.Types {
+		g.Value = g.Init.VisitExpr(cm)
+	}
+	for _, g := range p.Types {
+		_ = g
+		// CHECK g.Value for completeness?
+	}
+	for _, g := range p.Consts {
+		// not allowing g.Type on constants.
+		g.Value = g.Init.VisitExpr(cm)
+	}
+	for _, g := range p.Vars {
+		typeValue := g.Type.VisitExpr(cm).(TypeValue)
+		g.Value = &SimpleValue{
+			C: g.FullName,
+			T: typeValue,
+		}
+		if g.Init != nil {
+			initS := &AssignS{
+				A:  []Expr{&IdentX{g.FullName}},
+				Op: "=",
+				B:  []Expr{g.Init},
+			}
+			w := cm.W
+			cm.W = cm.I
+			initS.VisitStmt(cm)
+			cm.W = w
+		}
+	}
+	for _, g := range p.Funcs {
+		g.Value = g.Init.VisitExpr(cm)
+	}
+}
+
+func (cm *CMod) ThirdDefineGlobals(p *Parser) {
+	// first visit: Slot the globals.
+	say := func(g *GDef) {
+		P(cm.D, "// == %s ==\n", g.FullName)
+		P(cm.I, "// == %s ==\n", g.FullName)
+		P(cm.W, "// == %s ==\n", g.FullName)
+	}
+	for _, g := range p.Imports {
+		say(g)
+	}
+	for _, g := range p.Types {
+		say(g)
+		P(cm.D, "typedef %s %s;\n", g.Value.(TypeValue).CType(), g.FullName)
+	}
+	for _, g := range p.Consts {
+		say(g)
+		P(cm.D, "%s %s;\n", g.Value.Type().CType(), g.FullName)
+	}
+	for _, g := range p.Vars {
+		say(g)
+		P(cm.D, "%s %s;\n", g.Value.Type().CType(), g.FullName)
+	}
+	for _, g := range p.Funcs {
+		say(g)
+	}
+}
+
+func (cm *CMod) VisitGlobals(p *Parser) {
+	cm.FirstSlotGlobals(p)
+	cm.SecondBuildGlobals(p)
+	cm.ThirdDefineGlobals(p)
+	cm.Flush()
+}
+
+/*
+	cm.VisitDefPackage(p.Package)
+	cm.P("// ..... Imports .....")
+	for _, i := range Sorted(p.Imports) {
+		cm.VisitDefImport(i.(*DefImport))
+	}
+	cm.P("// ..... Consts .....")
+	for _, c := range Sorted(p.Consts) {
+		cm.VisitDefConst(c.(*DefConst))
+	}
+	cm.P("// ..... Types .....")
+	for _, t := range Sorted(p.Types) {
+		cm.VisitDefType(t.(*DefType))
+	}
+	cm.P("// ..... Vars .....")
+	for _, v := range Sorted(p.Vars) {
+		cm.VisitDefVar(v.(*DefVar))
+	}
+	cm.P("// ..... Funcs .....")
+	for _, f := range Sorted(p.Funcs) {
+		cm.VisitDefFunc(f.(*DefFunc))
+	}
+	cm.P("// ..... Done .....")
+
+*/
 
 /*
 func (pre *cPreMod) PreVisitDefPackage(def *DefPackage) {
@@ -1490,7 +1583,6 @@ func (pre *cPreMod) PreVisitDefPackage(def *DefPackage) {
 	pre.cm.Package = def.Name
 	pre.cm.P("\n// PRE VISIT %#v\n", def)
 }
-*/
 func (pre *cPreMod) PreVisitDefImport(def *GDef) {
 	pre.mustNotExistYet(def.Name)
 	pre.cm.GDefs[def.Name] = def
@@ -1554,9 +1646,22 @@ func (pre *cPreMod) PreVisitDefFunc(def *GDef) {
 	pre.cm.P(b.String())
 	pre.cm.P("\n// }}}}} // END Pre def of func: %v\n", def)
 }
+*/
+
+type GDef struct {
+	CGen     *CGen
+	Package  string
+	Name     string
+	FullName string
+	Value    Value // Next resolve global names to Values.
+	Init     Expr  // for Const or Var or Type
+	Type     Expr  // for Var, not yet for Const.
+}
 
 type CMod struct {
-	pre        *cPreMod
+	//pre        *cPreMod
+	D          *bufio.Writer // Non-executable Declarations
+	I          *bufio.Writer // init() body
 	W          *bufio.Writer
 	Package    string
 	GDefs      map[string]*GDef
@@ -1577,13 +1682,15 @@ type CGen struct {
 }
 
 func NewCGen(opt *Options, w io.Writer) *CGen {
+	var defsBuf bytes.Buffer
+	var initBuf bytes.Buffer
 	mainMod := &CMod{
-		pre:     &cPreMod{},
+		D:       bufio.NewWriter(&defsBuf),
+		I:       bufio.NewWriter(&initBuf),
 		W:       bufio.NewWriter(w),
 		Package: "main",
 		GDefs:   make(map[string]*GDef),
 	}
-	mainMod.pre.cm = mainMod
 	cg := &CGen{
 		Mods:    map[string]*CMod{"main": mainMod},
 		W:       mainMod.W,
@@ -1953,25 +2060,6 @@ func (cm *CMod) VisitBlock(a *Block) {
 		e.VisitStmt(cm)
 	}
 }
-
-/*
-func (cm *CMod) VisitDefPackage(def *DefPackage) {
-	cm.P("// package %s", def.Name)
-	cm.Package = def.Name
-}
-func (cm *CMod) VisitDefImport(def *DefImport) {
-	cm.P("// import %s", def.Name)
-}
-func (cm *CMod) VisitDefConst(def *DefConst) {
-	cm.P("// const %s", def.Name)
-}
-func (cm *CMod) VisitDefVar(def *DefVar) {
-	cm.P("%s V_%s__%s; // global var", def.T.CType(), cm.Package, def.Name)
-}
-func (cm *CMod) VisitDefType(def *DefType) {
-	cm.P("// type %s", def.Name)
-}
-*/
 
 type Buf struct {
 	W bytes.Buffer
