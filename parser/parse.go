@@ -7,8 +7,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"reflect"
-	"sort"
 )
 
 var Format = fmt.Sprintf
@@ -1226,7 +1224,7 @@ func (o *Parser) ParseFunc() *FuncRec {
 	return fn
 }
 
-func (o *Parser) ParseTop(cm *CMod, cg *CGen) {
+func (o *Parser) ParseModule(cm *CMod, cg *CGen) {
 LOOP:
 	for {
 		switch o.Kind {
@@ -1402,7 +1400,7 @@ func (cg *CGen) LoadModule(name string) *CMod {
 
 	log.Printf("LoadModule: Parser")
 	p := NewParser(r, filename)
-	p.ParseTop(cm, cg)
+	p.ParseModule(cm, cg)
 	log.Printf("LoadModule: VisitGlobals")
 	cm.VisitGlobals(p)
 	log.Printf("LoadModule: VisitGlobals Done")
@@ -1410,37 +1408,14 @@ func (cg *CGen) LoadModule(name string) *CMod {
 }
 
 func CompileToC(opt *Options, r io.Reader, sourceName string, w io.Writer) {
-	cg := NewCGen(opt, w)
-	// BootstrapModules(cg)
-	cm := cg.Mods["main"]
-	// BootstrapBuiltins(cm)
+	cg, cm := NewCGenAndMainCMod(opt, w)
 	cg.LoadModule("builtin")
 	p := NewParser(r, sourceName)
-	p.ParseTop(cm, cg)
+	p.ParseModule(cm, cg)
 
 	cm.P("#include <stdio.h>")
 	cm.P("#include \"runt.h\"")
 	cm.VisitGlobals(p)
-}
-
-func Sorted(aMap interface{}) []interface{} {
-	var z []interface{}
-
-	for _, key := range reflect.ValueOf(aMap).MapKeys() {
-		value := reflect.ValueOf(aMap).MapIndex(key)
-		z = append(z, value.Interface())
-	}
-
-	sort.Slice(z, func(i, j int) bool { // Less Than function
-		a := reflect.ValueOf(z[i]).Elem().FieldByName("Name").Interface().(string)
-		b := reflect.ValueOf(z[j]).Elem().FieldByName("Name").Interface().(string)
-		return a < b
-	})
-
-	return z
-}
-func Sort(defs []Named) {
-	sort.Sort(NamedSlice(defs))
 }
 
 func (cm *CMod) mustNotExistYet(s string) {
@@ -1477,6 +1452,9 @@ func (cm *CMod) SecondBuildGlobals(p *Parser) {
 	for _, g := range p.Imports {
 		cm.CGen.LoadModule(g.Name)
 		g.Value = &ImportValue{g.Name}
+		// If we care to do imports in order,
+		// this is a good place to rememer it.
+		cm.CGen.ModsInOrder = append(cm.CGen.ModsInOrder, g.Name)
 	}
 	for _, g := range p.Types {
 		g.Value = g.Init.VisitExpr(cm)
@@ -1550,73 +1528,6 @@ func (cm *CMod) VisitGlobals(p *Parser) {
 }
 
 /*
-	cm.VisitDefPackage(p.Package)
-	cm.P("// ..... Imports .....")
-	for _, i := range Sorted(p.Imports) {
-		cm.VisitDefImport(i.(*DefImport))
-	}
-	cm.P("// ..... Consts .....")
-	for _, c := range Sorted(p.Consts) {
-		cm.VisitDefConst(c.(*DefConst))
-	}
-	cm.P("// ..... Types .....")
-	for _, t := range Sorted(p.Types) {
-		cm.VisitDefType(t.(*DefType))
-	}
-	cm.P("// ..... Vars .....")
-	for _, v := range Sorted(p.Vars) {
-		cm.VisitDefVar(v.(*DefVar))
-	}
-	cm.P("// ..... Funcs .....")
-	for _, f := range Sorted(p.Funcs) {
-		cm.VisitDefFunc(f.(*DefFunc))
-	}
-	cm.P("// ..... Done .....")
-
-*/
-
-/*
-func (pre *cPreMod) PreVisitDefPackage(def *DefPackage) {
-	pre.mustNotExistYet(def.Name)
-	pre.cm.Package = def.Name
-	pre.cm.P("\n// PRE VISIT %#v\n", def)
-}
-func (pre *cPreMod) PreVisitDefImport(def *GDef) {
-	pre.mustNotExistYet(def.Name)
-	pre.cm.GDefs[def.Name] = def
-	pre.cm.P("\n// PRE VISIT %#v\n", def)
-	pre.cm.P("\n// MARCO: %s", def.Name)
-	pre.cm.CGen.LoadModule(def.Name)
-	pre.cm.P("\n// POLO: %s", def.Name)
-}
-func (pre *cPreMod) PreVisitDefConst(def *GDef) {
-	pre.mustNotExistYet(def.Name)
-	pre.cm.GDefs[def.Name] = def
-	pre.cm.CGen.GDefs[GlobalName(pre.cm.Package, def.Name)] = def
-	if pre.cm.Package == "builtin" {
-		pre.cm.CGen.GDefs[def.Name] = def
-	}
-	pre.cm.P("\n// PRE VISIT %#v\n", def)
-}
-func (pre *cPreMod) PreVisitDefVar(def *GDef) {
-	pre.mustNotExistYet(def.Name)
-	pre.cm.GDefs[def.Name] = def
-	pre.cm.CGen.GDefs[GlobalName(pre.cm.Package, def.Name)] = def
-	if pre.cm.Package == "builtin" {
-		pre.cm.CGen.GDefs[def.Name] = def
-	}
-	log.Printf("pre visit DefVar: %v => %v", def, pre.cm.GDefs)
-	pre.cm.P("\n// PRE VISIT %#v\n", def)
-}
-func (pre *cPreMod) PreVisitDefType(def *GDef) {
-	pre.mustNotExistYet(def.Name)
-	pre.cm.GDefs[def.Name] = def
-	pre.cm.CGen.GDefs[GlobalName(pre.cm.Package, def.Name)] = def
-	if pre.cm.Package == "builtin" {
-		pre.cm.CGen.GDefs[def.Name] = def
-	}
-	pre.cm.P("\n// PRE VISIT %#v\n", def)
-}
 func (pre *cPreMod) PreVisitDefFunc(def *GDef) {
 	fn := def.Expr.(*FunctionX).FuncRec
 	pre.mustNotExistYet(def.Name)
@@ -1673,10 +1584,11 @@ type CMod struct {
 	*/
 }
 type CGen struct {
-	Mods    map[string]*CMod
-	GDefs   map[string]*GDef
-	Options *Options
-	W       *bufio.Writer
+	Mods        map[string]*CMod
+	ModsInOrder []string
+	GDefs       map[string]*GDef
+	Options     *Options
+	W           *bufio.Writer
 }
 
 func NewCMod(name string, cg *CGen, w io.Writer) *CMod {
@@ -1691,7 +1603,7 @@ func NewCMod(name string, cg *CGen, w io.Writer) *CMod {
 		CGen:    cg,
 	}
 }
-func NewCGen(opt *Options, w io.Writer) *CGen {
+func NewCGenAndMainCMod(opt *Options, w io.Writer) (*CGen, *CMod) {
 	mainMod := NewCMod("main", nil, w)
 	cg := &CGen{
 		Mods:    map[string]*CMod{"main": mainMod},
@@ -1700,7 +1612,7 @@ func NewCGen(opt *Options, w io.Writer) *CGen {
 		GDefs:   make(map[string]*GDef),
 	}
 	mainMod.CGen = cg
-	return cg
+	return cg, mainMod
 }
 func (cm *CMod) P(format string, args ...interface{}) {
 	log.Printf("<<<<< %q >>>>> %q", format, fmt.Sprintf(format, args...))
