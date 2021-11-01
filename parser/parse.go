@@ -1397,12 +1397,7 @@ func (cg *CGen) LoadModule(name string) *CMod {
 	}
 	defer r.Close()
 
-	cm := &CMod{
-		W:       cg.W,
-		Package: name,
-		GDefs:   make(map[string]*GDef),
-		CGen:    cg,
-	}
+	cm := NewCMod(name, cg, cg.W)
 	cg.Mods[name] = cm
 
 	log.Printf("LoadModule: Parser")
@@ -1519,28 +1514,31 @@ func (cm *CMod) SecondBuildGlobals(p *Parser) {
 
 func (cm *CMod) ThirdDefineGlobals(p *Parser) {
 	// first visit: Slot the globals.
-	say := func(g *GDef) {
-		P(cm.D, "// == %s ==\n", g.FullName)
-		P(cm.I, "// == %s ==\n", g.FullName)
-		P(cm.W, "// == %s ==\n", g.FullName)
+	say := func(how string, g *GDef) {
+		println(cm)
+		println(cm.D)
+		println(g)
+		P(cm.D, "// == %s %s ==\n", how, g.FullName)
+		P(cm.I, "// == %s %s ==\n", how, g.FullName)
+		P(cm.W, "// == %s %s ==\n", how, g.FullName)
 	}
 	for _, g := range p.Imports {
-		say(g)
+		say("import", g)
 	}
 	for _, g := range p.Types {
-		say(g)
+		say("type", g)
 		P(cm.D, "typedef %s %s;\n", g.Value.(TypeValue).CType(), g.FullName)
 	}
 	for _, g := range p.Consts {
-		say(g)
+		say("const", g)
 		P(cm.D, "%s %s;\n", g.Value.Type().CType(), g.FullName)
 	}
 	for _, g := range p.Vars {
-		say(g)
+		say("var", g)
 		P(cm.D, "%s %s;\n", g.Value.Type().CType(), g.FullName)
 	}
 	for _, g := range p.Funcs {
-		say(g)
+		say("func", g)
 	}
 }
 
@@ -1681,16 +1679,20 @@ type CGen struct {
 	W       *bufio.Writer
 }
 
-func NewCGen(opt *Options, w io.Writer) *CGen {
+func NewCMod(name string, cg *CGen, w io.Writer) *CMod {
 	var defsBuf bytes.Buffer
 	var initBuf bytes.Buffer
-	mainMod := &CMod{
+	return &CMod{
 		D:       bufio.NewWriter(&defsBuf),
 		I:       bufio.NewWriter(&initBuf),
 		W:       bufio.NewWriter(w),
-		Package: "main",
+		Package: name,
 		GDefs:   make(map[string]*GDef),
+		CGen:    cg,
 	}
+}
+func NewCGen(opt *Options, w io.Writer) *CGen {
+	mainMod := NewCMod("main", nil, w)
 	cg := &CGen{
 		Mods:    map[string]*CMod{"main": mainMod},
 		W:       mainMod.W,
