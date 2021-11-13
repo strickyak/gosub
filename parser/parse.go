@@ -1195,6 +1195,7 @@ func (o *Parser) ParseFunctionSignature(fn *FuncRec) {
 		}
 	}
 	o.TakePunc(")")
+    // this will have to be fixed to parse types
 	if o.Word != "{" && o.Kind != L_EOL {
 		if o.Word == "(" {
 			o.TakePunc("(")
@@ -1407,7 +1408,7 @@ func (cg *CGen) LoadModule(name string) *CMod {
 	return cm
 }
 
-func CompileToC(opt *Options, r io.Reader, sourceName string, w io.Writer) {
+func CompileToC(r io.Reader, sourceName string, w io.Writer, opt *Options) {
 	cg, cm := NewCGenAndMainCMod(opt, w)
 	cg.LoadModule("builtin")
 	p := NewParser(r, sourceName)

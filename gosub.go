@@ -12,8 +12,8 @@ var LibDir = flag.String("libdir", "lib", "where to import libs from")
 
 func main() {
 	flag.Parse()
-	CompileToC(&Options{
+	CompileToC(os.Stdin, "stdin", os.Stdout, &Options{
 		LibDir: *LibDir,
-	}, os.Stdin, "stdin", os.Stdout)
+	})
 	log.Printf("DONE")
 }
