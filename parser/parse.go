@@ -626,27 +626,6 @@ func (o *Block) VisitStmt(v StmtVisitor) {
 }
 
 /*
-func (o *DefPackage) VisitDef(v DefVisitor) {
-	v.VisitDefPackage(o)
-}
-func (o *DefImport) VisitDef(v DefVisitor) {
-	v.VisitDefImport(o)
-}
-func (o *DefConst) VisitDef(v DefVisitor) {
-	v.VisitDefConst(o)
-}
-func (o *DefVar) VisitDef(v DefVisitor) {
-	v.VisitDefVar(o)
-}
-func (o *DefType) VisitDef(v DefVisitor) {
-	v.VisitDefType(o)
-}
-func (o *DefFunc) VisitDef(v DefVisitor) {
-	v.VisitDefFunc(o)
-}
-*/
-
-/*
 const XX_BoolType = "a"
 const XX_ByteType = "b"
 const XX_UintType = "u"
@@ -864,9 +843,11 @@ LOOP:
 }
 
 func (o *Parser) ParsePrimEtc() Expr {
+	// It starts with a Prim.
 	a := o.ParsePrim()
 LOOP:
 	for {
+		// Then it may be followed by something like x(...), x[...], x.f.
 		switch o.Word {
 		case "(":
 			o.TakePunc("(")
