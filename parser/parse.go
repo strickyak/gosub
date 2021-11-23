@@ -29,6 +29,13 @@ func FullName(a string, b string) string {
 	return a + "__" + b
 }
 
+var _serial_prev uint = 100
+
+func Serial(prefix string) string {
+	_serial_prev++
+	return Format("%s_%d", prefix, _serial_prev)
+}
+
 ///////////
 
 type Options struct {
@@ -1464,7 +1471,7 @@ func (cm *CMod) SecondBuildGlobals(p *Parser) {
 		cm.CGen.ModsInOrder = append(cm.CGen.ModsInOrder, g.Name)
 	}
 	for _, g := range p.Types {
-		g.Value = g.Init.VisitExpr(cm)
+		g.Value = g.Init.VisitExpr(cm.QuickCompiler())
 	}
 	for _, g := range p.Types {
 		_ = g
@@ -1472,10 +1479,10 @@ func (cm *CMod) SecondBuildGlobals(p *Parser) {
 	}
 	for _, g := range p.Consts {
 		// not allowing g.Type on constants.
-		g.Value = g.Init.VisitExpr(cm)
+		g.Value = g.Init.VisitExpr(cm.QuickCompiler())
 	}
 	for _, g := range p.Vars {
-		typeValue := g.Type.VisitExpr(cm).(TypeValue)
+		typeValue := g.Type.VisitExpr(cm.QuickCompiler()).(TypeValue)
 		g.Value = &SimpleValue{
 			C: g.FullName,
 			T: typeValue,
@@ -1487,11 +1494,11 @@ func (cm *CMod) SecondBuildGlobals(p *Parser) {
 				Op: "=",
 				B:  []Expr{g.Init},
 			}
-			initS.VisitStmt(cm)
+			initS.VisitStmt(cm.QuickCompiler())
 		}
 	}
 	for _, g := range p.Funcs {
-		g.Value = g.Init.VisitExpr(cm)
+		g.Value = g.Init.VisitExpr(cm.QuickCompiler())
 	}
 }
 
@@ -1530,7 +1537,7 @@ func (cm *CMod) FourthInitGlobals(p *Parser) {
 				B:  []Expr{g.Init},
 			}
 			// Emit initialization of var into init() function.
-			initS.VisitStmt(cm)
+			initS.VisitStmt(cm.QuickCompiler())
 		}
 	}
 	for _, g := range p.Funcs {
@@ -1540,7 +1547,9 @@ func (cm *CMod) FourthInitGlobals(p *Parser) {
 }
 func (cm *CMod) FifthPrintFunctions(p *Parser) {
 	for _, g := range p.Funcs {
-		cm.P("extern %s %s;", "FUNC" /*g.Value.Type().CType()*/, g.FullName)
+		cm.P("////## extern %s %s;", "FUNC" /*g.Value.Type().CType()*/, g.FullName)
+		co := cm.QuickCompiler()
+		co.EmitFunc(g)
 	}
 }
 
@@ -1601,15 +1610,13 @@ type GDef struct {
 }
 
 type CMod struct {
-	defsBuf    bytes.Buffer
-	initBuf    bytes.Buffer
-	D          *bufio.Writer // Non-executable Declarations
-	W          *bufio.Writer
-	Package    string
-	GDefs      map[string]*GDef // by short name
-	BreakTo    string
-	ContinueTo string
-	CGen       *CGen
+	defsBuf bytes.Buffer
+	initBuf bytes.Buffer
+	D       *bufio.Writer // Non-executable Declarations
+	W       *bufio.Writer
+	Package string
+	GDefs   map[string]*GDef // by short name
+	CGen    *CGen
 	/*
 		Structs    []*StructRec
 		Interfaces []*InterfaceRec
@@ -1657,6 +1664,13 @@ func (cm *CMod) Onto(w io.Writer, fn func()) {
 }
 */
 
+func (cm *CMod) QuickCompiler() *Compiler {
+	return &Compiler{
+		CMod: cm,
+		CGen: cm.CGen,
+	}
+}
+
 func (cm *CMod) P(format string, args ...interface{}) {
 	// log.Printf("<<<<< %q >>>>> %q", format, fmt.Sprintf(format, args...))
 	fmt.Fprintf(cm.W, format+"\n", args...)
@@ -1674,87 +1688,99 @@ func AssignNewVar(in NameAndType, out NameAndType) string {
 	panic(Format("Cannot assign from %s (type %s) to %s (type %s)", in.Name, in.TV, out.Name, out.TV))
 }
 
-func (cm *CMod) VisitLvalIdent(x *IdentX) LValue {
-	value := cm.VisitIdent(x)
+type Compiler struct {
+	CMod         *CMod
+	CGen         *CGen
+	BreakTo      string
+	ContinueTo   string
+	CurrentBlock *Block
+}
+
+func (co *Compiler) P(format string, args ...interface{}) {
+	co.CMod.P(format, args...)
+}
+
+func (co *Compiler) VisitLvalIdent(x *IdentX) LValue {
+	value := co.VisitIdent(x)
 	return &SimpleLValue{LC: Format("&(%s)", value.ToC()), T: value.Type()}
 }
-func (cm *CMod) VisitLValSub(x *SubX) LValue {
-	value := cm.VisitSub(x)
+func (co *Compiler) VisitLValSub(x *SubX) LValue {
+	value := co.VisitSub(x)
 	return &SimpleLValue{LC: Format("TODO_LValue(%s)", value.ToC()), T: value.Type()}
 }
-func (cm *CMod) VisitLvalDot(x *DotX) LValue {
-	value := cm.VisitDot(x)
+func (co *Compiler) VisitLvalDot(x *DotX) LValue {
+	value := co.VisitDot(x)
 	return &SimpleLValue{LC: Format("&(%s)", value.ToC()), T: value.Type()}
 }
 
-func (cm *CMod) VisitLitInt(x *LitIntX) Value {
+func (co *Compiler) VisitLitInt(x *LitIntX) Value {
 	return &SimpleValue{
 		C: Format("%d", x.X),
 		T: ConstIntTO,
 	}
 }
-func (cm *CMod) VisitLitString(x *LitStringX) Value {
+func (co *Compiler) VisitLitString(x *LitStringX) Value {
 	return &SimpleValue{
 		C: Format("%q", x.X),
 		T: StringTO,
 	}
 }
-func (cm *CMod) VisitIdent(x *IdentX) Value {
+func (co *Compiler) VisitIdent(x *IdentX) Value {
 	log.Printf("VisitIdent <= %v", x)
-	z := cm._VisitIdent_(x)
+	z := co._VisitIdent_(x)
 	log.Printf("VisitIdent => %#v", z)
 	return z
 }
-func (cm *CMod) _VisitIdent_(x *IdentX) Value {
-	if gd, ok := cm.GDefs[x.X]; ok {
+func (co *Compiler) _VisitIdent_(x *IdentX) Value {
+	if gd, ok := co.CMod.GDefs[x.X]; ok {
 		return gd.Value
 	}
-	if gd, ok := cm.CGen.GDefs[x.X]; ok {
+	if gd, ok := co.CMod.CGen.GDefs[x.X]; ok {
 		return gd.Value
 	}
 	// Else, assume it is a local variable.
 	return &SimpleValue{C: "v_TODO_" + x.X, T: IntTO}
 }
-func (cm *CMod) VisitBinOp(x *BinOpX) Value {
-	a := x.A.VisitExpr(cm)
-	b := x.B.VisitExpr(cm)
+func (co *Compiler) VisitBinOp(x *BinOpX) Value {
+	a := x.A.VisitExpr(co)
+	b := x.B.VisitExpr(co)
 	return &SimpleValue{
 		C: Format("(%s) %s (%s)", a.ToC(), x.Op, b.ToC()),
 		T: IntTO,
 	}
 }
-func (cm *CMod) VisitConstructor(x *ConstructorX) Value {
+func (co *Compiler) VisitConstructor(x *ConstructorX) Value {
 	return &SimpleValue{
 		C: Format("(%s) alloc(C_%s)", x.Name, x.Name),
 		T: &PointerTV{BaseTV{}, &StructTV{BaseTV{x.Name}, nil}},
 	}
 }
-func (cm *CMod) VisitFunction(x *FunctionX) Value {
+func (co *Compiler) VisitFunction(x *FunctionX) Value {
 	return nil // TODO
 }
 
-func (cm *CMod) VisitCall(x *CallX) Value {
+func (co *Compiler) VisitCall(x *CallX) Value {
+	co.CMod.W.Flush()
 	ser := Serial("call")
-	cm.P("// %s: Calling Func: %#v", ser, x.Func)
+	co.P("// %s: Calling Func: %#v", ser, x.Func)
 	for i, a := range x.Args {
-		cm.P("// %s: Calling with Arg [%d]: %#v", ser, i, a)
+		co.P("// %s: Calling with Arg [%d]: %#v", ser, i, a)
 	}
 
-	cm.P("{")
+	co.P("{")
 	log.Printf("x.Func: %#v", x.Func)
-	funcX := x.Func.VisitExpr(cm)
-	_ = funcX // TODO
+	funcVal := x.Func.VisitExpr(co)
+	_ = funcVal // TODO
+
+	log.Printf("funcVal: %#v", funcVal)
+	funcRec := funcVal.(*FunctionX).FuncRec
+	funcname := funcRec.Function.Name
+	c2 := ""
+	c := Format(" %s( fp", funcname)
 
 	/* TODO
-
-		log.Printf("funcX: %#v", funcX)
-		funcRec := funcX.(*DefFunc).FuncRec
-		funcname := funcRec.Function.Name
-		c2 := ""
-		c := Format(" %s( fp", funcname)
-
 		for i, in := range funcRec.Ins {
-			val := x.Args[i].VisitExpr(cm)
+			val := x.Args[i].VisitExpr(co)
 			expectedType := in.TV
 
 			if funcRec.HasDotDotDot && i == len(funcRec.Ins)-1 {
@@ -1764,7 +1790,7 @@ func (cm *CMod) VisitCall(x *CallX) Value {
 				elementT := sliceT.E
 				c2 += Format("Slice %s_in_rest = CreateSlice();", ser)
 				for j := i; j < len(x.Args); j++ {
-					cm.P(AssignNewVar(
+					co.P(AssignNewVar(
 						NameAndType{val.ToC(), val.Type()},
 						NameAndType{Format("%s_in_%d", ser, j), elementT}))
 					c2 += Format("AppendSlice(%d_in_rest,  %s_in_%d);", ser, ser, j)
@@ -1772,20 +1798,20 @@ func (cm *CMod) VisitCall(x *CallX) Value {
 				c += Format("FINISH(%s_in_rest);", ser)
 
 			} else {
-				cm.P(AssignNewVar(
+				co.P(AssignNewVar(
 					NameAndType{val.ToC(), val.Type()},
 					NameAndType{Format("%s_in_%d", ser, i), expectedType}))
-				//##cm.P("  %s %s_in_%d = %s;", in.CType(), ser, i, val.ToC())
+				//##co.P("  %s %s_in_%d = %s;", in.CType(), ser, i, val.ToC())
 				c += Format(", %s_in_%d", ser, i)
 			}
 
 		}
 		for i, out := range funcRec.Outs {
-			cm.P("  %s %s_out_%d;", out.TV.CType(), ser, i)
+			co.P("  %s %s_out_%d;", out.TV.CType(), ser, i)
 			c += Format(", &%s_out_%d", ser, i)
 		}
 		c += " );"
-		cm.P("[[[%s]]]  %s\n} // %s", c2, c, ser)
+		co.P("[[[%s]]]  %s\n} // %s", c2, c, ser)
 
 		switch len(funcRec.Outs) {
 		case 0:
@@ -1799,27 +1825,27 @@ func (cm *CMod) VisitCall(x *CallX) Value {
 	panic("TODO=1733")
 }
 
-func (cm *CMod) VisitSub(x *SubX) Value {
+func (co *Compiler) VisitSub(x *SubX) Value {
 	return &SimpleValue{
 		C: Format("SubXXX(%v)", x),
 		T: IntTO,
 	}
 }
-func (cm *CMod) VisitDot(dot *DotX) Value {
+func (co *Compiler) VisitDot(dot *DotX) Value {
 	log.Printf("VisitDot: <------ %#v", dot)
-	val := dot.X.VisitExpr(cm)
+	val := dot.X.VisitExpr(co)
 	log.Printf("VisitDot: val---- %#v", val)
 	if val.Type() == ImportTO {
 		modName := val.ToC() // is there a better way?
 		println("DOT", modName, dot.Member)
-		otherMod := cm.CGen.Mods[modName] // TODO: import aliases.
+		otherMod := co.CGen.Mods[modName] // TODO: import aliases.
 		println("OM", otherMod)
 		println("GD", otherMod.GDefs)
 		_, ok := otherMod.GDefs[dot.Member]
 		if !ok {
 			panic(Format("cannot find member %s in module %s", dot.Member, modName))
 		}
-		return otherMod.VisitIdent(&IdentX{X: modName})
+		return otherMod.QuickCompiler().VisitIdent(&IdentX{X: modName})
 	}
 
 	z := &SimpleValue{
@@ -1829,8 +1855,8 @@ func (cm *CMod) VisitDot(dot *DotX) Value {
 	log.Printf("VisitDot: Not Import: ----> %v", z)
 	return z
 }
-func (cm *CMod) VisitAssign(ass *AssignS) {
-	cm.P("//## assign..... %v   %v   %v", ass.A, ass.Op, ass.B)
+func (co *Compiler) VisitAssign(ass *AssignS) {
+	co.P("//## assign..... %v   %v   %v", ass.A, ass.Op, ass.B)
 	lenA, lenB := len(ass.A), len(ass.B)
 	_ = lenA
 	_ = lenB // TODO
@@ -1838,7 +1864,7 @@ func (cm *CMod) VisitAssign(ass *AssignS) {
 	// Evalute the rvalues.
 	var rvalues []Value
 	for _, e := range ass.B {
-		rvalues = append(rvalues, e.VisitExpr(cm))
+		rvalues = append(rvalues, e.VisitExpr(co))
 	}
 
 	// If there is just one thing on right, and it is a CallX, set bcall.
@@ -1857,8 +1883,8 @@ func (cm *CMod) VisitAssign(ass *AssignS) {
 			Panicf("operator %v requires one lvalue on the left, got %v", ass.Op, ass.A)
 		}
 		// TODO check lvalue
-		cvar := ass.A[0].VisitExpr(cm).ToC()
-		cm.P("  (%s)%s;", cvar, ass.Op)
+		cvar := ass.A[0].VisitExpr(co).ToC()
+		co.P("  (%s)%s;", cvar, ass.Op)
 
 	case ass.A == nil && bcall == nil:
 		// No assignment.  Just a non-function.  Does this happen?
@@ -1867,7 +1893,7 @@ func (cm *CMod) VisitAssign(ass *AssignS) {
 	case ass.A == nil && bcall != nil:
 		// No assignment.  Just a function call.
 		log.Printf("bcall=%#v", bcall)
-		visited := bcall.VisitExpr(cm)
+		visited := bcall.VisitExpr(co)
 		log.Printf("visited=%#v", visited)
 
 		/* TODO
@@ -1880,40 +1906,40 @@ func (cm *CMod) VisitAssign(ass *AssignS) {
 					panic(Format("Function %s wants %d args, got %d", funcname, len(bcall.Args), lenB))
 				}
 				ser := Serial("call")
-				cm.P("{ // %s", ser)
+				co.P("{ // %s", ser)
 				c := Format(" %s( fp", funcname)
 				for i, in := range funcRec.Ins {
-					val := ass.B[i].VisitExpr(cm)
+					val := ass.B[i].VisitExpr(co)
 					expectedType := in.TV
 					if expectedType != val.Type() {
 						panic(Format("bad type: expected %s, got %s", expectedType, val.Type()))
 					}
-					cm.P("  %s %s_in_%d = %s;", in.TV.CType(), ser, i, val.ToC())
+					co.P("  %s %s_in_%d = %s;", in.TV.CType(), ser, i, val.ToC())
 					c += Format(", %s_in_%d", ser, i)
 				}
 				for i, out := range funcRec.Outs {
-					cm.P("  %s %s_out_%d;", out.TV.CType(), ser, i)
+					co.P("  %s %s_out_%d;", out.TV.CType(), ser, i)
 					c += Format(", &%s_out_%d", ser, i)
 				}
 				c += " );"
-				cm.P("  %s\n} // %s", c, ser)
+				co.P("  %s\n} // %s", c, ser)
 		        TODO */
 	case len(ass.A) > 1 && bcall != nil:
 		// From 1 call, to 2 or more assigned vars.
 		var buf Buf
-		buf.P("((%s)(", bcall.Func.VisitExpr(cm).ToC())
+		buf.P("((%s)(", bcall.Func.VisitExpr(co).ToC())
 		for i, arg := range bcall.Args {
 			if i > 0 {
 				buf.P(", ")
 			}
-			buf.P("%s", arg.VisitExpr(cm).ToC())
+			buf.P("%s", arg.VisitExpr(co).ToC())
 		}
 		for i, arg := range ass.A {
 			if len(bcall.Args)+i > 0 {
 				buf.P(", ")
 			}
 			// TODO -- VisitAddr ?
-			buf.P("&(%s)", arg.VisitExpr(cm).ToC())
+			buf.P("&(%s)", arg.VisitExpr(co).ToC())
 		}
 		buf.P("))")
 	default:
@@ -1929,11 +1955,11 @@ func (cm *CMod) VisitAssign(ass *AssignS) {
 				case "=":
 					// TODO check Globals
 					cvar := "v_" + t.X
-					cm.P("  %s = (%s)(%s);", cvar, val.Type().CType(), val.ToC())
+					co.P("  %s = (%s)(%s);", cvar, val.Type().CType(), val.ToC())
 				case ":=":
 					// TODO check Globals
 					cvar := Format("%s %s", val.Type().CType(), "v_"+t.X)
-					cm.P("  %s = (%s)(%s);", cvar, val.Type().CType(), val.ToC())
+					co.P("  %s = (%s)(%s);", cvar, val.Type().CType(), val.ToC())
 				}
 			default:
 				log.Fatal("bad VisitAssign LHS: %#v", ass.A)
@@ -1941,81 +1967,84 @@ func (cm *CMod) VisitAssign(ass *AssignS) {
 		}
 	} // switch
 }
-func (cm *CMod) VisitReturn(ret *ReturnS) {
+func (co *Compiler) VisitReturn(ret *ReturnS) {
 	log.Printf("return..... %v", ret.X)
 	switch len(ret.X) {
 	case 0:
-		cm.P("  return;")
+		co.P("  return;")
 	case 1:
-		val := ret.X[0].VisitExpr(cm)
+		val := ret.X[0].VisitExpr(co)
 		log.Printf("return..... val=%v", val)
-		cm.P("  return %s;", val.ToC())
+		co.P("  return %s;", val.ToC())
 	default:
 		Panicf("multi-return not imp: %v", ret)
 	}
 }
-func (cm *CMod) VisitWhile(wh *WhileS) {
+func (co *Compiler) VisitWhile(wh *WhileS) {
 	label := Serial("while")
-	cm.P("Break_%s:  while(1) {", label)
+	co.P("Break_%s:  while(1) {", label)
 	if wh.Pred != nil {
-		cm.P("    t_bool _while_ = (t_bool)(%s);", wh.Pred.VisitExpr(cm).ToC())
-		cm.P("    if (!_while_) break;")
+		co.P("    t_bool _while_ = (t_bool)(%s);", wh.Pred.VisitExpr(co).ToC())
+		co.P("    if (!_while_) break;")
 	}
-	savedB, savedC := cm.BreakTo, cm.ContinueTo
-	cm.BreakTo, cm.ContinueTo = "Break_"+label, "Cont_"+label
-	wh.Body.VisitStmt(cm)
-	cm.P("  }")
-	cm.P("Cont_%s: {}", label)
-	cm.BreakTo, cm.ContinueTo = savedB, savedC
+	savedB, savedC := co.BreakTo, co.ContinueTo
+	co.BreakTo, co.ContinueTo = "Break_"+label, "Cont_"+label
+	wh.Body.VisitStmt(co)
+	co.P("  }")
+	co.P("Cont_%s: {}", label)
+	co.BreakTo, co.ContinueTo = savedB, savedC
 }
-func (cm *CMod) VisitBreak(sws *BreakS) {
-	if cm.BreakTo == "" {
+func (co *Compiler) VisitBreak(sws *BreakS) {
+	if co.BreakTo == "" {
 		Panicf("cannot break from here")
 	}
-	cm.P("goto %s;", cm.BreakTo)
+	co.P("goto %s;", co.BreakTo)
 }
-func (cm *CMod) VisitContinue(sws *ContinueS) {
-	if cm.ContinueTo == "" {
+func (co *Compiler) VisitContinue(sws *ContinueS) {
+	if co.ContinueTo == "" {
 		Panicf("cannot continue from here")
 	}
-	cm.P("goto %s;", cm.ContinueTo)
+	co.P("goto %s;", co.ContinueTo)
 }
-func (cm *CMod) VisitIf(ifs *IfS) {
-	cm.P("  { t_bool _if_ = %s;", ifs.Pred.VisitExpr(cm).ToC())
-	cm.P("  if( _if_ ) {")
-	ifs.Yes.VisitStmt(cm)
+func (co *Compiler) VisitIf(ifs *IfS) {
+	co.P("  { t_bool _if_ = %s;", ifs.Pred.VisitExpr(co).ToC())
+	co.P("  if( _if_ ) {")
+	ifs.Yes.VisitStmt(co)
 	if ifs.No != nil {
-		cm.P("  } else {")
-		ifs.No.VisitStmt(cm)
+		co.P("  } else {")
+		ifs.No.VisitStmt(co)
 	}
-	cm.P("  }}")
+	co.P("  }}")
 }
-func (cm *CMod) VisitSwitch(sws *SwitchS) {
-	cm.P("  { t_int _switch_ = %s;", sws.Switch.VisitExpr(cm).ToC())
+func (co *Compiler) VisitSwitch(sws *SwitchS) {
+	co.P("  { t_int _switch_ = %s;", sws.Switch.VisitExpr(co).ToC())
 	for _, c := range sws.Cases {
-		cm.P("  if (")
+		co.P("  if (")
 		for _, m := range c.Matches {
-			cm.P("_switch_ == %s ||", m.VisitExpr(cm).ToC())
+			co.P("_switch_ == %s ||", m.VisitExpr(co).ToC())
 		}
-		cm.P("      0 ) {")
-		c.Body.VisitStmt(cm)
-		cm.P("  } else ")
+		co.P("      0 ) {")
+		c.Body.VisitStmt(co)
+		co.P("  } else ")
 	}
-	cm.P("  {")
+	co.P("  {")
 	if sws.Default != nil {
-		sws.Default.VisitStmt(cm)
+		sws.Default.VisitStmt(co)
 	}
-	cm.P("  }")
-	cm.P("  }")
+	co.P("  }")
+	co.P("  }")
 }
-func (cm *CMod) VisitBlock(a *Block) {
+func (co *Compiler) VisitBlock(a *Block) {
 	if a == nil {
 		panic(8881)
 	}
+	prevBlock := co.CurrentBlock
+	co.CurrentBlock = a
 	for i, e := range a.Stmts {
 		log.Printf("VisitBlock[%d]", i)
-		e.VisitStmt(cm)
+		e.VisitStmt(co)
 	}
+	co.CurrentBlock = prevBlock
 }
 
 type Buf struct {
@@ -2029,13 +2058,13 @@ func (buf *Buf) String() string {
 	return buf.W.String()
 }
 
-/* TODO
-func (cm *CMod) VisitDefFunc(def *DefFunc) {
-	fn := def.FuncRec
+func (co *Compiler) EmitFunc(def *GDef) {
+	fn := def.Init.(*FunctionX).FuncRec
 	//fn.Body = &Block{FuncRec: fn}
 	log.Printf("// func %s: %#v", def.Name, def)
-	var b Buf
-	cfunc := Format("F_%s__%s", cm.Package, def.Name)
+	//// var b Buf
+	b := co
+	cfunc := Format("F_%s__%s", co.CMod.Package, def.Name)
 	b.P("void %s(", cfunc)
 	if len(fn.Ins) > 0 {
 		firstTime := true
@@ -2049,20 +2078,12 @@ func (cm *CMod) VisitDefFunc(def *DefFunc) {
 	}
 	if fn.Body != nil {
 		b.P(") {\n")
-		cm.P(b.String())
-		fn.Body.VisitStmt(cm)
-		cm.P("}\n")
+		// cm.P(b.String())
+		fn.Body.VisitStmt(co)
+		b.P("}\n")
 	} else {
 		b.P("); //NATIVE//\n")
 	}
-}
-    TODO */
-
-var SerialNum uint
-
-func Serial(prefix string) string {
-	SerialNum++
-	return Format("%s_%d", prefix, SerialNum)
 }
 
 ///////////////////////////////////////////////////////////
