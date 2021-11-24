@@ -13,6 +13,7 @@ import (
 
 var Format = fmt.Sprintf
 var P = fmt.Fprintf
+var L = log.Printf
 
 // #################################################
 
@@ -36,6 +37,12 @@ var _serial_prev uint = 100
 func Serial(prefix string) string {
 	_serial_prev++
 	return Format("%s_%d", prefix, _serial_prev)
+}
+func SerialIfEmpty(s string) string {
+	if len(s) > 0 {
+		return s
+	}
+	return Serial("empty")
 }
 
 func FindTypeByName(list []NameAndType, name string) (TypeValue, bool) {
@@ -177,17 +184,17 @@ func (tv *FunctionTV) Type() TypeValue  { return &TypeTV{} }
 func (tv *ImportTV) Type() TypeValue    { return &TypeTV{} }
 func (tv *MultiTV) Type() TypeValue     { return &TypeTV{} }
 
-func (tv *PrimTV) ToC() string      { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
-func (tv *TypeTV) ToC() string      { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
-func (tv *PointerTV) ToC() string   { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
-func (tv *SliceTV) ToC() string     { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
-func (tv *MapTV) ToC() string       { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
-func (tv *ForwardTV) ToC() string   { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
-func (tv *StructTV) ToC() string    { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
-func (tv *InterfaceTV) ToC() string { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
-func (tv *FunctionTV) ToC() string  { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
-func (tv *ImportTV) ToC() string    { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
-func (tv *MultiTV) ToC() string     { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
+func (tv *PrimTV) ToC() string      { return strings.Title(tv.Name) }
+func (tv *TypeTV) ToC() string      { return Format("ZType(%s)", tv.Name) }
+func (tv *PointerTV) ToC() string   { return Format("ZPointer(%s)", tv.E.ToC()) }
+func (tv *SliceTV) ToC() string     { return Format("ZSlice(%s)", tv.E.ToC()) }
+func (tv *MapTV) ToC() string       { return Format("ZMap(%s, %s)", tv.K.ToC(), tv.V.ToC()) }
+func (tv *ForwardTV) ToC() string   { return Format("ZForwardTV(%s)", tv.Name) }
+func (tv *StructTV) ToC() string    { return Format("ZStruct(%s)", tv.Name) }
+func (tv *InterfaceTV) ToC() string { return Format("ZInterface(%s)", tv.Name) }
+func (tv *FunctionTV) ToC() string  { return Format("ZFunction(%s)", tv.FuncRec.Signature("(*)")) }
+func (tv *ImportTV) ToC() string    { return Format("ZImport(%s)", tv.Name) }
+func (tv *MultiTV) ToC() string     { return Format("ZMulti(...)") }
 
 func (o *BaseTV) Intlike() bool { return false }
 func (o *PrimTV) Intlike() bool {
@@ -246,13 +253,14 @@ func (o *PointerTV) TypeOfHandle() (z string, ok bool) {
 	return "", false
 }
 
-func (o *BaseTV) CType() string      { return "TODO" }
+func (o *BaseTV) CType() string      { return "TODO(BaseTV.CType)" }
 func (o *PrimTV) CType() string      { return PrimTypeCMap[o.Name] }
 func (o *SliceTV) CType() string     { return "Slice" }
 func (o *MapTV) CType() string       { return "Map" }
 func (o *StructTV) CType() string    { return "Struct" }
 func (o *PointerTV) CType() string   { return "Pointer" }
 func (o *InterfaceTV) CType() string { return "Interface" }
+func (o *FunctionTV) CType() string  { return o.FuncRec.Signature("(*)") }
 
 func (o *BaseTV) Assign(c string, typ TypeValue) (z string, ok bool) { panic("todo") }
 func (o *PrimTV) Assign(c string, typ TypeValue) (z string, ok bool) {
@@ -646,6 +654,36 @@ type FuncRec struct {
 	Body         *Block
 }
 
+func (r *FuncRec) Signature(daFunc string) string {
+	var b bytes.Buffer
+	if len(r.Outs) == 1 {
+		L("one out: %s", r.Outs[0].TV.ToC())
+		P(&b, "%s ", r.Outs[0].TV.ToC())
+	} else {
+		P(&b, "void ")
+	}
+	P(&b, "%s(", daFunc)
+	for i, nat := range r.Ins {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		L("in [%d]: %s", i, nat.TV.ToC())
+		P(&b, "%s in_%s", nat.TV.ToC(), SerialIfEmpty(nat.Name))
+	}
+	if len(r.Outs) != 1 {
+		for i, nat := range r.Outs {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			L("out [%d]: %s", i, nat.TV.ToC())
+			P(&b, "%s *out_%s", nat.TV.ToC(), SerialIfEmpty(nat.Name))
+		}
+	}
+	b.WriteByte(')')
+	L("Signature: %s", b.String())
+	return b.String()
+}
+
 type StructRec struct {
 	Name   string
 	Fields []NameAndType
@@ -771,17 +809,20 @@ var ErrorTO = &InterfaceTV{
 		},
 	},
 }
-var BoolTO = &PrimTV{BaseTV{"bool"}}
-var ByteTO = &PrimTV{BaseTV{"byte"}}
-var ConstIntTO = &PrimTV{BaseTV{"_const_int_"}}
-var IntTO = &PrimTV{BaseTV{"int"}}
-var UintTO = &PrimTV{BaseTV{"uint"}}
-var StringTO = &PrimTV{BaseTV{"string"}}
-var TypeTO = &PrimTV{BaseTV{"_type_"}}
-var ImportTO = &PrimTV{BaseTV{"_import_"}}
-var ListTO = &PrimTV{BaseTV{"_list_"}}
-var VoidTO = &PrimTV{BaseTV{"_void_"}}
 
+// TODO ???
+var BoolTO = &PrimTV{BaseTV{"P_Bool"}}
+var ByteTO = &PrimTV{BaseTV{"P_Byte"}}
+var ConstIntTO = &PrimTV{BaseTV{"P_ConstInt"}}
+var IntTO = &PrimTV{BaseTV{"P_Int"}}
+var UintTO = &PrimTV{BaseTV{"P_Uint"}}
+var StringTO = &PrimTV{BaseTV{"P_String"}}
+var TypeTO = &PrimTV{BaseTV{"P_Type"}}
+var ImportTO = &PrimTV{BaseTV{"P_Import"}}
+var ListTO = &PrimTV{BaseTV{"P_List"}}
+var VoidTO = &PrimTV{BaseTV{"P_Void"}}
+
+// Mapping primative Go type names to Type Objects.
 var PrimTypeObjMap = map[string]TypeValue{
 	"bool":        BoolTO,
 	"byte":        ByteTO,
@@ -1613,9 +1654,11 @@ func (cm *CMod) FourthInitGlobals(p *Parser) {
 }
 func (cm *CMod) FifthPrintFunctions(p *Parser) {
 	for _, g := range p.Funcs {
-		cm.P("// Fifth %s %s;", "FUNC" /*g.Value.Type().CType()*/, g.FullName)
+		cm.P("// Fifth FUNC: %T %s %q;", g.Value.Type(), g.Value.Type().CType(), g.FullName)
 		co := cm.QuickCompiler(g)
 		co.EmitFunc(g)
+		cm.P(co.Buf.String())
+		cm.Flush()
 	}
 }
 
@@ -2193,38 +2236,28 @@ type Buf struct {
 	W bytes.Buffer
 }
 
+func (buf *Buf) A(s string) {
+	buf.W.WriteString(s)
+	buf.W.WriteByte('\n')
+}
 func (buf *Buf) P(format string, args ...interface{}) {
 	fmt.Fprintf(&buf.W, format, args...)
+	buf.W.WriteByte('\n')
 }
 func (buf *Buf) String() string {
 	return buf.W.String()
 }
 
 func (co *Compiler) EmitFunc(def *GDef) {
-	fn := def.Init.(*FunctionX).FuncRec
-	//fn.Body = &Block{FuncRec: fn}
-	log.Printf("// func %s: %#v", def.Name, def)
-	//// var b Buf
-	b := co
-	cfunc := Format("F_%s__%s", co.CMod.Package, def.Name)
-	b.P("void %s(", cfunc)
-	if len(fn.Ins) > 0 {
-		firstTime := true
-		for _, name_and_type := range fn.Ins {
-			if !firstTime {
-				b.P(", ")
-			}
-			b.P("%s %s", name_and_type.TV.CType(), "v_"+name_and_type.Name)
-			firstTime = false
-		}
-	}
-	if fn.Body != nil {
-		b.P(") {\n")
-		// cm.P(b.String())
-		fn.Body.VisitStmt(co)
-		b.P("}\n")
+	rec := def.Init.(*FunctionX).FuncRec
+	co.P(rec.Signature(def.FullName))
+
+	if rec.Body != nil {
+		co.P("{\n")
+		rec.Body.VisitStmt(co)
+		co.P("\n}\n")
 	} else {
-		b.P("); //NATIVE//\n")
+		co.P("; //EmitFunc: NATIVE\n")
 	}
 }
 
