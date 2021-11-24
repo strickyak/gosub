@@ -7,6 +7,8 @@ import (
 	"io"
 	"log"
 	"os"
+	"reflect"
+	"strings"
 )
 
 var Format = fmt.Sprintf
@@ -34,6 +36,19 @@ var _serial_prev uint = 100
 func Serial(prefix string) string {
 	_serial_prev++
 	return Format("%s_%d", prefix, _serial_prev)
+}
+
+func FindTypeByName(list []NameAndType, name string) (TypeValue, bool) {
+	log.Printf("Finding %q in list of len=%d", name, len(list))
+	for _, nat := range list {
+		log.Printf("Found %q? { %q ; %s }", name, nat.Name, nat.TV.String())
+		if nat.Name == name {
+			log.Printf("YES")
+			return nat.TV, true
+		}
+	}
+	log.Printf("NO")
+	return nil, false
 }
 
 ///////////
@@ -91,7 +106,7 @@ type TypeValue interface {
 	Value
 	Intlike() bool
 	CType() string
-	HandleType() (z string, ok bool)
+	TypeOfHandle() (z string, ok bool)
 	Assign(c string, typ TypeValue) (z string, ok bool)
 	Cast(c string, typ TypeValue) (z string, ok bool)
 	Equal(typ TypeValue) bool
@@ -144,7 +159,12 @@ type ForwardTV struct {
 	Package string
 	Name    string
 }
+type MultiTV struct {
+	BaseTV
+	Multi []NameAndType
+}
 
+// Type values have type TypeTV (the metatype).
 func (tv *PrimTV) Type() TypeValue      { return &TypeTV{} }
 func (tv *TypeTV) Type() TypeValue      { return &TypeTV{} }
 func (tv *PointerTV) Type() TypeValue   { return &TypeTV{} }
@@ -155,8 +175,19 @@ func (tv *StructTV) Type() TypeValue    { return &TypeTV{} }
 func (tv *InterfaceTV) Type() TypeValue { return &TypeTV{} }
 func (tv *FunctionTV) Type() TypeValue  { return &TypeTV{} }
 func (tv *ImportTV) Type() TypeValue    { return &TypeTV{} }
+func (tv *MultiTV) Type() TypeValue     { return &TypeTV{} }
 
-func (tv *BaseTV) ToC() string { panic("cant") }
+func (tv *PrimTV) ToC() string      { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
+func (tv *TypeTV) ToC() string      { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
+func (tv *PointerTV) ToC() string   { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
+func (tv *SliceTV) ToC() string     { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
+func (tv *MapTV) ToC() string       { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
+func (tv *ForwardTV) ToC() string   { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
+func (tv *StructTV) ToC() string    { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
+func (tv *InterfaceTV) ToC() string { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
+func (tv *FunctionTV) ToC() string  { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
+func (tv *ImportTV) ToC() string    { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
+func (tv *MultiTV) ToC() string     { return Format("@TypeValue(\"%T\", %q)", *tv, tv.String()) }
 
 func (o *BaseTV) Intlike() bool { return false }
 func (o *PrimTV) Intlike() bool {
@@ -203,9 +234,12 @@ func (o *StructTV) Equal(typ TypeValue) bool {
 	}
 	return false
 }
+func (o *MultiTV) Equal(typ TypeValue) bool {
+	panic("cannot compare MultiTV")
+}
 
-func (o *BaseTV) HandleType() (z string, ok bool) { return "", false }
-func (o *PointerTV) HandleType() (z string, ok bool) {
+func (o *BaseTV) TypeOfHandle() (z string, ok bool) { return "", false }
+func (o *PointerTV) TypeOfHandle() (z string, ok bool) {
 	if st, ok := o.E.(*StructTV); ok {
 		return st.Name, true
 	}
@@ -257,7 +291,7 @@ func (o *PointerTV) Assign(c string, typ TypeValue) (z string, ok bool) {
 	}
 }
 func (o *InterfaceTV) Assign(c string, typ TypeValue) (z string, ok bool) {
-	if _, ok := typ.HandleType(); ok {
+	if _, ok := typ.TypeOfHandle(); ok {
 		// TODO: check compat
 		return Format("HandleToInterface(%s)", c), true
 	}
@@ -324,7 +358,9 @@ func (tv *StructTV) String() string    { return Format("%T(%#v)", *tv, *tv) }
 func (tv *InterfaceTV) String() string { return Format("%T(%#v)", *tv, *tv) }
 func (tv *FunctionTV) String() string  { return Format("%T(%#v)", *tv, *tv) }
 func (tv *ImportTV) String() string    { return Format("%T(%#v)", *tv, *tv) }
+func (tv *MultiTV) String() string     { return Format("%T(%#v)", *tv, *tv) }
 
+// TypeValues are expressions that evalute to themselves (they are Expr and Value).
 func (tv *PrimTV) VisitExpr(v ExprVisitor) Value      { return tv }
 func (tv *TypeTV) VisitExpr(v ExprVisitor) Value      { return tv }
 func (tv *PointerTV) VisitExpr(v ExprVisitor) Value   { return tv }
@@ -335,6 +371,7 @@ func (tv *StructTV) VisitExpr(v ExprVisitor) Value    { return tv }
 func (tv *InterfaceTV) VisitExpr(v ExprVisitor) Value { return tv }
 func (tv *FunctionTV) VisitExpr(v ExprVisitor) Value  { return tv }
 func (tv *ImportTV) VisitExpr(v ExprVisitor) Value    { return tv }
+func (tv *MultiTV) VisitExpr(v ExprVisitor) Value     { return tv }
 
 type LitIntX struct {
 	X int
@@ -422,6 +459,8 @@ func (o *FunctionX) String() string {
 	return fmt.Sprintf("Function(%s)", o.FuncRec)
 }
 func (o *FunctionX) VisitExpr(v ExprVisitor) Value {
+	log.Printf("439: FunctionX=%#v", o)
+	log.Printf("439: FuncRec=%#v", o.FuncRec)
 	return v.VisitFunction(o)
 }
 
@@ -610,11 +649,12 @@ type FuncRec struct {
 type StructRec struct {
 	Name   string
 	Fields []NameAndType
+	Meths  []NameAndType
 }
 
 type InterfaceRec struct {
-	Name   string
-	Fields []NameAndType
+	Name  string
+	Meths []NameAndType
 }
 
 type NameAndType struct {
@@ -719,14 +759,14 @@ var DotDotDotAnyTO = &DotDotDotSliceTV{BaseTV{"?"}, InterfaceAnyTO}
 
 var InterfaceAnyTO = &InterfaceTV{
 	InterfaceRec: &InterfaceRec{
-		Name:   "interface{}",
-		Fields: []NameAndType{},
+		Name:  "interface{}",
+		Meths: []NameAndType{},
 	},
 }
 var ErrorTO = &InterfaceTV{
 	InterfaceRec: &InterfaceRec{
-		Name:   "error",
-		Fields: []NameAndType{
+		Name:  "error",
+		Meths: []NameAndType{
 			// TODO: Error func() string
 		},
 	},
@@ -999,7 +1039,7 @@ LOOP:
 			sig := &FuncRec{}
 			o.ParseFunctionSignature(sig)
 			fieldType := &FunctionTV{BaseTV{fieldName}, sig}
-			def.Fields = append(def.Fields, NameAndType{fieldName, fieldType})
+			def.Meths = append(def.Meths, NameAndType{fieldName, fieldType})
 		case L_EOL:
 			o.Next()
 		case L_Punc:
@@ -1241,7 +1281,7 @@ LOOP:
 			case "package":
 				w := o.TakeIdent()
 				if w != cm.Package {
-					panic(Format("Expected package %s, got %s", cm.Package, w))
+					log.Printf("WARNING: Expected package %s, got %s", cm.Package, w)
 				}
 				o.Package = w
 			case "import":
@@ -1257,12 +1297,17 @@ LOOP:
 				o.ImportsMap[w] = gd
 			case "const":
 				w := o.TakeIdent()
+				var t TypeValue
+				if o.Word != "=" {
+					t = o.ParseType()
+				}
 				o.TakePunc("=")
 				x := o.ParseExpr()
 				gd := &GDef{
 					Package: o.Package,
 					Name:    w,
 					Init:    x,
+					Type:    t,
 				}
 				o.Consts = append(o.Consts, gd)
 				o.ConstsMap[w] = gd
@@ -1325,6 +1370,26 @@ LOOP:
 					Name:    name,
 					Init:    &FunctionX{fn},
 				}
+				if receiver != nil {
+					structName := ""
+					switch t := receiver.TV.(*PointerTV).E.(type) {
+					case *ForwardTV:
+						gd.Name = Format("%s__%s", t.Name, name)
+						structName = t.Name
+					case *StructTV:
+						gd.Name = Format("%s__%s", t.Name, name)
+						structName = t.Name
+					default:
+						panic(Format("bad E? %T :: %#v", receiver.TV.(*PointerTV).E, receiver.TV.(*PointerTV).E))
+					}
+					structGDef := o.TypesMap[structName]
+					structType := structGDef.Init.(*StructTV)
+					structRec := structType.StructRec
+					structRec.Meths = append(structRec.Meths, NameAndType{
+						name,
+						&FunctionTV{BaseTV{"meth:" + gd.Name}, gd.Init.(*FunctionX).FuncRec},
+					})
+				}
 				o.Funcs = append(o.Funcs, gd)
 				o.FuncsMap[name] = gd
 			default:
@@ -1385,7 +1450,7 @@ type ImportValue struct {
 }
 
 func (val *ImportValue) ToC() string {
-	panic(Format("cannot use import %q as a value", val.Name))
+	return Format("@Import(%q)", val.Name)
 }
 func (val *ImportValue) Type() TypeValue {
 	return ImportTO
@@ -1442,8 +1507,9 @@ func (cm *CMod) FirstSlotGlobals(p *Parser) {
 	// first visit: Slot the globals.
 	slot := func(g *GDef) {
 		g.Package = cm.Package
+		cm.mustNotExistYet(g.Name)
+		cm.GDefs[g.Name] = g
 		g.FullName = FullName(g.Package, g.Name)
-		cm.mustNotExistYet(g.FullName)
 	}
 	for _, g := range p.Imports {
 		slot(g)
@@ -1471,7 +1537,7 @@ func (cm *CMod) SecondBuildGlobals(p *Parser) {
 		cm.CGen.ModsInOrder = append(cm.CGen.ModsInOrder, g.Name)
 	}
 	for _, g := range p.Types {
-		g.Value = g.Init.VisitExpr(cm.QuickCompiler())
+		g.Value = g.Init.VisitExpr(cm.QuickCompiler(g))
 	}
 	for _, g := range p.Types {
 		_ = g
@@ -1479,10 +1545,10 @@ func (cm *CMod) SecondBuildGlobals(p *Parser) {
 	}
 	for _, g := range p.Consts {
 		// not allowing g.Type on constants.
-		g.Value = g.Init.VisitExpr(cm.QuickCompiler())
+		g.Value = g.Init.VisitExpr(cm.QuickCompiler(g))
 	}
 	for _, g := range p.Vars {
-		typeValue := g.Type.VisitExpr(cm.QuickCompiler()).(TypeValue)
+		typeValue := g.Type.VisitExpr(cm.QuickCompiler(g)).(TypeValue)
 		g.Value = &SimpleValue{
 			C: g.FullName,
 			T: typeValue,
@@ -1494,11 +1560,11 @@ func (cm *CMod) SecondBuildGlobals(p *Parser) {
 				Op: "=",
 				B:  []Expr{g.Init},
 			}
-			initS.VisitStmt(cm.QuickCompiler())
+			initS.VisitStmt(cm.QuickCompiler(g))
 		}
 	}
 	for _, g := range p.Funcs {
-		g.Value = g.Init.VisitExpr(cm.QuickCompiler())
+		g.Value = g.Init.VisitExpr(cm.QuickCompiler(g))
 	}
 }
 
@@ -1537,7 +1603,7 @@ func (cm *CMod) FourthInitGlobals(p *Parser) {
 				B:  []Expr{g.Init},
 			}
 			// Emit initialization of var into init() function.
-			initS.VisitStmt(cm.QuickCompiler())
+			initS.VisitStmt(cm.QuickCompiler(g))
 		}
 	}
 	for _, g := range p.Funcs {
@@ -1547,8 +1613,8 @@ func (cm *CMod) FourthInitGlobals(p *Parser) {
 }
 func (cm *CMod) FifthPrintFunctions(p *Parser) {
 	for _, g := range p.Funcs {
-		cm.P("////## extern %s %s;", "FUNC" /*g.Value.Type().CType()*/, g.FullName)
-		co := cm.QuickCompiler()
+		cm.P("// Fifth %s %s;", "FUNC" /*g.Value.Type().CType()*/, g.FullName)
+		co := cm.QuickCompiler(g)
 		co.EmitFunc(g)
 	}
 }
@@ -1664,11 +1730,8 @@ func (cm *CMod) Onto(w io.Writer, fn func()) {
 }
 */
 
-func (cm *CMod) QuickCompiler() *Compiler {
-	return &Compiler{
-		CMod: cm,
-		CGen: cm.CGen,
-	}
+func (cm *CMod) QuickCompiler(gdef *GDef) *Compiler {
+	return NewCompiler(cm, gdef)
 }
 
 func (cm *CMod) P(format string, args ...interface{}) {
@@ -1688,17 +1751,37 @@ func AssignNewVar(in NameAndType, out NameAndType) string {
 	panic(Format("Cannot assign from %s (type %s) to %s (type %s)", in.Name, in.TV, out.Name, out.TV))
 }
 
+type DeferRec struct {
+	ToDo string
+}
+
 type Compiler struct {
 	CMod         *CMod
 	CGen         *CGen
+	GDef         *GDef
 	BreakTo      string
 	ContinueTo   string
 	CurrentBlock *Block
+	Locals       map[string]TypeValue
+	Defers       []*DeferRec
+	Buf          bytes.Buffer
+}
+
+func NewCompiler(cm *CMod, gdef *GDef) *Compiler {
+	return &Compiler{
+		CMod:   cm,
+		CGen:   cm.CGen,
+		GDef:   gdef,
+		Locals: make(map[string]TypeValue),
+	}
 }
 
 func (co *Compiler) P(format string, args ...interface{}) {
-	co.CMod.P(format, args...)
+	fmt.Fprintf(&co.Buf, format, args...)
+	co.Buf.WriteByte('\n')
 }
+
+// Compiler for LValues
 
 func (co *Compiler) VisitLvalIdent(x *IdentX) LValue {
 	value := co.VisitIdent(x)
@@ -1712,6 +1795,8 @@ func (co *Compiler) VisitLvalDot(x *DotX) LValue {
 	value := co.VisitDot(x)
 	return &SimpleLValue{LC: Format("&(%s)", value.ToC()), T: value.Type()}
 }
+
+// Compiler for Expressions
 
 func (co *Compiler) VisitLitInt(x *LitIntX) Value {
 	return &SimpleValue{
@@ -1732,9 +1817,15 @@ func (co *Compiler) VisitIdent(x *IdentX) Value {
 	return z
 }
 func (co *Compiler) _VisitIdent_(x *IdentX) Value {
+	log.Printf("_VisitIdent(%q) looks CMod: %#v", x.X, co.CMod.GDefs)
 	if gd, ok := co.CMod.GDefs[x.X]; ok {
 		return gd.Value
 	}
+	log.Printf("_VisitIdent(%q) looks BuiltinMod: %#v", x.X, co.CMod.CGen.BuiltinMod.GDefs)
+	if gd, ok := co.CMod.CGen.BuiltinMod.GDefs[x.X]; ok {
+		return gd.Value
+	}
+	log.Printf("_VisitIdent(%q) looks CGen: %#v", x.X, co.CMod.CGen.GDefs)
 	if gd, ok := co.CMod.CGen.GDefs[x.X]; ok {
 		return gd.Value
 	}
@@ -1756,7 +1847,8 @@ func (co *Compiler) VisitConstructor(x *ConstructorX) Value {
 	}
 }
 func (co *Compiler) VisitFunction(x *FunctionX) Value {
-	return nil // TODO
+	return &SimpleValue{"TODO:1794", &FunctionTV{BaseTV{co.GDef.FullName}, x.FuncRec}}
+	panic("TODO:1792")
 }
 
 func (co *Compiler) VisitCall(x *CallX) Value {
@@ -1773,10 +1865,37 @@ func (co *Compiler) VisitCall(x *CallX) Value {
 	_ = funcVal // TODO
 
 	log.Printf("funcVal: %#v", funcVal)
-	funcRec := funcVal.(*FunctionX).FuncRec
-	funcname := funcRec.Function.Name
-	c2 := ""
-	c := Format(" %s( fp", funcname)
+	funcTV, ok := funcVal.Type().(*FunctionTV)
+	if !ok {
+		log.Printf("needed a value type, but got %v", funcVal.Type())
+		_ = funcVal.Type().(*FunctionTV)
+	}
+	funcRec := funcTV.FuncRec
+
+	var argc []string
+	for i, in := range funcRec.Ins {
+		value := x.Args[i].VisitExpr(co)
+		if !reflect.DeepEqual(value.Type(), in.TV) {
+			log.Printf("WARNING: Function %q expects type %s for arg %d named %s, but got %q with type %s", funcVal.ToC(), in.TV.String(), i, in.Name, value.ToC(), value.Type().String())
+		}
+		argc = append(argc, value.ToC())
+	}
+	if len(funcRec.Outs) != 1 {
+		var multi []NameAndType
+		for j, out := range funcRec.Outs {
+			rj := Format("_multi_%s_%d", ser, j)
+			vj := NameAndType{rj, out.TV}
+			multi = append(multi, vj)
+			co.Locals[rj] = out.TV
+			argc = append(argc, rj)
+		}
+		c := Format("(%s)(%s)", funcVal.ToC(), strings.Join(argc, ", "))
+		return &SimpleValue{c, &MultiTV{BaseTV{c}, multi}}
+	} else {
+		c := Format("(%s)(%s)", funcVal.ToC(), strings.Join(argc, ", "))
+		t := funcRec.Outs[0].TV
+		return &SimpleValue{c, t}
+	}
 
 	/* TODO
 		for i, in := range funcRec.Ins {
@@ -1835,17 +1954,38 @@ func (co *Compiler) VisitDot(dot *DotX) Value {
 	log.Printf("VisitDot: <------ %#v", dot)
 	val := dot.X.VisitExpr(co)
 	log.Printf("VisitDot: val---- %#v", val)
-	if val.Type() == ImportTO {
-		modName := val.ToC() // is there a better way?
-		println("DOT", modName, dot.Member)
+	if imp, ok := val.(*ImportValue); ok {
+		modName := imp.Name
+		log.Printf("DOT %q %#v", modName, dot.Member)
+		log.Printf("MODS: %#v", co.CGen.Mods)
 		otherMod := co.CGen.Mods[modName] // TODO: import aliases.
-		println("OM", otherMod)
-		println("GD", otherMod.GDefs)
+		log.Printf("OM %#v", otherMod)
+		log.Printf("GD %#v", otherMod.GDefs)
 		_, ok := otherMod.GDefs[dot.Member]
 		if !ok {
 			panic(Format("cannot find member %s in module %s", dot.Member, modName))
 		}
-		return otherMod.QuickCompiler().VisitIdent(&IdentX{X: modName})
+		return otherMod.QuickCompiler(nil).VisitIdent(&IdentX{X: modName})
+	}
+
+	if typ, ok := val.Type().(*PointerTV); ok {
+		val = &SimpleValue{Format("(*(%s))", val.ToC()), typ.E}
+	}
+
+	if typ, ok := val.Type().(*StructTV); ok {
+		rec := typ.StructRec
+		if ftype, ok := FindTypeByName(rec.Fields, dot.Member); ok {
+			return &SimpleValue{
+				C: Format("(%s).%s", val.ToC(), dot.Member),
+				T: ftype,
+			}
+		}
+		if mtype, ok := FindTypeByName(rec.Meths, dot.Member); ok {
+			return &SimpleValue{
+				C: Format("METH__%s__%s@(%s)", rec.Name, dot.Member, val.ToC()),
+				T: mtype,
+			}
+		}
 	}
 
 	z := &SimpleValue{
@@ -1855,6 +1995,8 @@ func (co *Compiler) VisitDot(dot *DotX) Value {
 	log.Printf("VisitDot: Not Import: ----> %v", z)
 	return z
 }
+
+// Compiler for Statements
 func (co *Compiler) VisitAssign(ass *AssignS) {
 	co.P("//## assign..... %v   %v   %v", ass.A, ass.Op, ass.B)
 	lenA, lenB := len(ass.A), len(ass.B)
@@ -2090,366 +2232,73 @@ func (co *Compiler) EmitFunc(def *GDef) {
 ///////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////
 
-// Keep track of reachable Globals.
+// TODO: Keep track of reachable Globals.
 type ActiveTracker struct {
-	List  []*GDef    // Reverse Definition Order.
-	Stack complex128 // XXX ?
+	List []*GDef // Reverse Definition Order.
 }
 
-/*
-func (o *ActiveTracker) activate(g *GDef) {
-    if g.Active {
-        return // Already been there.
-    }
-    g.Active = true
-    o.List = append(o.List, g)
-    if g.Expr !=nil {
-        g.Expr.VisitExpr(o)
-    }
+///////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////
+
+type Nando struct {
+	Locals map[string]TypeValue
 }
 
-func (o *ActiveTracker) VisitLvalIdent(x *IdentX) LValue {
-    nando
-	value := cm.VisitIdent(x)
-	return &SimpleLValue{LC: Format("&(%s)", value.ToC()), T: value.Type()}
+func (o *Nando) VisitLvalIdent(x *IdentX) LValue {
+	return nil
 }
-func (o *ActiveTracker) VisitLValSub(x *SubX) LValue {
-	value := cm.VisitSub(x)
-	return &SimpleLValue{LC: Format("TODO_LValue(%s)", value.ToC()), T: value.Type()}
+func (o *Nando) VisitLValSub(x *SubX) LValue {
+	return nil
 }
-func (o *ActiveTracker) VisitLvalDot(x *DotX) LValue {
-	value := cm.VisitDot(x)
-	return &SimpleLValue{LC: Format("&(%s)", value.ToC()), T: value.Type()}
+func (o *Nando) VisitLvalDot(x *DotX) LValue {
+	return nil
 }
 
-func (o *ActiveTracker) VisitLitInt(x *LitIntX) Value {
-	return &SimpleValue{
-		C: Format("%d", x.X),
-		T: ConstIntTO,
-	}
+func (o *Nando) VisitLitInt(x *LitIntX) Value {
+	return nil
 }
-func (o *ActiveTracker) VisitLitString(x *LitStringX) Value {
-	return &SimpleValue{
-		C: Format("%q", x.X),
-		T: StringTO,
-	}
+func (o *Nando) VisitLitString(x *LitStringX) Value {
+	return nil
 }
-func (o *ActiveTracker) VisitIdent(x *IdentX) Value {
-	log.Printf("VisitIdent <= %v", x)
-	z := cm._VisitIdent_(x)
-	log.Printf("VisitIdent => %#v", z)
-	return z
+func (o *Nando) VisitIdent(x *IdentX) Value {
+	return nil
 }
-func (o *ActiveTracker) _VisitIdent_(x *IdentX) Value {
-	if gd, ok := cm.GDefs[x.X]; ok {
-		return gd.Value
-	}
-	if gd, ok := cm.CGen.GDefs[x.X]; ok {
-		return gd.Value
-	}
-	// Else, assume it is a local variable.
-	return &SimpleValue{C: "v_TODO_" + x.X, T: IntTO}
+func (o *Nando) _VisitIdent_(x *IdentX) Value {
+	return nil
 }
-func (o *ActiveTracker) VisitBinOp(x *BinOpX) Value {
-	a := x.A.VisitExpr(cm)
-	b := x.B.VisitExpr(cm)
-	return &SimpleValue{
-		C: Format("(%s) %s (%s)", a.ToC(), x.Op, b.ToC()),
-		T: IntTO,
-	}
+func (o *Nando) VisitBinOp(x *BinOpX) Value {
+	return nil
 }
-func (o *ActiveTracker) VisitConstructor(x *ConstructorX) Value {
-	return &SimpleValue{
-		C: Format("(%s) alloc(C_%s)", x.Name, x.Name),
-		T: &PointerTV{BaseTV{}, &StructTV{BaseTV{x.Name}, nil}},
-	}
+func (o *Nando) VisitConstructor(x *ConstructorX) Value {
+	return nil
 }
-func (o *ActiveTracker) VisitFunction(x *FunctionX) Value {
-	return nil // TODO
+func (o *Nando) VisitFunction(x *FunctionX) Value {
+	return nil
+}
+func (o *Nando) VisitCall(x *CallX) Value {
+	return nil
+}
+func (o *Nando) VisitSub(x *SubX) Value {
+	return nil
+}
+func (o *Nando) VisitDot(dot *DotX) Value {
+	return nil
 }
 
-func (o *ActiveTracker) VisitCall(x *CallX) Value {
-	ser := Serial("call")
-	cm.P("// %s: Calling Func: %#v", ser, x.Func)
-	for i, a := range x.Args {
-		cm.P("// %s: Calling with Arg [%d]: %#v", ser, i, a)
-	}
-
-	cm.P("{")
-	log.Printf("x.Func: %#v", x.Func)
-	funcX := x.Func.VisitExpr(cm)
-	_ = funcX // TODO
-
-	/# TODO
-
-		log.Printf("funcX: %#v", funcX)
-		funcRec := funcX.(*DefFunc).FuncRec
-		funcname := funcRec.Function.Name
-		c2 := ""
-		c := Format(" %s( fp", funcname)
-
-		for i, in := range funcRec.Ins {
-			val := x.Args[i].VisitExpr(cm)
-			expectedType := in.TV
-
-			if funcRec.HasDotDotDot && i == len(funcRec.Ins)-1 {
-				sliceT, ok := expectedType.(*SliceTV)
-				assert(ok)
-				// TODO DotDotDot
-				elementT := sliceT.E
-				c2 += Format("Slice %s_in_rest = CreateSlice();", ser)
-				for j := i; j < len(x.Args); j++ {
-					cm.P(AssignNewVar(
-						NameAndType{val.ToC(), val.Type()},
-						NameAndType{Format("%s_in_%d", ser, j), elementT}))
-					c2 += Format("AppendSlice(%d_in_rest,  %s_in_%d);", ser, ser, j)
-				}
-				c += Format("FINISH(%s_in_rest);", ser)
-
-			} else {
-				cm.P(AssignNewVar(
-					NameAndType{val.ToC(), val.Type()},
-					NameAndType{Format("%s_in_%d", ser, i), expectedType}))
-				//##cm.P("  %s %s_in_%d = %s;", in.CType(), ser, i, val.ToC())
-				c += Format(", %s_in_%d", ser, i)
-			}
-
-		}
-		for i, out := range funcRec.Outs {
-			cm.P("  %s %s_out_%d;", out.TV.CType(), ser, i)
-			c += Format(", &%s_out_%d", ser, i)
-		}
-		c += " );"
-		cm.P("[[[%s]]]  %s\n} // %s", c2, c, ser)
-
-		switch len(funcRec.Outs) {
-		case 0:
-			return &SimpleValue{"VOID", VoidTO}
-		case 1:
-			return &SimpleValue{Format("%s_out_0", ser), funcRec.Outs[0].TV}
-		default:
-			return &SimpleValue{ser, ListTO}
-		}
-	    TODO #/
-	panic("TODO=1733")
+func (o *Nando) VisitAssign(ass *AssignS) {
 }
-
-func (o *ActiveTracker) VisitSub(x *SubX) Value {
-	return &SimpleValue{
-		C: Format("SubXXX(%v)", x),
-		T: IntTO,
-	}
+func (o *Nando) VisitReturn(ret *ReturnS) {
 }
-func (o *ActiveTracker) VisitDot(dot *DotX) Value {
-	log.Printf("VisitDot: <------ %#v", dot)
-	val := dot.X.VisitExpr(cm)
-	log.Printf("VisitDot: val---- %#v", val)
-	if val.Type() == ImportTO {
-		modName := val.ToC() // is there a better way?
-		println("DOT", modName, dot.Member)
-		otherMod := cm.CGen.Mods[modName] // TODO: import aliases.
-		println("OM", otherMod)
-		println("GD", otherMod.GDefs)
-		_, ok := otherMod.GDefs[dot.Member]
-		if !ok {
-			panic(Format("cannot find member %s in module %s", dot.Member, modName))
-		}
-		return otherMod.VisitIdent(&IdentX{X: modName})
-	}
-
-	z := &SimpleValue{
-		C: Format("DotXXX(%v)", dot),
-		T: IntTO,
-	}
-	log.Printf("VisitDot: Not Import: ----> %v", z)
-	return z
+func (o *Nando) VisitWhile(wh *WhileS) {
 }
-func (o *ActiveTracker) VisitAssign(ass *AssignS) {
-	cm.P("//## assign..... %v   %v   %v", ass.A, ass.Op, ass.B)
-	lenA, lenB := len(ass.A), len(ass.B)
-	_ = lenA
-	_ = lenB // TODO
-
-	// Evalute the rvalues.
-	var rvalues []Value
-	for _, e := range ass.B {
-		rvalues = append(rvalues, e.VisitExpr(cm))
-	}
-
-	// If there is just one thing on right, and it is a CallX, set bcall.
-	var bcall *CallX
-	if len(ass.B) == 1 {
-		switch t := ass.B[0].(type) {
-		case *CallX:
-			bcall = t
-		}
-	}
-
-	switch {
-	case ass.B == nil:
-		// An lvalue followed by ++ or --.
-		if len(ass.A) != 1 {
-			Panicf("operator %v requires one lvalue on the left, got %v", ass.Op, ass.A)
-		}
-		// TODO check lvalue
-		cvar := ass.A[0].VisitExpr(cm).ToC()
-		cm.P("  (%s)%s;", cvar, ass.Op)
-
-	case ass.A == nil && bcall == nil:
-		// No assignment.  Just a non-function.  Does this happen?
-		panic(Format("Lone expr is not a funciton call: [%v]", ass.B))
-
-	case ass.A == nil && bcall != nil:
-		// No assignment.  Just a function call.
-		log.Printf("bcall=%#v", bcall)
-		visited := bcall.VisitExpr(cm)
-		log.Printf("visited=%#v", visited)
-
-		/# TODO
-				funcRec := visited.(*DefFunc).FuncRec
-
-				funcname := funcRec.Function.Name
-				log.Printf("funcname=%s", funcname)
-
-				if lenB != len(bcall.Args) {
-					panic(Format("Function %s wants %d args, got %d", funcname, len(bcall.Args), lenB))
-				}
-				ser := Serial("call")
-				cm.P("{ // %s", ser)
-				c := Format(" %s( fp", funcname)
-				for i, in := range funcRec.Ins {
-					val := ass.B[i].VisitExpr(cm)
-					expectedType := in.TV
-					if expectedType != val.Type() {
-						panic(Format("bad type: expected %s, got %s", expectedType, val.Type()))
-					}
-					cm.P("  %s %s_in_%d = %s;", in.TV.CType(), ser, i, val.ToC())
-					c += Format(", %s_in_%d", ser, i)
-				}
-				for i, out := range funcRec.Outs {
-					cm.P("  %s %s_out_%d;", out.TV.CType(), ser, i)
-					c += Format(", &%s_out_%d", ser, i)
-				}
-				c += " );"
-				cm.P("  %s\n} // %s", c, ser)
-		        TODO #/
-	case len(ass.A) > 1 && bcall != nil:
-		// From 1 call, to 2 or more assigned vars.
-		var buf Buf
-		buf.P("((%s)(", bcall.Func.VisitExpr(cm).ToC())
-		for i, arg := range bcall.Args {
-			if i > 0 {
-				buf.P(", ")
-			}
-			buf.P("%s", arg.VisitExpr(cm).ToC())
-		}
-		for i, arg := range ass.A {
-			if len(bcall.Args)+i > 0 {
-				buf.P(", ")
-			}
-			// TODO -- VisitAddr ?
-			buf.P("&(%s)", arg.VisitExpr(cm).ToC())
-		}
-		buf.P("))")
-	default:
-		if len(ass.A) != len(ass.B) {
-			Panicf("wrong number of values in assign: left has %d, right has %d", len(ass.A), len(ass.B))
-		}
-		for i, val := range rvalues {
-			lhs := ass.A[i]
-			switch t := lhs.(type) {
-			case *IdentX:
-				// TODO -- check that variable t.X has the right type.
-				switch ass.Op {
-				case "=":
-					// TODO check Globals
-					cvar := "v_" + t.X
-					cm.P("  %s = (%s)(%s);", cvar, val.Type().CType(), val.ToC())
-				case ":=":
-					// TODO check Globals
-					cvar := Format("%s %s", val.Type().CType(), "v_"+t.X)
-					cm.P("  %s = (%s)(%s);", cvar, val.Type().CType(), val.ToC())
-				}
-			default:
-				log.Fatal("bad VisitAssign LHS: %#v", ass.A)
-			}
-		}
-	} // switch
+func (o *Nando) VisitBreak(sws *BreakS) {
 }
-func (o *ActiveTracker) VisitReturn(ret *ReturnS) {
-	log.Printf("return..... %v", ret.X)
-	switch len(ret.X) {
-	case 0:
-		cm.P("  return;")
-	case 1:
-		val := ret.X[0].VisitExpr(cm)
-		log.Printf("return..... val=%v", val)
-		cm.P("  return %s;", val.ToC())
-	default:
-		Panicf("multi-return not imp: %v", ret)
-	}
+func (o *Nando) VisitContinue(sws *ContinueS) {
 }
-func (o *ActiveTracker) VisitWhile(wh *WhileS) {
-	label := Serial("while")
-	cm.P("Break_%s:  while(1) {", label)
-	if wh.Pred != nil {
-		cm.P("    t_bool _while_ = (t_bool)(%s);", wh.Pred.VisitExpr(cm).ToC())
-		cm.P("    if (!_while_) break;")
-	}
-	savedB, savedC := cm.BreakTo, cm.ContinueTo
-	cm.BreakTo, cm.ContinueTo = "Break_"+label, "Cont_"+label
-	wh.Body.VisitStmt(cm)
-	cm.P("  }")
-	cm.P("Cont_%s: {}", label)
-	cm.BreakTo, cm.ContinueTo = savedB, savedC
+func (o *Nando) VisitIf(ifs *IfS) {
 }
-func (o *ActiveTracker) VisitBreak(sws *BreakS) {
-	if cm.BreakTo == "" {
-		Panicf("cannot break from here")
-	}
-	cm.P("goto %s;", cm.BreakTo)
+func (o *Nando) VisitSwitch(sws *SwitchS) {
 }
-func (o *ActiveTracker) VisitContinue(sws *ContinueS) {
-	if cm.ContinueTo == "" {
-		Panicf("cannot continue from here")
-	}
-	cm.P("goto %s;", cm.ContinueTo)
+func (o *Nando) VisitBlock(a *Block) {
 }
-func (o *ActiveTracker) VisitIf(ifs *IfS) {
-	cm.P("  { t_bool _if_ = %s;", ifs.Pred.VisitExpr(cm).ToC())
-	cm.P("  if( _if_ ) {")
-	ifs.Yes.VisitStmt(cm)
-	if ifs.No != nil {
-		cm.P("  } else {")
-		ifs.No.VisitStmt(cm)
-	}
-	cm.P("  }}")
-}
-func (o *ActiveTracker) VisitSwitch(sws *SwitchS) {
-	cm.P("  { t_int _switch_ = %s;", sws.Switch.VisitExpr(cm).ToC())
-	for _, c := range sws.Cases {
-		cm.P("  if (")
-		for _, m := range c.Matches {
-			cm.P("_switch_ == %s ||", m.VisitExpr(cm).ToC())
-		}
-		cm.P("      0 ) {")
-		c.Body.VisitStmt(cm)
-		cm.P("  } else ")
-	}
-	cm.P("  {")
-	if sws.Default != nil {
-		sws.Default.VisitStmt(cm)
-	}
-	cm.P("  }")
-	cm.P("  }")
-}
-func (o *ActiveTracker) VisitBlock(a *Block) {
-	if a == nil {
-		panic(8881)
-	}
-	for i, e := range a.Stmts {
-		log.Printf("VisitBlock[%d]", i)
-		e.VisitStmt(cm)
-	}
-}
-*/
