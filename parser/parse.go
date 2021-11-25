@@ -1683,10 +1683,10 @@ type GDef struct {
 }
 
 type Scope struct {
-	GDefs   map[string]*GDef // by short name
-    Parent  *Scope // upper scope
-    GDef    *GDef  // if local to a function
-    CMod    *CMod  // if owned by a module
+	GDefs  map[string]*GDef // by short name
+	Parent *Scope           // upper scope
+	GDef   *GDef            // if local to a function
+	CMod   *CMod            // if owned by a module
 }
 type CMod struct {
 	W       *bufio.Writer
