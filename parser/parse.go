@@ -161,6 +161,9 @@ type FunctionTV struct {
 type ImportTV struct {
 	BaseTV
 }
+
+// Needed because parser can create a TypeValue before
+// compiler starts running.
 type ForwardTV struct {
 	BaseTV
 	Package string
@@ -1010,6 +1013,9 @@ func (o *Parser) ParseExpr() Expr {
 
 func (o *Parser) ParseType() TypeValue {
 	x := o.ParseExpr()
+	return o.ConvertExprToTypeValue(x)
+}
+func (o *Parser) ConvertExprToTypeValue(x Expr) TypeValue {
 	switch t := x.(type) {
 	case TypeValue:
 		return t
@@ -1017,12 +1023,11 @@ func (o *Parser) ParseType() TypeValue {
 		if typeObj, ok := PrimTypeObjMap[t.X]; ok {
 			return typeObj
 		}
-		return &ForwardTV{BaseTV{}, o.Package, t.X}
+		return &ForwardTV{BaseTV{t.X}, o.Package, t.X}
 	case *DotX:
 		switch tx := t.X.(type) {
 		case *IdentX:
-			// TODO: when tx.X is not an import name.
-			return &ForwardTV{BaseTV{}, tx.X, t.Member}
+			return &ForwardTV{BaseTV{t.Member}, tx.X, t.Member}
 		}
 	}
 	panic(Format("Expected type expression; got %v", x))
@@ -1376,6 +1381,7 @@ LOOP:
 					Package: o.Package,
 					Name:    w,
 					Init:    tv,
+					Value:   tv,
 				}
 				o.Types = append(o.Types, gd)
 				o.TypesMap[w] = gd
@@ -1974,6 +1980,23 @@ func (co *Compiler) VisitSub(x *SubX) Value {
 		T: IntTO,
 	}
 }
+
+func (co *Compiler) ResolveType(tv TypeValue) TypeValue {
+	if fwd, ok := tv.(*ForwardTV); ok {
+		if cm, ok := co.CGen.Mods[fwd.Package]; ok {
+			if gd, ok := cm.Scope.GDefs[fwd.Name]; ok {
+				tv = gd.Init.(TypeValue)
+			}
+		} else if gd, ok := co.CGen.BuiltinMod.Scope.GDefs[fwd.Name]; ok {
+			tv = gd.Init.(TypeValue)
+		}
+	}
+	return tv
+}
+func (co *Compiler) ResolveTypeOfValue(val Value) Value {
+	return &SimpleValue{val.ToC(), co.ResolveType(val.Type())}
+}
+
 func (co *Compiler) VisitDot(dot *DotX) Value {
 	log.Printf("VisitDot: <------ %#v", dot)
 	val := dot.X.VisitExpr(co)
@@ -1997,6 +2020,10 @@ func (co *Compiler) VisitDot(dot *DotX) Value {
 		}
 	}
 
+	if typ, ok := val.Type().(*PointerTV); ok {
+		val = &SimpleValue{Format("(*(%s))", val.ToC()), typ.E}
+		L("VisitDot eliminating pointer: %#v of type %#v", val, val.Type())
+	}
 	if typ, ok := val.Type().(*PointerTV); ok {
 		val = &SimpleValue{Format("(*(%s))", val.ToC()), typ.E}
 		L("VisitDot eliminating pointer: %#v of type %#v", val, val.Type())
