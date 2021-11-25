@@ -1735,8 +1735,7 @@ type CMod struct {
 type CGen struct {
 	Mods        map[string]*CMod // by module name
 	BuiltinMod  *CMod
-	ModsInOrder []string         // reverse definition order
-	GDefs       map[string]*GDef // by full name
+	ModsInOrder []string // reverse definition order
 	Options     *Options
 	W           *bufio.Writer
 }
@@ -1758,7 +1757,6 @@ func NewCGenAndMainCMod(opt *Options, w io.Writer) (*CGen, *CMod) {
 		Mods:    map[string]*CMod{"main": mainMod},
 		W:       mainMod.W,
 		Options: opt,
-		GDefs:   make(map[string]*GDef),
 	}
 	mainMod.CGen = cg
 	return cg, mainMod
@@ -1866,10 +1864,6 @@ func (co *Compiler) _VisitIdent_(x *IdentX) Value {
 	}
 	log.Printf("_VisitIdent(%q) looks BuiltinMod: %#v", x.X, co.CMod.CGen.BuiltinMod.GDefs)
 	if gd, ok := co.CMod.CGen.BuiltinMod.GDefs[x.X]; ok {
-		return gd.Value
-	}
-	log.Printf("_VisitIdent(%q) looks CGen: %#v", x.X, co.CMod.CGen.GDefs)
-	if gd, ok := co.CMod.CGen.GDefs[x.X]; ok {
 		return gd.Value
 	}
 	// Else, assume it is a local variable.
@@ -2008,26 +2002,33 @@ func (co *Compiler) VisitDot(dot *DotX) Value {
 		if !ok {
 			panic(Format("cannot find member %s in module %s", dot.Member, modName))
 		}
-		return otherMod.QuickCompiler(nil).VisitIdent(&IdentX{X: modName})
+		z := otherMod.QuickCompiler(nil).VisitIdent(&IdentX{X: dot.Member})
+		L("VisitDot returns Imported thing: %#v", z)
+		return z
 	}
 
 	if typ, ok := val.Type().(*PointerTV); ok {
 		val = &SimpleValue{Format("(*(%s))", val.ToC()), typ.E}
+		L("VisitDot eliminating pointer: %#v of type %#v", val, val.Type())
 	}
 
 	if typ, ok := val.Type().(*StructTV); ok {
 		rec := typ.StructRec
 		if ftype, ok := FindTypeByName(rec.Fields, dot.Member); ok {
-			return &SimpleValue{
+			z := &SimpleValue{
 				C: Format("(%s).%s", val.ToC(), dot.Member),
 				T: ftype,
 			}
+			L("VisitDot returns Field: %#v", z)
+			return z
 		}
 		if mtype, ok := FindTypeByName(rec.Meths, dot.Member); ok {
-			return &SimpleValue{
+			z := &SimpleValue{
 				C: Format("METH__%s__%s@(%s)", rec.Name, dot.Member, val.ToC()),
 				T: mtype,
 			}
+			L("VisitDot returns Field: %#v", z)
+			return z
 		}
 	}
 
