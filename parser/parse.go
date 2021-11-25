@@ -1710,6 +1710,14 @@ func NewScope(parent *Scope, gdef *GDef, cmod *CMod) *Scope {
 		CMod:   cmod,
 	}
 }
+func (o *Scope) Find(s string) (*GDef, *Scope, bool) {
+    for ; o != nil; o = o.Parent {
+        if gdef, ok := o.GDefs[s]; ok {
+            return gdef, o, true
+        }
+    }
+    return nil, nil, false
+}
 
 func NewCMod(name string, cg *CGen, w io.Writer) *CMod {
 	mod := &CMod{
@@ -1762,18 +1770,19 @@ type Compiler struct {
 	BreakTo      string
 	ContinueTo   string
 	CurrentBlock *Block
-	Locals       map[string]TypeValue
+	Locals       *Scope
 	Defers       []*DeferRec
 	Buf          bytes.Buffer
 }
 
 func NewCompiler(cm *CMod, gdef *GDef) *Compiler {
-	return &Compiler{
+	co := &Compiler{
 		CMod:   cm,
 		CGen:   cm.CGen,
 		GDef:   gdef,
-		Locals: make(map[string]TypeValue),
 	}
+    co.Locals = NewScope(cm.Scope, gdef, nil)
+    return co
 }
 
 func (co *Compiler) P(format string, args ...interface{}) {
@@ -1817,6 +1826,12 @@ func (co *Compiler) VisitIdent(x *IdentX) Value {
 	return z
 }
 func (co *Compiler) _VisitIdent_(x *IdentX) Value {
+    if gdef, _, ok := co.Locals.Find(x.X); ok {
+        return gdef.Value
+    }
+    log.Panicf("Identifier not found: %q in %v", x.X, co.GDef)
+    return nil
+/*
 	log.Printf("_VisitIdent(%q) looks CMod: %#v", x.X, co.CMod.Scope.GDefs)
 	if gd, ok := co.CMod.Scope.GDefs[x.X]; ok {
 		return gd.Value
@@ -1827,6 +1842,7 @@ func (co *Compiler) _VisitIdent_(x *IdentX) Value {
 	}
 	// Else, assume it is a local variable.
 	return &SimpleValue{C: "v_TODO_" + x.X, T: IntTO}
+    */
 }
 func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 	a := x.A.VisitExpr(co)
@@ -1882,7 +1898,7 @@ func (co *Compiler) VisitCall(x *CallX) Value {
 			rj := Format("_multi_%s_%d", ser, j)
 			vj := NameAndType{rj, out.TV}
 			multi = append(multi, vj)
-			co.Locals[rj] = out.TV
+			// TODO // co.Locals[rj] = out.TV
 			argc = append(argc, rj)
 		}
 		c := Format("(%s)(%s)", funcVal.ToC(), strings.Join(argc, ", "))
