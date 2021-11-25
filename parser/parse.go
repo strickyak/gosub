@@ -410,19 +410,6 @@ type IdentX struct {
 	GDef     *GDef // cache the *GDef if resolved.
 }
 
-func (o *IdentX) FindGDef() *GDef {
-	if !o.Resolved {
-		if gdef, ok := o.Outer.Scope.GDefs[o.X]; ok {
-			o.GDef = gdef
-			o.Resolved = true
-		} else if gdef, ok := o.Outer.CGen.BuiltinMod.Scope.GDefs[o.X]; ok {
-			o.GDef = gdef
-			o.Resolved = true
-		}
-	}
-	return o.GDef
-}
-
 func (o *IdentX) String() string {
 	return fmt.Sprintf("Ident(%s)", o.X)
 }
@@ -837,13 +824,13 @@ var PrimTypeObjMap = map[string]TypeValue{
 	"_void_":      VoidTO,
 }
 var PrimTypeCMap = map[string]string{
-	"bool":   "bool",
-	"byte":   "byte",
-	"int":    "int",
-	"uint":   "word",
+	"bool":   "Bool",
+	"byte":   "Byte",
+	"int":    "Int",
+	"uint":   "Uint",
 	"string": "String",
-	"error":  "Interface",
-	"type":   "const char*",
+	"error":  "Interface(_)",
+	"type":   "Type(_)",
 }
 
 func (o *Parser) ParsePrim() Expr {
@@ -1522,6 +1509,7 @@ func (cg *CGen) LoadModule(name string) *CMod {
 	log.Printf("LoadModule: VisitGlobals Done")
 
 	if name == "builtin" {
+		// CGen provides quick access to the builtin Mod:
 		cg.BuiltinMod = cm
 	}
 	return cm
@@ -1683,10 +1671,12 @@ type GDef struct {
 }
 
 type Scope struct {
+	Name   string
 	GDefs  map[string]*GDef // by short name
 	Parent *Scope           // upper scope
 	GDef   *GDef            // if local to a function
 	CMod   *CMod            // if owned by a module
+	CGen   *CGen            // for finding Builtins.
 }
 type CMod struct {
 	W       *bufio.Writer
@@ -1695,6 +1685,7 @@ type CMod struct {
 	Scope   *Scope // members of module.
 }
 type CGen struct {
+	Prims       *Scope
 	Mods        map[string]*CMod // by module name
 	BuiltinMod  *CMod
 	ModsInOrder []string // reverse definition order
@@ -1702,21 +1693,33 @@ type CGen struct {
 	W           *bufio.Writer
 }
 
-func NewScope(parent *Scope, gdef *GDef, cmod *CMod) *Scope {
+func NewScope(name string, parent *Scope, gdef *GDef, cmod *CMod, cgen *CGen) *Scope {
 	return &Scope{
+		Name:   name,
 		GDefs:  make(map[string]*GDef),
 		Parent: parent,
 		GDef:   gdef,
 		CMod:   cmod,
+		CGen:   cgen,
 	}
 }
-func (o *Scope) Find(s string) (*GDef, *Scope, bool) {
-    for ; o != nil; o = o.Parent {
-        if gdef, ok := o.GDefs[s]; ok {
-            return gdef, o, true
-        }
-    }
-    return nil, nil, false
+func (sco *Scope) Find(s string) (*GDef, *Scope, bool) {
+	for p := sco; p != nil; p = p.Parent {
+		if gdef, ok := p.GDefs[s]; ok {
+			return gdef, p, true
+		}
+	}
+	if sco.CGen.BuiltinMod != nil {
+		bim := sco.CGen.BuiltinMod.Scope
+		if gdef, ok := bim.GDefs[s]; ok {
+			return gdef, bim, true
+		}
+	}
+	prims := sco.CGen.Prims
+	if gdef, ok := prims.GDefs[s]; ok {
+		return gdef, prims, true
+	}
+	return nil, nil, false
 }
 
 func NewCMod(name string, cg *CGen, w io.Writer) *CMod {
@@ -1725,7 +1728,7 @@ func NewCMod(name string, cg *CGen, w io.Writer) *CMod {
 		Package: name,
 		CGen:    cg,
 	}
-	mod.Scope = NewScope(nil, nil, mod)
+	mod.Scope = NewScope(name, nil, nil, mod, cg)
 	return mod
 }
 func NewCGenAndMainCMod(opt *Options, w io.Writer) (*CGen, *CMod) {
@@ -1735,7 +1738,21 @@ func NewCGenAndMainCMod(opt *Options, w io.Writer) (*CGen, *CMod) {
 		W:       mainMod.W,
 		Options: opt,
 	}
+	cg.Prims = NewScope("_prims_", nil, nil, nil, cg)
 	mainMod.CGen = cg
+
+	// Populate PrimScope
+	for k, v := range PrimTypeObjMap {
+		fullname, _ := PrimTypeCMap[k]
+		cg.Prims.GDefs[k] = &GDef{
+			Name:     k,
+			FullName: fullname,
+			Value:    v,
+			Type:     TypeTO, // the metatype
+			Active:   true,
+		}
+	}
+
 	return cg, mainMod
 }
 
@@ -1777,12 +1794,19 @@ type Compiler struct {
 
 func NewCompiler(cm *CMod, gdef *GDef) *Compiler {
 	co := &Compiler{
-		CMod:   cm,
-		CGen:   cm.CGen,
-		GDef:   gdef,
+		CMod: cm,
+		CGen: cm.CGen,
+		GDef: gdef,
 	}
-    co.Locals = NewScope(cm.Scope, gdef, nil)
-    return co
+
+	println(gdef)
+	println(gdef.FullName)
+	println(cm)
+	println(cm.Scope)
+	println(cm.CGen)
+
+	co.Locals = NewScope("locals of "+gdef.FullName, cm.Scope, gdef, nil, cm.CGen)
+	return co
 }
 
 func (co *Compiler) P(format string, args ...interface{}) {
@@ -1826,23 +1850,11 @@ func (co *Compiler) VisitIdent(x *IdentX) Value {
 	return z
 }
 func (co *Compiler) _VisitIdent_(x *IdentX) Value {
-    if gdef, _, ok := co.Locals.Find(x.X); ok {
-        return gdef.Value
-    }
-    log.Panicf("Identifier not found: %q in %v", x.X, co.GDef)
-    return nil
-/*
-	log.Printf("_VisitIdent(%q) looks CMod: %#v", x.X, co.CMod.Scope.GDefs)
-	if gd, ok := co.CMod.Scope.GDefs[x.X]; ok {
-		return gd.Value
+	if gdef, _, ok := co.Locals.Find(x.X); ok {
+		return gdef.Value
 	}
-	log.Printf("_VisitIdent(%q) looks BuiltinMod: %#v", x.X, co.CMod.CGen.BuiltinMod.Scope.GDefs)
-	if gd, ok := co.CMod.CGen.BuiltinMod.Scope.GDefs[x.X]; ok {
-		return gd.Value
-	}
-	// Else, assume it is a local variable.
-	return &SimpleValue{C: "v_TODO_" + x.X, T: IntTO}
-    */
+	log.Panicf("Identifier not found: %q in %v", x.X, co.GDef)
+	return nil
 }
 func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 	a := x.A.VisitExpr(co)
@@ -1970,16 +1982,19 @@ func (co *Compiler) VisitDot(dot *DotX) Value {
 		modName := imp.Name
 		log.Printf("DOT %q %#v", modName, dot.Member)
 		log.Printf("MODS: %#v", co.CGen.Mods)
-		otherMod := co.CGen.Mods[modName] // TODO: import aliases.
-		log.Printf("OM %#v", otherMod)
-		log.Printf("GD %#v", otherMod.Scope.GDefs)
-		_, ok := otherMod.Scope.GDefs[dot.Member]
-		if !ok {
-			panic(Format("cannot find member %s in module %s", dot.Member, modName))
+		if otherMod, ok := co.CGen.Mods[modName]; ok {
+			log.Printf("OM %#v", otherMod)
+			log.Printf("GD %#v", otherMod.Scope.GDefs)
+			_, ok := otherMod.Scope.GDefs[dot.Member]
+			if !ok {
+				panic(Format("cannot find member %s in module %s", dot.Member, modName))
+			}
+			z := otherMod.QuickCompiler(co.GDef).VisitIdent(&IdentX{X: dot.Member})
+			L("VisitDot returns Imported thing: %#v", z)
+			return z
+		} else {
+			panic(Format("imported %q but cannot find it in CGen.Mods: %#v", modName, co.CGen.Mods))
 		}
-		z := otherMod.QuickCompiler(nil).VisitIdent(&IdentX{X: dot.Member})
-		L("VisitDot returns Imported thing: %#v", z)
-		return z
 	}
 
 	if typ, ok := val.Type().(*PointerTV); ok {
