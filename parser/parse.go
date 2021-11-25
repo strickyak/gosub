@@ -1663,12 +1663,6 @@ func (cm *CMod) FifthPrintFunctions(p *Parser) {
 }
 
 func (cm *CMod) VisitGlobals(p *Parser) {
-	/*
-	   PLAN: visit all the "def" first.
-	   Then visit all the "init".
-	   Then visit all the functions.
-	   So only one output path is needed.
-	*/
 	cm.FirstSlotGlobals(p)
 	cm.SecondBuildGlobals(p)
 	cm.ThirdDefineGlobals(p)
@@ -1676,36 +1670,6 @@ func (cm *CMod) VisitGlobals(p *Parser) {
 	cm.FifthPrintFunctions(p)
 	cm.Flush()
 }
-
-/*
-func (pre *cPreMod) PreVisitDefFunc(def *GDef) {
-	fn := def.Expr.(*FunctionX).FuncRec
-	pre.mustNotExistYet(def.Name)
-	pre.cm.GDefs[def.Name] = def
-	pre.cm.CGen.GDefs[GlobalName(pre.cm.Package, def.Name)] = def
-	if pre.cm.Package == "builtin" {
-		pre.cm.CGen.GDefs[def.Name] = def
-	}
-
-	// TODO -- dedup
-	var b Buf
-	b.P("void %s(", def.C)
-	if len(fn.Ins) > 0 {
-		firstTime := true
-		for _, name_and_type := range fn.Ins {
-			if !firstTime {
-				b.P(", ")
-			}
-			b.P("%s %s", name_and_type.TV.CType(), "v_"+name_and_type.Name)
-			firstTime = false
-		}
-	}
-	b.P(");\n")
-	pre.cm.P("\n// {{{{{ // BEGIN Pre def of func: %v\n", def)
-	pre.cm.P(b.String())
-	pre.cm.P("\n// }}}}} // END Pre def of func: %v\n", def)
-}
-*/
 
 type GDef struct {
 	CGen     *CGen
@@ -1718,19 +1682,17 @@ type GDef struct {
 	Active   bool
 }
 
+type Scope struct {
+	GDefs   map[string]*GDef // by short name
+    Parent  *Scope // upper scope
+    GDef    *GDef  // if local to a function
+    CMod    *CMod  // if owned by a module
+}
 type CMod struct {
-	defsBuf bytes.Buffer
-	initBuf bytes.Buffer
-	D       *bufio.Writer // Non-executable Declarations
 	W       *bufio.Writer
 	Package string
 	GDefs   map[string]*GDef // by short name
 	CGen    *CGen
-	/*
-		Structs    []*StructRec
-		Interfaces []*InterfaceRec
-		Funcs      []*FuncRec
-	*/
 }
 type CGen struct {
 	Mods        map[string]*CMod // by module name
@@ -1747,8 +1709,6 @@ func NewCMod(name string, cg *CGen, w io.Writer) *CMod {
 		GDefs:   make(map[string]*GDef),
 		CGen:    cg,
 	}
-	z.D = bufio.NewWriter(&z.defsBuf)
-	z.D = z.W
 	return z
 }
 func NewCGenAndMainCMod(opt *Options, w io.Writer) (*CGen, *CMod) {
