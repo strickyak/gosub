@@ -412,10 +412,10 @@ type IdentX struct {
 
 func (o *IdentX) FindGDef() *GDef {
 	if !o.Resolved {
-		if gdef, ok := o.Outer.GDefs[o.X]; ok {
+		if gdef, ok := o.Outer.Scope.GDefs[o.X]; ok {
 			o.GDef = gdef
 			o.Resolved = true
-		} else if gdef, ok := o.Outer.CGen.BuiltinMod.GDefs[o.X]; ok {
+		} else if gdef, ok := o.Outer.CGen.BuiltinMod.Scope.GDefs[o.X]; ok {
 			o.GDef = gdef
 			o.Resolved = true
 		}
@@ -1539,7 +1539,7 @@ func CompileToC(r io.Reader, sourceName string, w io.Writer, opt *Options) {
 }
 
 func (cm *CMod) mustNotExistYet(s string) {
-	if _, ok := cm.GDefs[s]; ok {
+	if _, ok := cm.Scope.GDefs[s]; ok {
 		Panicf("redefined global name: %s", s)
 	}
 }
@@ -1549,7 +1549,7 @@ func (cm *CMod) FirstSlotGlobals(p *Parser) {
 	slot := func(g *GDef) {
 		g.Package = cm.Package
 		cm.mustNotExistYet(g.Name)
-		cm.GDefs[g.Name] = g
+		cm.Scope.GDefs[g.Name] = g
 		g.FullName = FullName(g.Package, g.Name)
 	}
 	for _, g := range p.Imports {
@@ -1691,8 +1691,8 @@ type Scope struct {
 type CMod struct {
 	W       *bufio.Writer
 	Package string
-	GDefs   map[string]*GDef // by short name
 	CGen    *CGen
+	Scope   *Scope // members of module.
 }
 type CGen struct {
 	Mods        map[string]*CMod // by module name
@@ -1702,14 +1702,23 @@ type CGen struct {
 	W           *bufio.Writer
 }
 
+func NewScope(parent *Scope, gdef *GDef, cmod *CMod) *Scope {
+	return &Scope{
+		GDefs:  make(map[string]*GDef),
+		Parent: parent,
+		GDef:   gdef,
+		CMod:   cmod,
+	}
+}
+
 func NewCMod(name string, cg *CGen, w io.Writer) *CMod {
-	z := &CMod{
+	mod := &CMod{
 		W:       bufio.NewWriter(w),
 		Package: name,
-		GDefs:   make(map[string]*GDef),
 		CGen:    cg,
 	}
-	return z
+	mod.Scope = NewScope(nil, nil, mod)
+	return mod
 }
 func NewCGenAndMainCMod(opt *Options, w io.Writer) (*CGen, *CMod) {
 	mainMod := NewCMod("main", nil, w)
@@ -1722,21 +1731,11 @@ func NewCGenAndMainCMod(opt *Options, w io.Writer) (*CGen, *CMod) {
 	return cg, mainMod
 }
 
-/*
-func (cm *CMod) Onto(w io.Writer, fn func()) {
-    saved := cm.W
-    cm.W = w
-    defer func() { cm.W = saved }
-    fn()
-}
-*/
-
 func (cm *CMod) QuickCompiler(gdef *GDef) *Compiler {
 	return NewCompiler(cm, gdef)
 }
 
 func (cm *CMod) P(format string, args ...interface{}) {
-	// log.Printf("<<<<< %q >>>>> %q", format, fmt.Sprintf(format, args...))
 	fmt.Fprintf(cm.W, format+"\n", args...)
 }
 func (cm *CMod) Flush() {
@@ -1818,12 +1817,12 @@ func (co *Compiler) VisitIdent(x *IdentX) Value {
 	return z
 }
 func (co *Compiler) _VisitIdent_(x *IdentX) Value {
-	log.Printf("_VisitIdent(%q) looks CMod: %#v", x.X, co.CMod.GDefs)
-	if gd, ok := co.CMod.GDefs[x.X]; ok {
+	log.Printf("_VisitIdent(%q) looks CMod: %#v", x.X, co.CMod.Scope.GDefs)
+	if gd, ok := co.CMod.Scope.GDefs[x.X]; ok {
 		return gd.Value
 	}
-	log.Printf("_VisitIdent(%q) looks BuiltinMod: %#v", x.X, co.CMod.CGen.BuiltinMod.GDefs)
-	if gd, ok := co.CMod.CGen.BuiltinMod.GDefs[x.X]; ok {
+	log.Printf("_VisitIdent(%q) looks BuiltinMod: %#v", x.X, co.CMod.CGen.BuiltinMod.Scope.GDefs)
+	if gd, ok := co.CMod.CGen.BuiltinMod.Scope.GDefs[x.X]; ok {
 		return gd.Value
 	}
 	// Else, assume it is a local variable.
@@ -1957,8 +1956,8 @@ func (co *Compiler) VisitDot(dot *DotX) Value {
 		log.Printf("MODS: %#v", co.CGen.Mods)
 		otherMod := co.CGen.Mods[modName] // TODO: import aliases.
 		log.Printf("OM %#v", otherMod)
-		log.Printf("GD %#v", otherMod.GDefs)
-		_, ok := otherMod.GDefs[dot.Member]
+		log.Printf("GD %#v", otherMod.Scope.GDefs)
+		_, ok := otherMod.Scope.GDefs[dot.Member]
 		if !ok {
 			panic(Format("cannot find member %s in module %s", dot.Member, modName))
 		}
