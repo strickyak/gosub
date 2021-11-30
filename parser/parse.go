@@ -82,7 +82,15 @@ func SerialIfEmpty(s string) string {
 func FindTypeByName(list []NameAndType, name string) (TypeValue, bool) {
 	log.Printf("Finding %q in list of len=%d", name, len(list))
 	for _, nat := range list {
-		log.Printf("Found %q? { %q ; %s }", name, nat.Name, nat.TV.String())
+		stuff := "?ftbn?"
+		switch {
+		case nat.TV != nil:
+			stuff = nat.TV.String()
+		case nat.Expr != nil:
+			stuff = nat.Expr.String()
+		}
+
+		log.Printf("?find %q? { %q ; %s }", name, nat.Name, stuff)
 		if nat.Name == name {
 			log.Printf("YES")
 			return nat.TV, true
@@ -125,19 +133,6 @@ type Expr interface {
 type Lval interface {
 	String() string
 	VisitLVal(LvalVisitor) Value
-}
-
-//
-
-type WrapperTypeX struct {
-	TV TypeValue
-}
-
-func (o *WrapperTypeX) VisitExpr(v ExprVisitor) Value {
-	return o.TV
-}
-func (o *WrapperTypeX) String() string {
-	return Format("Wrap{%v}", o.TV)
 }
 
 //
@@ -202,12 +197,12 @@ func (r *FuncRec) String() string {
 	return s + "}"
 }
 
-func (o *PointerTX) String() string   { return Format("%#v", *o) }
-func (o *SliceTX) String() string     { return Format("%#v", *o) }
-func (o *MapTX) String() string       { return Format("%#v", *o) }
-func (o *StructTX) String() string    { return Format("%#v", *o) }
-func (o *InterfaceTX) String() string { return Format("%#v", *o) }
-func (o *FunctionTX) String() string  { return Format("%#v", *o) }
+func (o *PointerTX) String() string   { return Format("PointerTX(%v)", o.E) }
+func (o *SliceTX) String() string     { return Format("SliceTX(%v)", o.E) }
+func (o *MapTX) String() string       { return Format("MapTX(%v=>%v)", o.K, o.V) }
+func (o *StructTX) String() string    { return Format("StructTX(%v)", o.StructRec.Name) }
+func (o *InterfaceTX) String() string { return Format("InterfaceTX(%v)", o.InterfaceRec.Name) }
+func (o *FunctionTX) String() string  { return Format("FunctionTX(%v)", o.FuncRec) }
 
 func FillTV(v ExprVisitor, nat NameAndType, o Expr) NameAndType {
 	val := nat.Expr.VisitExpr(v)
@@ -332,9 +327,10 @@ type FunctionTV struct {
 	BaseTV
 	FuncRec *FuncRec
 }
-type ImportTV struct {
-	BaseTV
-}
+
+//type ImportTV struct {
+//BaseTV
+//}
 
 // Needed because parser can create a TypeValue before
 // compiler starts running.
@@ -357,8 +353,9 @@ func (tv *ForwardTV) Type() TypeValue   { return &TypeTV{} }
 func (tv *StructTV) Type() TypeValue    { return &TypeTV{} }
 func (tv *InterfaceTV) Type() TypeValue { return &TypeTV{} }
 func (tv *FunctionTV) Type() TypeValue  { return &TypeTV{} }
-func (tv *ImportTV) Type() TypeValue    { return &TypeTV{} }
-func (tv *MultiTV) Type() TypeValue     { return &TypeTV{} }
+
+//func (tv *ImportTV) Type() TypeValue    { return &TypeTV{} }
+func (tv *MultiTV) Type() TypeValue { return &TypeTV{} }
 
 func ToC(v Value) string {
 	if v == nil {
@@ -394,9 +391,10 @@ func (tv *InterfaceTV) ToC() string {
 func (tv *FunctionTV) ToC() string {
 	return Format("ZFunction(%s)", tv.FuncRec.Signature("(*)"))
 }
-func (tv *ImportTV) ToC() string {
-	return Format("ZImport(%s)", tv.Name)
-}
+
+//func (tv *ImportTV) ToC() string {
+//return Format("ZImport(%s)", tv.Name)
+//}
 func (tv *MultiTV) ToC() string {
 	return Format("ZMulti(...)")
 }
@@ -561,30 +559,20 @@ func (o *PrimTV) Cast(c string, typ TypeValue) (z string, ok bool) {
 	return "", false
 }
 
-func (tv *PrimTV) String() string      { return Format("%T(%#v)", *tv, *tv) }
-func (tv *TypeTV) String() string      { return Format("%T()", *tv) }
-func (tv *PointerTV) String() string   { return Format("%T(%#v)", *tv, *tv) }
-func (tv *SliceTV) String() string     { return Format("%T(%#v)", *tv, *tv) }
-func (tv *MapTV) String() string       { return Format("%T(%#v)", *tv, *tv) }
-func (tv *ForwardTV) String() string   { return Format("%T(%#v)", *tv, *tv) }
-func (tv *StructTV) String() string    { return Format("%T(%#v)", *tv, *tv) }
-func (tv *InterfaceTV) String() string { return Format("%T(%#v)", *tv, *tv) }
-func (tv *FunctionTV) String() string  { return Format("%T(%#v)", *tv, *tv) }
-func (tv *ImportTV) String() string    { return Format("%T(%#v)", *tv, *tv) }
-func (tv *MultiTV) String() string     { return Format("%T(%#v)", *tv, *tv) }
+func (tv *PrimTV) String() string    { return Format("PrimTV(%q)", tv.Name) }
+func (tv *TypeTV) String() string    { return Format("TypeTV(%q)", tv.Name) }
+func (tv *PointerTV) String() string { return Format("PointerTV(%v)", tv.E) }
+func (tv *SliceTV) String() string   { return Format("SliceTV(%v)", tv.E) }
+func (tv *MapTV) String() string     { return Format("MapTV(%v=>%v)", tv.K, tv.V) }
+func (tv *ForwardTV) String() string {
+	return Format("ForwardTV(%v.%v)", tv.GDef.Package, tv.GDef.Name)
+}
+func (tv *StructTV) String() string    { return Format("StructTV(%v)", tv.StructRec.Name) }
+func (tv *InterfaceTV) String() string { return Format("InterfaceTV(%v)", tv.InterfaceRec.Name) }
+func (tv *FunctionTV) String() string  { return Format("FunctionTV(%v)", tv.FuncRec) }
 
-// XXX TypeValues are expressions that evalute to themselves (they are Expr and Value).
-func (tv *PrimTV) XXXVisitExpr(v ExprVisitor) Value      { return tv }
-func (tv *TypeTV) XXXVisitExpr(v ExprVisitor) Value      { return tv }
-func (tv *PointerTV) XXXVisitExpr(v ExprVisitor) Value   { return tv }
-func (tv *SliceTV) XXXVisitExpr(v ExprVisitor) Value     { return tv }
-func (tv *MapTV) XXXVisitExpr(v ExprVisitor) Value       { return tv }
-func (tv *ForwardTV) XXXVisitExpr(v ExprVisitor) Value   { return tv }
-func (tv *StructTV) XXXVisitExpr(v ExprVisitor) Value    { return tv }
-func (tv *InterfaceTV) XXXVisitExpr(v ExprVisitor) Value { return tv }
-func (tv *FunctionTV) XXXVisitExpr(v ExprVisitor) Value  { return tv }
-func (tv *ImportTV) XXXVisitExpr(v ExprVisitor) Value    { return tv }
-func (tv *MultiTV) XXXVisitExpr(v ExprVisitor) Value     { return tv }
+//func (tv *ImportTV) String() string    { return Format("ImportTV(%q)", tv.Name) }
+func (tv *MultiTV) String() string { return Format("MultiTV(%v)", tv.Multi) }
 
 type LitIntX struct {
 	X int
@@ -846,17 +834,19 @@ type FuncRec struct {
 	Body         *Block
 }
 
-/*
-func NatStr(nat NameAndType) string {
-    if nat.TV!=nil {
-        return Format("{%s::%s}", nat.Name, nat.TV.ToC())
-    }
-    return Format("{%s::%s}", nat.Name, nat.Expr.String())
-
+func MethRecToFuncRec(mr *FuncRec) *FuncRec {
+	ins := []NameAndType{*mr.Receiver}
+	ins = append(ins, mr.Ins...)
+	return &FuncRec{
+		Receiver:     nil,
+		Ins:          ins,
+		Outs:         mr.Outs,
+		HasDotDotDot: mr.HasDotDotDot,
+		Body:         mr.Body,
+	}
 }
-*/
 
-func TryStr(fn func() string) (z string) {
+func XXX_TryStr(fn func() string) (z string) {
 	defer func() {
 		r := recover()
 		if r != nil {
@@ -869,7 +859,6 @@ func TryStr(fn func() string) (z string) {
 func (r *FuncRec) Signature(daFunc string) string {
 	var b bytes.Buffer
 	if len(r.Outs) == 1 {
-		//L("one out: %s", r.Outs[0].TV.ToC())
 		P(&b, "%s ", ToC(r.Outs[0].TV))
 	} else {
 		P(&b, "void ")
@@ -879,7 +868,6 @@ func (r *FuncRec) Signature(daFunc string) string {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		//L("in [%d]: %s", i, TryStr(nat.TV.ToC))
 		Say(nat)
 		Say(nat.TV)
 		P(&b, "%s in_%s", ToC(nat.TV), SerialIfEmpty(nat.Name))
@@ -1022,9 +1010,9 @@ var IntTO = &PrimTV{BaseTV{"P_Int"}}
 var UintTO = &PrimTV{BaseTV{"P_Uint"}}
 var StringTO = &PrimTV{BaseTV{"P_String"}}
 var TypeTO = &PrimTV{BaseTV{"P_Type"}}
-var ImportTO = &PrimTV{BaseTV{"P_Import"}}
 var ListTO = &PrimTV{BaseTV{"P_List"}}
 var VoidTO = &PrimTV{BaseTV{"P_Void"}}
+var ImportTO = &PrimTV{BaseTV{"P_Import"}}
 
 // Mapping primative Go type names to Type Objects.
 var PrimTypeObjMap = map[string]TypeValue{
@@ -1035,7 +1023,6 @@ var PrimTypeObjMap = map[string]TypeValue{
 	"uint":        UintTO,
 	"string":      StringTO,
 	"_type_":      TypeTO,
-	"_import_":    ImportTO,
 	"_list_":      ListTO,
 	"_void_":      VoidTO,
 }
@@ -1522,7 +1509,8 @@ LOOP:
 				o.Next()
 				gd := &GDef{
 					Name: w,
-					TV:   ImportTO,
+					// TV:   &ImportTV{BaseTV{w}},
+					TV: ImportTO,
 				}
 				o.Imports = append(o.Imports, gd)
 				o.ImportsMap[w] = gd
@@ -1608,7 +1596,7 @@ LOOP:
 				} else {
 					// Receiver TypeValue is not resolved yet,
 					// so save it for later.
-					o.Meths = append(o.Funcs, gd)
+					o.Meths = append(o.Meths, gd)
 				}
 			default:
 				Panicf("Expected top level decl, got %q", d)
@@ -1646,6 +1634,12 @@ type SimpleLValue struct {
 	LC string // C language expression, pointer to the LValue.
 }
 
+func (val *SimpleValue) String() string {
+	return Format("SV(C: %v; T: %v)", val.C, val.T)
+}
+func (val *SimpleLValue) String() string {
+	return Format("SLV(LC: %v; T: %v)", val.LC, val.T)
+}
 func (val *SimpleValue) ToC() string {
 	return val.C
 }
@@ -1667,11 +1661,15 @@ type ImportValue struct {
 	Name string
 }
 
+func (val *ImportValue) String() string {
+	return Format("ImportValue(%s)", val.Name)
+}
 func (val *ImportValue) ToC() string {
-	return Format("@Import(%q)", val.Name)
+	return val.Name
 }
 func (val *ImportValue) Type() TypeValue {
 	return ImportTO
+	// return &ImportTV{BaseTV{val.Name}}
 }
 
 func (cg *CGen) LoadModule(name string) *CMod {
@@ -1843,7 +1841,7 @@ func (cm *CMod) FourthInitGlobals(p *Parser) {
 		cm.P("// Fourth == %s %s ==", how, g.FullName)
 	}
 	for _, g := range p.Vars {
-		Say("Fourth " + g.Package + " " + g.Name)
+		Say("Fourth(Var) " + g.Package + " " + g.Name)
 		say("var", g)
 		if g.Init != nil {
 			initS := &AssignS{
@@ -1856,29 +1854,34 @@ func (cm *CMod) FourthInitGlobals(p *Parser) {
 		}
 	}
 	for _, g := range p.Funcs {
-		say("func TODO: Inline init functions:", g)
+		Say("// Fourth(Func) TODO: Inline init functions:", g)
 	}
 	cm.P("} // INIT()")
 
 	for _, g := range p.Meths {
 		// Attach methods to their Struct.
-		Say(g)
-		Say(g.Init)
-		Say(g.Init.(*FunctionX).FuncRec)
-		Say(g.Init.(*FunctionX).FuncRec.Receiver)
-		rcvr := *g.Init.(*FunctionX).FuncRec.Receiver
+		methRec := g.Init.(*FunctionX).FuncRec
+		rcvr := *methRec.Receiver
 
-		Say("Fourth " + g.Package + " " + rcvr.String())
+		Say("Fourth(Meth)1 " + g.Package + " " + g.Name + " @ " + rcvr.String())
 		qc := cm.CGen.Mods[rcvr.Package].QuickCompiler(g)
 		rcvr = FillTV(qc, rcvr, rcvr.Expr)
 		g.Init.(*FunctionX).FuncRec.Receiver = &rcvr
-		// func FillTV(v ExprVisitor, nat NameAndType, o Expr) NameAndType
+		Say("Fourth(Meth)2 " + g.Package + " " + g.Name + " @ " + rcvr.String())
 
 		// Type must be a pointer.
 		if pointedType, ok := rcvr.TV.(*PointerTV); ok {
-			if structType, ok := pointedType.Type().(*StructTV); ok {
+			if structType, ok := pointedType.E.(*StructTV); ok {
 				rec := structType.StructRec
-				rec.Meths = append(rec.Meths, rcvr)
+				methNat := NameAndType{
+					g.Name,
+					nil,
+					&FunctionTV{BaseTV{}, methRec},
+					g.Package,
+				}
+				// methNat = FillTV(qc, methNat, g.Init)
+				rec.Meths = append(rec.Meths, methNat)
+
 			} else {
 				log.Panicf("expected *STRUCT receiver, got (not a struct) %v", rcvr)
 			}
@@ -2089,7 +2092,7 @@ func (co *Compiler) VisitLitString(x *LitStringX) Value {
 func (co *Compiler) VisitIdent(x *IdentX) Value {
 	log.Printf("VisitIdent <= %v", x)
 	z := co._VisitIdent_(x)
-	log.Printf("VisitIdent => %#v", z)
+	log.Printf("VisitIdent => %v", z)
 	return z
 }
 func (co *Compiler) _VisitIdent_(x *IdentX) Value {
@@ -2198,9 +2201,11 @@ func (co *Compiler) ResolveTypeOfValue(val Value) Value {
 }
 
 func (co *Compiler) VisitDot(dot *DotX) Value {
-	log.Printf("VisitDot: <------ %#v", dot)
-	val := co.ResolveTypeOfValue(dot.X.VisitExpr(co))
-	log.Printf("VisitDot: val---- %#v", val)
+	log.Printf("VisitDot: <------ %v", dot)
+	// val := co.ResolveTypeOfValue(dot.X.VisitExpr(co))
+	val := dot.X.VisitExpr(co)
+	log.Printf("VisitDot: val---- %v", val)
+
 	if imp, ok := val.(*ImportValue); ok {
 		modName := imp.Name
 		log.Printf("DOT %q %#v", modName, dot.Member)
@@ -2220,18 +2225,19 @@ func (co *Compiler) VisitDot(dot *DotX) Value {
 		}
 	}
 
-	if typ, ok := val.Type().(*PointerTV); ok {
-		val = &SimpleValue{Format("(*(%s))", val.ToC()), typ.E}
-		L("VisitDot eliminating pointer: %#v of type %#v", val, val.Type())
-	}
-	if typ, ok := val.Type().(*PointerTV); ok {
-		val = &SimpleValue{Format("(*(%s))", val.ToC()), typ.E}
-		L("VisitDot eliminating pointer: %#v of type %#v", val, val.Type())
-	}
+	/*
+		if typ, ok := val.Type().(*PointerTV); ok {
+			val = &SimpleValue{Format("(*(%s))", val.ToC()), typ.E}
+			L("VisitDot eliminating pointer: %#v of type %#v", val, val.Type())
+		}
+	*/
 
 	if pointedType, ok := val.Type().(*PointerTV); ok {
-		if structType, ok := pointedType.Type().(*StructTV); ok {
+		Say("pointedType", pointedType)
+		if structType, ok := pointedType.E.(*StructTV); ok {
+			Say("structType", structType)
 			rec := structType.StructRec
+			Say("rec", rec)
 			if ftype, ok := FindTypeByName(rec.Fields, dot.Member); ok {
 				z := &SimpleValue{
 					C: Format("(%s).%s", val.ToC(), dot.Member),
@@ -2245,7 +2251,7 @@ func (co *Compiler) VisitDot(dot *DotX) Value {
 					C: Format("METH__%s__%s@(%s)", rec.Name, dot.Member, val.ToC()),
 					T: mtype,
 				}
-				L("VisitDot returns Field: %#v", z)
+				L("VisitDot returns meth: %#v", z)
 				return z
 			}
 		}
