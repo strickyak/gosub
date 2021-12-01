@@ -1745,27 +1745,6 @@ func (cm *CMod) FirstSlotGlobals(p *Parser) {
 	}
 }
 
-/* CRAP
-func (cm *CMod) SecondFixTypeGDef(p *Parser, g *GDef) {
-    qc = cm.QuickCompiler(g)
-    g.Value = g.Init.VisitExpr(qc)
-    switch t := g.Value.(type) {
-    case *PointerTX:
-        t.E = FillTV(qc, t.E, t)
-    case *SliceTX:
-        t.E = FillTV(qc, t.E, t)
-    case *MapTX:
-        t.K = FillTV(qc, t.K, t)
-        t.V = FillTV(qc, t.V, t)
-    case *StructTX:
-        for
-    case *InterfaceTX:
-    case *FunctionTX:
-
-    }
-}
-*/
-
 func (cm *CMod) SecondBuildGlobals(p *Parser) {
 	for _, g := range p.Imports {
 		cm.CGen.LoadModule(g.Name)
@@ -2267,6 +2246,28 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 	_ = lenA
 	_ = lenB // TODO
 
+	if ass.Op == ":=" {
+		// bug: should wait until after RHS to define these.
+		for _, a := range ass.A {
+			if id, ok := a.(*IdentX); ok {
+				var name string
+				if id.X != "" && id.X != "_" {
+					name = id.X
+				} else {
+					name = Serial("tmp_")
+				}
+
+				local := &GDef{
+					Name:     name,
+					FullName: Format("v_%s", name),
+				}
+				co.Locals.GDefs[id.X] = local
+			} else {
+				log.Panic("Expected an identifier in LHS of `:=` but got %v", a)
+			}
+		}
+	}
+
 	// Evalute the rvalues.
 	var rvalues []Value
 	for _, e := range ass.B {
@@ -2471,8 +2472,50 @@ func (buf *Buf) String() string {
 }
 
 func (co *Compiler) EmitFunc(gd *GDef) {
+	scope := &Scope{
+		Name:   Format("Locals of %s", gd.FullName),
+		GDefs:  make(map[string]*GDef),
+		GDef:   gd,
+		CGen:   co.CGen,
+		Parent: co.CMod.Scope,
+	}
+	co.Locals = scope
 	rec := gd.Init.(*FunctionX).FuncRec
 	co.P(rec.Signature(gd.FullName))
+
+	for i, in := range rec.Ins {
+		var name string
+		if in.Name != "" && in.Name != "_" {
+			name = in.Name
+		} else {
+			name = Format("__%d", i)
+		}
+
+		local := &GDef{
+			Name:     name,
+			FullName: Format("in_%s", name),
+			Type:     in.Expr,
+			TV:       in.TV,
+		}
+		co.Locals.GDefs[name] = local
+	}
+
+	for i, out := range rec.Outs {
+		var name string
+		if out.Name != "" && out.Name != "_" {
+			name = out.Name
+		} else {
+			name = Format("__%d", i)
+		}
+
+		local := &GDef{
+			Name:     name,
+			FullName: Format("(*out_%s)", name),
+			Type:     out.Expr,
+			TV:       out.TV,
+		}
+		co.Locals.GDefs[name] = local
+	}
 
 	if rec.Body != nil {
 		co.P("{\n")
