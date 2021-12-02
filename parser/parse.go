@@ -1874,6 +1874,43 @@ func (cm *CMod) FifthPrintFunctions(p *Parser) {
 		cm.P(co.Buf.String())
 		cm.Flush()
 	}
+
+	for _, g := range p.Meths {
+		methRec := g.Init.(*FunctionX).FuncRec
+		rcvr := *methRec.Receiver
+		Say("Fifth(Meth) " + g.Package + " " + g.Name + " @ " + rcvr.String())
+
+		// Type must be a pointer.
+		pointedType, ok := rcvr.TV.(*PointerTV)
+		if !ok {
+			Panicf("To generate method for *STRUCT, expected pointer, got %v", rcvr.TV)
+		}
+
+		structType, ok := pointedType.E.(*StructTV)
+		if !ok {
+			Panicf("To generate method for *STRUCT, expected struct, got %v", pointedType.E)
+		}
+
+		Say("Fifth " + g.Package + " #" + structType.ToC() + "# " + g.Name)
+		cm.P("// Fifth METH: #T #s %q;" /*g.Value.Type(), g.Value.Type().CType(),*/, g.Name)
+		co := cm.QuickCompiler(g)
+		co.EmitFunc(g)
+		cm.P(co.Buf.String())
+		cm.Flush()
+
+		/*
+			if structType, ok := pointedType.E.(*StructTV); ok {
+				rec := structType.StructRec
+				methNat := NameAndType{
+					g.Name,
+					nil,
+					&FunctionTV{BaseTV{}, methRec},
+					g.Package,
+				}
+				// methNat = FillTV(qc, methNat, g.Init)
+				rec.Meths = append(rec.Meths, methNat)
+		*/
+	}
 }
 
 func (cm *CMod) VisitGlobals(p *Parser) {
