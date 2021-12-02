@@ -457,7 +457,7 @@ func (o *PointerTV) TypeOfHandle() (z string, ok bool) {
 }
 
 func (o *BaseTV) CType() string      { return "TODO(BaseTV.CType)" }
-func (o *PrimTV) CType() string      { return PrimTypeCMap[o.Name] }
+func (o *PrimTV) CType() string      { return "P_" + o.Name }
 func (o *SliceTV) CType() string     { return "Slice" }
 func (o *MapTV) CType() string       { return "Map" }
 func (o *StructTV) CType() string    { return "Struct" }
@@ -554,7 +554,7 @@ func (o *PrimTV) Cast(c string, typ TypeValue) (z string, ok bool) {
 		return c, true
 	}
 	if o.Intlike() && typ.Intlike() {
-		return Format("(%s)(%s)", PrimTypeCMap[o.Name], c), true
+		return Format("(P_%s)(%s)", o.Name, c), true
 	}
 	return "", false
 }
@@ -1003,37 +1003,29 @@ func NewParser(r io.Reader, filename string) *Parser {
 }
 
 // TODO ???
-var BoolTO = &PrimTV{BaseTV{"P_Bool"}}
-var ByteTO = &PrimTV{BaseTV{"P_Byte"}}
-var ConstIntTO = &PrimTV{BaseTV{"P_ConstInt"}}
-var IntTO = &PrimTV{BaseTV{"P_Int"}}
-var UintTO = &PrimTV{BaseTV{"P_Uint"}}
-var StringTO = &PrimTV{BaseTV{"P_String"}}
-var TypeTO = &PrimTV{BaseTV{"P_Type"}}
-var ListTO = &PrimTV{BaseTV{"P_List"}}
-var VoidTO = &PrimTV{BaseTV{"P_Void"}}
-var ImportTO = &PrimTV{BaseTV{"P_Import"}}
+var BoolTO = &PrimTV{BaseTV{"bool"}}
+var ByteTO = &PrimTV{BaseTV{"byte"}}
+var ConstIntTO = &PrimTV{BaseTV{"_const_int_"}}
+var IntTO = &PrimTV{BaseTV{"int"}}
+var UintTO = &PrimTV{BaseTV{"uint"}}
+var StringTO = &PrimTV{BaseTV{"string"}}
+var TypeTO = &PrimTV{BaseTV{"_type_"}}
+var ListTO = &PrimTV{BaseTV{"_list_"}}
+var VoidTO = &PrimTV{BaseTV{"_void_"}}
+var ImportTO = &PrimTV{BaseTV{"_import_"}}
 
 // Mapping primative Go type names to Type Objects.
-var PrimTypeObjMap = map[string]TypeValue{
-	"bool":        BoolTO,
-	"byte":        ByteTO,
-	"_const_int_": ConstIntTO,
-	"int":         IntTO,
-	"uint":        UintTO,
-	"string":      StringTO,
-	"_type_":      TypeTO,
-	"_list_":      ListTO,
-	"_void_":      VoidTO,
-}
-var PrimTypeCMap = map[string]string{
-	"bool":   "Bool",
-	"byte":   "Byte",
-	"int":    "Int",
-	"uint":   "Uint",
-	"string": "String",
-	"error":  "Interface(_)",
-	"type":   "Type(_)",
+var PrimTypeObjList = []*PrimTV{
+	BoolTO,
+	ByteTO,
+	ConstIntTO,
+	IntTO,
+	UintTO,
+	StringTO,
+	TypeTO,
+	ListTO,
+	VoidTO,
+	ImportTO,
 }
 
 func (o *Parser) ParsePrim() Expr {
@@ -1804,12 +1796,16 @@ func (cm *CMod) ThirdDefineGlobals(p *Parser) {
 	for _, g := range p.Vars {
 		Say("Third Vars: " + g.Package + " " + g.Name)
 		say("var", g)
+		Say("%s %s;", g.Value, g.FullName)
+		Say("%s %s;", g.Value.Type(), g.FullName)
+		Say("%s %s;", g.Value.Type().CType(), g.FullName)
 		cm.P("%s %s;", g.Value.Type().CType(), g.FullName)
 	}
 	for _, g := range p.Funcs {
 		Say("Third Funcs: " + g.Package + " " + g.Name)
 		say("func", g)
-		cm.P("extern %s %s;", "FUNC" /*g.Value.Type().CType()*/, g.FullName)
+		Say("extern %s %s;", g.Value.Type().CType(), g.FullName)
+		cm.P("extern %s %s;", g.Value.Type().CType(), g.FullName)
 	}
 }
 
@@ -1973,12 +1969,11 @@ func NewCGenAndMainCMod(opt *Options, w io.Writer) (*CGen, *CMod) {
 	mainMod.CGen = cg
 
 	// Populate PrimScope
-	for k, v := range PrimTypeObjMap {
-		fullname, _ := PrimTypeCMap[k]
-		cg.Prims.GDefs[k] = &GDef{
-			Name:     k,
-			FullName: fullname,
-			Value:    v,
+	for _, e := range PrimTypeObjList {
+		cg.Prims.GDefs[e.Name] = &GDef{
+			Name:     e.Name,
+			FullName: "P_" + e.Name,
+			Value:    e,
 			TV:       TypeTO, // the metatype
 			Active:   true,
 		}
