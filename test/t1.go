@@ -1,5 +1,5 @@
-package t1
+package main
 
-func foo() int {
-	return 3 + 4
+func main() {
+	println(3 + 4)
 }

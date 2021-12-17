@@ -463,7 +463,9 @@ func (o *MapTV) CType() string       { return "Map" }
 func (o *StructTV) CType() string    { return "Struct" }
 func (o *PointerTV) CType() string   { return "Pointer" }
 func (o *InterfaceTV) CType() string { return "Interface" }
-func (o *FunctionTV) CType() string  { return o.FuncRec.Signature("(*)") }
+
+// func (o *FunctionTV) CType() string  { return o.FuncRec.Signature("(*)") }
+func (o *FunctionTV) CType() string { return o.FuncRec.PtrTypedef }
 
 func (o *BaseTV) Assign(c string, typ TypeValue) (z string, ok bool) { panic("todo") }
 func (o *PrimTV) Assign(c string, typ TypeValue) (z string, ok bool) {
@@ -832,18 +834,31 @@ type FuncRec struct {
 	Outs         []NameAndType
 	HasDotDotDot bool
 	Body         *Block
+	PtrTypedef   string // global typedef of a pointer to this function type.
 }
+
+// Maps global typedef names to the C definition.
+var FuncPtrTypedefs = make(map[string]string)
 
 func MethRecToFuncRec(mr *FuncRec) *FuncRec {
 	ins := []NameAndType{*mr.Receiver}
 	ins = append(ins, mr.Ins...)
-	return &FuncRec{
+	fn := &FuncRec{
 		Receiver:     nil,
 		Ins:          ins,
 		Outs:         mr.Outs,
 		HasDotDotDot: mr.HasDotDotDot,
 		Body:         mr.Body,
 	}
+	RegisterFuncRec(fn)
+	return fn
+}
+
+func RegisterFuncRec(fn *FuncRec) {
+	name := Serial("funk")
+	sig := fn.Signature(Format("(*%s)", name))
+	FuncPtrTypedefs[name] = sig
+	fn.PtrTypedef = name
 }
 
 func XXX_TryStr(fn func() string) (z string) {
@@ -882,8 +897,9 @@ func (r *FuncRec) Signature(daFunc string) string {
 		}
 	}
 	b.WriteByte(')')
-	L("Signature: %s", b.String())
-	return b.String()
+	sig := b.String()
+	L("Signature: %s", sig)
+	return sig
 }
 
 type StructRec struct {
@@ -1245,6 +1261,7 @@ LOOP:
 			fieldName := o.TakeIdent()
 			sig := &FuncRec{}
 			o.ParseFunctionSignature(sig)
+			RegisterFuncRec(sig)
 			fieldType := &FunctionTX{sig}
 			rec.Meths = append(rec.Meths, NameAndType{fieldName, fieldType, nil, o.Package})
 		case L_EOL:
@@ -1473,6 +1490,7 @@ func (o *Parser) ParseFunctionSignature(fn *FuncRec) {
 func (o *Parser) ParseFunc() *FuncRec {
 	fn := &FuncRec{}
 	o.ParseFunctionSignature(fn)
+	RegisterFuncRec(fn)
 	if o.Kind != L_EOL {
 		fn.Body = o.ParseBlock(fn)
 	}
@@ -1802,10 +1820,13 @@ func (cm *CMod) ThirdDefineGlobals(p *Parser) {
 		cm.P("%s %s;", g.Value.Type().CType(), g.FullName)
 	}
 	for _, g := range p.Funcs {
+		ft := g.Value.Type().(*FunctionTV)
+		decl := ft.FuncRec.Signature(g.FullName)
+		_ = ft
 		Say("Third Funcs: " + g.Package + " " + g.Name)
 		say("func", g)
-		Say("extern %s %s;", g.Value.Type().CType(), g.FullName)
-		cm.P("extern %s %s;", g.Value.Type().CType(), g.FullName)
+		Say("extern %s;", decl)
+		cm.P("extern %s;", decl)
 	}
 }
 
