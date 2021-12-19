@@ -208,6 +208,10 @@ func (o *InterfaceTX) String() string {
 func (o *FunctionTX) String() string { return Format("FunctionTX(%v)", o.FuncRec) }
 
 func FillTV(v ExprVisitor, nat NameAndType, where Expr) NameAndType {
+	if nat.TV != nil {
+		return nat // Already filled.
+	}
+
 	s := Serial("")
 	Say("FillTV-1:"+s, nat)
 	val := nat.Expr.VisitExpr(v)
@@ -220,10 +224,10 @@ func FillTV(v ExprVisitor, nat NameAndType, where Expr) NameAndType {
 		nat.TV = t
 		return FillTV(v, nat, where)
 		/*
-			case *SliceTV:
-		        return &SliceTV{E: FillTV(NameAndType("-e-", nil  PROBLEM ddt
-			case *MapTV:
-			case *PointerTV:
+				case *SliceTV:
+			        return &SliceTV{E: FillTV(NameAndType("-e-", nil  PROBLEM ddt
+				case *MapTV:
+				case *PointerTV:
 		*/
 	case *InterfaceTV:
 		p := t.InterfaceRec
@@ -245,7 +249,21 @@ func FillTV(v ExprVisitor, nat NameAndType, where Expr) NameAndType {
 		Say("FillTV-3s:"+s, nat)
 		return nat
 	case *FunctionTV:
+		/*
+			type FuncRec struct {
+				Receiver     *NameAndType // nil if no Receiver.
+				Ins          []NameAndType
+				Outs         []NameAndType
+				HasDotDotDot bool
+				Body         *Block
+				PtrTypedef   string // global typedef of a pointer to this function type.
+			}
+		*/
 		p := t.FuncRec
+		if p.Receiver != nil {
+			tmp := FillTV(v, *p.Receiver, where)
+			p.Receiver = &tmp
+		}
 		for i, e := range p.Ins {
 			p.Ins[i] = FillTV(v, e, where)
 		}
@@ -1857,8 +1875,25 @@ func (cm *CMod) SecondBuildGlobals(p *Parser) {
 	}
 	for _, g := range p.Funcs {
 		Say(g.Package, g.Name, "2F")
+
 		g.Value = g.Init.VisitExpr(cm.QuickCompiler(g))
 		Say(g.Value, g.Name, "2F.")
+
+		qc := cm.QuickCompiler(g)
+
+		p := g.Value.Type().(*FunctionTV).FuncRec
+		if p.Receiver != nil {
+			tmp := FillTV(qc, *p.Receiver, g.Init)
+			p.Receiver = &tmp
+		}
+		for i, e := range p.Ins {
+			p.Ins[i] = FillTV(qc, e, g.Init)
+		}
+		for i, e := range p.Outs {
+			p.Outs[i] = FillTV(qc, e, g.Init)
+		}
+
+		cm.P("//2F// %s // %s //", g.Name, g.Value)
 	}
 }
 
@@ -1888,7 +1923,7 @@ func (cm *CMod) ThirdDefineGlobals(p *Parser) {
 		Say("Third Funcs: " + g.Package + " " + g.Name)
 		say("func", g)
 		Say("extern %s;", decl)
-		cm.P("extern %s;", decl)
+		cm.P("extern %s; //3F//", decl)
 	}
 }
 
