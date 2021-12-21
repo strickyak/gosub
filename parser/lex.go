@@ -25,6 +25,7 @@ type Lex struct {
 	Pending  byte // holds UnReadChar
 	PrevLine int
 	PrevCol  int
+	AtEof    bool
 
 	Kind int
 	Num  int
@@ -81,6 +82,10 @@ func (o *Lex) Next() {
 }
 func (o *Lex) _Next_() {
 	o.Num, o.Word = 0, ""
+	if o.AtEof {
+		o.Kind, o.Word = L_EOF, "<EOF>"
+		return
+	}
 	c := o.ReadChar()
 	for 0 < c && c <= 32 {
 		if c == '\n' {
@@ -90,7 +95,7 @@ func (o *Lex) _Next_() {
 		c = o.ReadChar()
 	}
 	if c == 0 {
-		o.Kind, o.Word = L_EOF, "<EOF>"
+		o.Kind, o.Word, o.AtEof = L_EOL, ";;", true
 		return
 	}
 	if c == '/' {

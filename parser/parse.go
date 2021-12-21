@@ -106,7 +106,8 @@ func FindTypeByName(list []NameTV, name string) (TypeValue, bool) {
 ///////////
 
 type Options struct {
-	LibDir string
+	LibDir      string
+	SkipBuiltin bool
 }
 
 //////// Expr
@@ -1942,7 +1943,9 @@ func CompileToC(r io.Reader, sourceName string, w io.Writer, opt *Options) {
 	cg, cm := NewCGenAndMainCMod(opt, w)
 	cm.P("#include <stdio.h>")
 	cm.P("#include \"runt.h\"")
-	cg.LoadModule("builtin")
+	if !opt.SkipBuiltin {
+		cg.LoadModule("builtin")
+	}
 	p := NewParser(r, sourceName)
 	p.ParseModule(cm, cg)
 
@@ -2341,7 +2344,14 @@ func NewCompiler(cm *CMod, gdef *GDef) *Compiler {
 		GDef: gdef,
 	}
 
-	co.Locals = NewScope("locals of "+gdef.FullName, cm.Scope, gdef, nil, cm.CGen)
+	Say("cm.Scope", cm.Scope)
+	Say("cm.CGen", cm.CGen)
+	Say("gdef", gdef)
+	gloss := "locals of something"
+	if gdef != nil {
+		gloss = "locals of " + gdef.FullName
+	}
+	co.Locals = NewScope(gloss, cm.Scope, gdef, nil, cm.CGen)
 	return co
 }
 
@@ -2576,7 +2586,7 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 				}
 				co.Locals.GDefs[id.X] = local
 			} else {
-				log.Panic("Expected an identifier in LHS of `:=` but got %v", a)
+				log.Panicf("Expected an identifier in LHS of `:=` but got %v", a)
 			}
 		}
 	}
@@ -2682,7 +2692,7 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 					co.P("  %s = (%s)(%s);", cvar, val.Type().CType(), val.ToC())
 				}
 			default:
-				log.Fatal("bad VisitAssign LHS: %#v", ass.A)
+				log.Fatalf("bad VisitAssign LHS: %#v", ass.A)
 			}
 		}
 	} // switch
