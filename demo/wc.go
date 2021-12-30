@@ -1,3 +1,4 @@
+//go:build foo
 // +build foo
 
 package main
