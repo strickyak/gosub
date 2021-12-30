@@ -146,7 +146,7 @@ func (o *Lex) _Next_() {
 		var s []byte
 		s = append(s, c)
 		c = o.ReadChar()
-		for 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || c == '_' {
+		for '0' <= c && c <= '9' || 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || c == '_' {
 			s = append(s, c)
 			c = o.ReadChar()
 		}
