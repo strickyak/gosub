@@ -2079,27 +2079,29 @@ func (cm *CMod) ThirdDefineGlobals(p *Parser) {
 
 func (cm *CMod) FourthInitGlobals(p *Parser) {
 	// Fourth: Initialize the global vars.
-	cm.P("void INIT() {")
-	say := func(how string, g *GDef) {
-		cm.P("// Fourth == %s %s ==", how, g.FullName)
-	}
-	for _, g := range p.Vars {
-		Say("Fourth(Var) " + g.Package + " " + g.Name)
-		say("var", g)
-		if g.Init != nil {
-			initS := &AssignS{
-				A:  []Expr{&IdentX{g.Name, cm, true, g}},
-				Op: "=",
-				B:  []Expr{g.Init},
-			}
-			// Emit initialization of var into init() function.
-			initS.VisitStmt(cm.QuickCompiler(g))
+	if false {
+		cm.P("void INIT() {")
+		say := func(how string, g *GDef) {
+			cm.P("// Fourth == %s %s ==", how, g.FullName)
 		}
+		for _, g := range p.Vars {
+			Say("Fourth(Var) " + g.Package + " " + g.Name)
+			say("var", g)
+			if g.Init != nil {
+				initS := &AssignS{
+					A:  []Expr{&IdentX{g.Name, cm, true, g}},
+					Op: "=",
+					B:  []Expr{g.Init},
+				}
+				// Emit initialization of var into init() function.
+				initS.VisitStmt(cm.QuickCompiler(g))
+			}
+		}
+		for _, g := range p.Funcs {
+			Say("// Fourth(Func) TODO: Inline init functions:", g)
+		}
+		cm.P("} // INIT()")
 	}
-	for _, g := range p.Funcs {
-		Say("// Fourth(Func) TODO: Inline init functions:", g)
-	}
-	cm.P("} // INIT()")
 
 	for _, g := range p.Meths {
 		_ = g
@@ -2420,6 +2422,8 @@ func (co *Compiler) VisitConstructor(x *ConstructorX) Value {
 	}
 }
 func (co *Compiler) VisitFunction(x *FunctionX) Value {
+	L("VisitFunction: %#v", x.FuncRecX)
+	L("VisitFunction: %v", x.FuncRecX)
 	// TODO // return &SimpleValue{"TODO:1794", &FunctionTV{x.FuncRec}}
 	panic("TODO:1792")
 }
@@ -2920,4 +2924,24 @@ func (o *Nando) VisitIf(ifs *IfS) {
 func (o *Nando) VisitSwitch(sws *SwitchS) {
 }
 func (o *Nando) VisitBlock(a *Block) {
+}
+
+type VarStack struct {
+	A []NameTV
+}
+
+func (o *VarStack) Push(n NameTV) {
+	o.A = append(o.A, n)
+}
+func (o *VarStack) Pop() NameTV {
+	z := o.A[len(o.A)-1]
+	o.A = o.A[:len(o.A)-1]
+	return z
+}
+
+type FuncBuilder struct {
+	Handles VarStack
+	Strings VarStack
+	Bytes   VarStack
+	Words   VarStack
 }
