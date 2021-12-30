@@ -2,9 +2,8 @@ package parser
 
 import (
 	"bytes"
-	"testing"
-	//"fmt"
 	"regexp"
+	"testing"
 )
 
 var crunchLines = regexp.MustCompile(`(?m)^[#].*`)
@@ -30,38 +29,50 @@ func SimplyEqual(t *testing.T, a, b string) {
 	}
 }
 
-func Test1(t *testing.T) {
+func TestVarInt(t *testing.T) {
 	prog := `var foo int`
 	r := bytes.NewBufferString(prog)
 	w := bytes.NewBufferString("")
-	CompileToC(r, "Test1", w, &Options{
+	CompileToC(r, "TEST", w, &Options{
 		LibDir:      "/none/",
 		SkipBuiltin: true,
 	})
-	want := `P_int main__foo; void INIT() {}`
+	want := `P_int main__foo;`
 	SimplyEqual(t, w.String(), want)
 }
 
-func Test2(t *testing.T) {
+func TestAppleStruct(t *testing.T) {
 	prog := `type Apple struct { Worm int }`
 	r := bytes.NewBufferString(prog)
 	w := bytes.NewBufferString("")
-	CompileToC(r, "Test1", w, &Options{
+	CompileToC(r, "TEST", w, &Options{
 		LibDir:      "/none/",
 		SkipBuiltin: true,
 	})
-	want := `typedef Struct main__Apple; void INIT(){}`
+	want := `typedef Struct main__Apple;`
 	SimplyEqual(t, w.String(), want)
 }
 
-func Test3(t *testing.T) {
+func TestFrobberInterface(t *testing.T) {
 	prog := `type Frobber interface { Frob()string }`
 	r := bytes.NewBufferString(prog)
 	w := bytes.NewBufferString("")
-	CompileToC(r, "Test1", w, &Options{
+	CompileToC(r, "TEST", w, &Options{
 		LibDir:      "/none/",
 		SkipBuiltin: true,
 	})
-	want := `typedef Interface main__Frobber; voidINIT(){}`
+	want := `typedef Interface main__Frobber;`
+	SimplyEqual(t, w.String(), want)
+}
+
+func TestConstInt(t *testing.T) {
+	prog := `const foo = 123`
+	r := bytes.NewBufferString(prog)
+	w := bytes.NewBufferString("")
+	CompileToC(r, "TEST", w, &Options{
+		LibDir:      "/none/",
+		SkipBuiltin: true,
+	})
+	want := ``
 	SimplyEqual(t, w.String(), want)
 }
