@@ -1,9 +1,9 @@
-DEMO=demo/wc.go
+T=demo/wc.go
 all:
-	go run gosub.go  < $(DEMO)   > $(DEMO).c 
-	clang-format -i --style=Google $(DEMO).c
-	cat -n $(DEMO).c
-	# cc -I. $(DEMO).c runt.c bigmem.c
+	go run gosub.go  < $T   > $T.c
+	clang-format -i --style=Google $T.c
+	cat -n $T.c
+	# cc -I. $T.c runt.c bigmem.c
 	# ./a.out
 
 ci:
