@@ -7,9 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
-	//"path/filepath"
 	"reflect"
-	//"runtime/debug"
 	"strings"
 )
 
@@ -224,9 +222,16 @@ func (o *StructTX) VisitExpr(v ExprVisitor) Value {
 }
 func (o *InterfaceTX) VisitExpr(v ExprVisitor) Value {
 	p := o.InterfaceRecX
+	if p == nil {
+		// nil means this is _any_ "interface empty"
+		return &TypeVal{AnyTO}
+	}
+
+	numMeths := len(p.Meths)
+	assert(numMeths > 0)
 	z := &InterfaceRec{
 		Name:  p.Name,
-		Meths: make([]NameTV, len(p.Meths)),
+		Meths: make([]NameTV, numMeths),
 	}
 	for i, e := range p.Meths {
 		Say(i, e)
@@ -237,7 +242,10 @@ func (o *InterfaceTX) VisitExpr(v ExprVisitor) Value {
 	return &TypeVal{&InterfaceTV{z}}
 }
 func (o *FunctionTX) VisitExpr(v ExprVisitor) Value {
-	x := o.FuncRecX
+	z := o.FuncRecX.VisitFuncRecX(v)
+	return &TypeVal{&FunctionTV{z}}
+}
+func (x *FuncRecX) VisitFuncRecX(v ExprVisitor) *FuncRec {
 	z := &FuncRec{
 		Ins:          make([]NameTV, len(x.Ins)),
 		Outs:         make([]NameTV, len(x.Outs)),
@@ -246,12 +254,14 @@ func (o *FunctionTX) VisitExpr(v ExprVisitor) Value {
 		FuncRecX:     x,
 	}
 	for i, e := range x.Ins {
+		L("250: Ins %d name %q expr %#v", i, e.Name, e.Expr)
 		z.Ins[i] = NameTV{e.Name, e.Mod.VisitTypeExpr(e.Expr)}
 	}
 	for i, e := range x.Outs {
+		L("250: Outs %d name %q expr %#v", i, e.Name, e.Expr)
 		z.Outs[i] = NameTV{e.Name, e.Mod.VisitTypeExpr(e.Expr)}
 	}
-	return &TypeVal{&FunctionTV{z}}
+	return z
 }
 
 type TypeValue interface {
@@ -623,10 +633,8 @@ func (o *LitStringX) VisitExpr(v ExprVisitor) Value {
 }
 
 type IdentX struct {
-	X        string
-	Outer    *CMod // Outer scope where defined -- but the IdentX may or may not be global.
-	Resolved bool  // if we looked for the *GDef.
-	GDef     *GDef // cache the *GDef if resolved.
+	X     string
+	Outer *CMod // Outer scope where defined -- but the IdentX may or may not be global.
 }
 
 func (o *IdentX) String() string {
@@ -666,11 +674,9 @@ type FunctionX struct {
 }
 
 func (o *FunctionX) String() string {
-	return fmt.Sprintf("Function(%s)", o.FuncRecX)
+	return fmt.Sprintf("FunctionX(%s)", o.FuncRecX)
 }
 func (o *FunctionX) VisitExpr(v ExprVisitor) Value {
-	//log.Printf("439: FunctionX=%#v", o)
-	//log.Printf("439: FuncRec=%#v", o.FuncRec)
 	return v.VisitFunction(o)
 }
 
@@ -1070,13 +1076,12 @@ func (o *SubVal) ResolveAsTypeValue() (TypeValue, bool)    { return nil, false }
 func (o *ImportVal) ResolveAsTypeValue() (TypeValue, bool) { return nil, false }
 func (o *TypeVal) ResolveAsTypeValue() (TypeValue, bool)   { return o.tv, true }
 func (o *NameVal) ResolveAsTypeValue() (TypeValue, bool) {
-	if gd, ok := o.dflt.Members[o.name]; ok {
-		if val, ok := gd.Value.(*TypeVal); ok {
-			return val.ResolveAsTypeValue()
-		}
-		panic(F("wanted TypeValue for %q (in package %q), got %#v", o.name, o.dflt.Package, gd.Value))
+	//# if gd, ok := o.dflt.Members[o.name]; ok #
+	gd := o.dflt.Find(o.name)
+	if val, ok := gd.Value.(*TypeVal); ok {
+		return val.ResolveAsTypeValue()
 	}
-	panic(F("cannot find member %q in package %q", o.name, o.dflt.Package))
+	panic(F("wanted TypeValue for %q (in package %q), got %#v", o.name, o.dflt.Package, gd.Value))
 }
 
 type CVal struct {
@@ -1290,7 +1295,7 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 		if g.Init != nil {
 			// We are writing the global init() function.
 			initS := &AssignS{
-				A:  []Expr{&IdentX{g.Name, cm, true, g}},
+				A:  []Expr{&IdentX{g.Name, cm}},
 				Op: "=",
 				B:  []Expr{g.Init},
 			}
@@ -1343,17 +1348,32 @@ func (cm *CMod) ThirdDefineGlobals(p *Parser, pr printer) {
 		pr("%s %s;", g.Value.Type().CType(), g.CName)
 	}
 	for _, g := range p.Funcs {
-		if g.Value != nil {
-			ft := g.Value.Type().(*FunctionTV)
-			decl := ft.FuncRec.SignatureStr(g.CName)
-			_ = ft
-			Say("Third Funcs: " + g.Package + " " + g.Name)
-			say("func", g)
-			Say("extern %s;", decl)
-			pr("extern %s; //3F//", decl)
-		} else {
-			pr("extern FUNC_TODO_1355 %s.%s; //3F//", g.Package, g.Name)
+		if g.Init == nil {
+			panic(F("extern FUNC_1355 %s.%s; //3F//", g.Package, g.Name))
 		}
+		co := cm.QuickCompiler(g)
+		pr("// Func Init: %#v", g.Init)
+
+		fx := g.Init.(*FunctionX)
+		frx := fx.FuncRecX
+		fr := frx.VisitFuncRecX(co)
+
+		g.Value = &NameVal{g.Name, cm}
+		g.Type = fx
+		g.TV = &FunctionTV{fr}
+		pr("// third func: g.Value=%#v", g.Value)
+		pr("// third func: g.Type=%#v", g.Type)
+		pr("// third func: g.TV=%#v", g.TV)
+
+		assert(g.Type != nil)
+		pr("// Func Type: %#v", g.Type)
+
+		_ = fx
+		// decl := fx.FuncRecX.SignatureStr(g.CName)
+		Say("Third Funcs: " + g.Package + " " + g.Name)
+		say("func", g)
+		//Say("extern %s;", decl)
+		//pr("extern %s; //3F//", decl)
 	}
 }
 
@@ -1369,7 +1389,7 @@ func (cm *CMod) FourthInitGlobals(p *Parser, pr printer) {
 			say("var", g)
 			if g.Init != nil {
 				initS := &AssignS{
-					A:  []Expr{&IdentX{g.Name, cm, true, g}},
+					A:  []Expr{&IdentX{g.Name, cm}},
 					Op: "=",
 					B:  []Expr{g.Init},
 				}
@@ -1416,11 +1436,15 @@ func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 	for _, g := range p.Funcs {
 		Say("Fifth " + g.Package + " " + g.Name)
 		pr("// Fifth FUNC: %T %s %q;", "#", "#", g.CName)
-		pr("// Fifth FUNC: %T %s %q;", g.Value.Type(), "#", g.CName)
-		pr("// Fifth FUNC: %T %s %q;", g.Value.Type(), g.Value.Type().CType(), g.CName)
-		co := cm.QuickCompiler(g)
-		co.EmitFunc(g)
-		pr(co.Buf.String())
+		//# pr("// Fifth FUNC: %T %s %q;", g.Value.Type(), "#", g.CName)
+		//# pr("// Fifth FUNC: %T %s %q;", g.Value.Type(), g.Value.Type().CType(), g.CName)
+		if g.Init != nil {
+			co := cm.QuickCompiler(g)
+			co.EmitFunc(g)
+			pr(co.Buf.String())
+		} else {
+			pr("// Cannot print function without body -- it must be extern.")
+		}
 	}
 
 	for _, g := range p.Meths {
@@ -1496,6 +1520,19 @@ type CMod struct { // isa Scope
 }
 
 func (cm *CMod) Find(s string) *GDef {
+	if cm == nil {
+		// Fall back to just the prims.
+		for _, e := range PrimTypeObjList {
+			if e.Name == s {
+				L("Fallback to PrimTypeObjList for %q", s)
+				return &GDef{
+					Name:  e.Name,
+					Value: &TypeVal{e},
+				}
+			}
+		}
+		panic(F("Find %q, but with nil CMod", s))
+	}
 	if d, ok := cm.Members[s]; ok {
 		return d
 	}
@@ -1631,23 +1668,7 @@ func (co *Compiler) VisitLitString(x *LitStringX) Value {
 	}
 }
 func (co *Compiler) VisitIdent(x *IdentX) Value {
-	log.Printf("VisitIdent <= %v", x)
-	z := co._VisitIdent_(x)
-	log.Printf("VisitIdent => %v", z)
-	return z
-}
-func (co *Compiler) _VisitIdent_(x *IdentX) Value {
 	return &NameVal{x.X, co.CMod}
-	/*
-			if gdef, _, ok := co.Locals.Find(x.X); ok {
-				if gdef.Value != nil {
-					return gdef.Value
-				}
-				return &NameVal{name: x.X, dflt: nil}
-			}
-		log.Panicf("Identifier not found: %q in %v", x.X, co.Subject)
-		return nil
-	*/
 }
 func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 	a := x.A.VisitExpr(co)
@@ -1664,10 +1685,11 @@ func (co *Compiler) VisitConstructor(x *ConstructorX) Value {
 	}
 }
 func (co *Compiler) VisitFunction(x *FunctionX) Value {
-	L("VisitFunction: %#v", x.FuncRecX)
-	L("VisitFunction: %v", x.FuncRecX)
-	// TODO // return &XXXSimpleValue{"TODO:1794", &FunctionTV{x.FuncRec}}
-	panic("TODO:1792")
+	L("VisitFunction: FuncRecX = %#v", x.FuncRecX)
+	funcRec := x.FuncRecX.VisitFuncRecX(co)
+	L("VisitFunction: FuncRec = %#v", funcRec)
+	t := &FunctionTV{funcRec}
+	return &CVal{c: "?1702?", t: t}
 }
 
 func (co *Compiler) VisitCall(x *CallX) Value {

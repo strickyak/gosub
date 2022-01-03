@@ -72,7 +72,7 @@ func (o *Parser) ParsePrim() Expr {
 		if o.Word == "struct" {
 			panic("Keyword `struct` not expected, except after `type`")
 		}
-		z := &IdentX{o.Word, o.CMod, false, nil}
+		z := &IdentX{o.Word, o.CMod}
 		o.Next()
 		return z
 	}
