@@ -7,7 +7,7 @@ all:
 	# ./a.out
 
 ci:
-	ci-l *.c *.h Makefile *.go */*.go
+	ci-l runtime/*.c runtime/*.h Makefile *.go */*.go
 
 fmt:
 	gofmt -w *.go */*.go

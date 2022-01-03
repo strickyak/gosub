@@ -340,10 +340,10 @@ func (o *Parser) ParseStmt(b *Block) Stmt {
 	case "if":
 		o.Next()
 		pred := o.ParseExpr()
-		yes := o.ParseBlock(b.FuncRecX)
+		yes := o.ParseBlock()
 		var no *Block
 		if o.Word == "else" {
-			no = o.ParseBlock(b.FuncRecX)
+			no = o.ParseBlock()
 		}
 		return &IfS{pred, yes, no}
 	case "for":
@@ -352,7 +352,7 @@ func (o *Parser) ParseStmt(b *Block) Stmt {
 		if o.Word != "{" {
 			pred = o.ParseExpr()
 		}
-		b2 := o.ParseBlock(b.FuncRecX)
+		b2 := o.ParseBlock()
 		return &WhileS{pred, b2}
 	case "switch":
 		o.Next()
@@ -371,11 +371,11 @@ func (o *Parser) ParseStmt(b *Block) Stmt {
 			case "case":
 				matches := o.ParseList()
 				o.TakePunc(":")
-				bare := o.ParseBareBlock(b.FuncRecX)
+				bare := o.ParseBareBlock()
 				sws.Cases = append(sws.Cases, &Case{matches, bare})
 			case "default":
 				o.TakePunc(":")
-				bare := o.ParseBareBlock(b.FuncRecX)
+				bare := o.ParseBareBlock()
 				sws.Default = bare
 			default:
 				panic(cOrD)
@@ -411,14 +411,14 @@ func (o *Parser) ParseStmt(b *Block) Stmt {
 		return a
 	}
 }
-func (o *Parser) ParseBlock(fn *FuncRecX) *Block {
+func (o *Parser) ParseBlock() *Block {
 	o.TakePunc("{")
-	b := o.ParseBareBlock(fn)
+	b := o.ParseBareBlock()
 	o.TakePunc("}")
 	return b
 }
-func (o *Parser) ParseBareBlock(fn *FuncRecX) *Block {
-	b := &Block{FuncRecX: fn}
+func (o *Parser) ParseBareBlock() *Block {
+	b := &Block{}
 	for o.Word != "}" && o.Word != "case" && o.Word != "default" {
 		switch o.Kind {
 		case L_EOL:
@@ -429,11 +429,13 @@ func (o *Parser) ParseBareBlock(fn *FuncRecX) *Block {
 				o.Next()
 				s := o.TakeIdent()
 				t := o.ParseType()
-				b.LocalXs = append(b.LocalXs, NameTX{s, t, o.CMod})
+				_, _ = s, t
+				panic("433 TODO add a var statement")
+				//< b.LocalXs = append(b.LocalXs, NameTX{s, t, o.CMod})
 			default:
 				stmt := o.ParseStmt(b)
 				if stmt != nil {
-					b.Stmts = append(b.Stmts, stmt)
+					b.stmts = append(b.stmts, stmt)
 				}
 				o.TakeEOL()
 			}
@@ -503,7 +505,7 @@ func (o *Parser) ParseFunc(receiver *NameTX) *FuncRecX {
 	o.ParseFunctionSignature(fn)
 	// RegisterFuncRec(fn)
 	if o.Kind != L_EOL {
-		fn.Body = o.ParseBlock(fn)
+		fn.Body = o.ParseBlock()
 	}
 	return fn
 }

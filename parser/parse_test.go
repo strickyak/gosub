@@ -76,3 +76,15 @@ func TestConstInt(t *testing.T) {
 	want := ``
 	SimplyEqual(t, w.String(), want)
 }
+
+func TestFunc0(t *testing.T) {
+	prog := `func zero(){}`
+	r := bytes.NewBufferString(prog)
+	w := bytes.NewBufferString("")
+	CompileToC(r, "TEST", w, &Options{
+		LibDir:      "/none/",
+		SkipBuiltin: true,
+	})
+	want := `nando`
+	SimplyEqual(t, w.String(), want)
+}

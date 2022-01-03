@@ -64,8 +64,8 @@ func Panicf(format string, args ...interface{}) string {
 	panic(s)
 }
 
-func FullName(a string, b string) string {
-	return a + "__" + b
+func CName(args ...string) string {
+	return strings.Join(args, "__")
 }
 
 var _serial_prev uint = 100

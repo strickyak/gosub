@@ -955,15 +955,26 @@ type XXX_NameAndType struct {
 	Package string
 }
 type Block struct {
-	LocalXs  []NameTX
-	Locals   []NameTV
-	Stmts    []Stmt
-	Parent   *Block
-	FuncRecX *FuncRecX
+	debugName string
+	locals    map[string]*GDef // not really G
+	stmts     []Stmt
+	parent    *Block
+	compiler  *Compiler
 }
 
-func (o *Block) VisitStmt(v StmtVisitor) {
-	v.VisitBlock(o)
+func (b *Block) Find(name string) *GDef {
+	if d, ok := b.locals[name]; ok {
+		return d
+	}
+	if b.parent != nil {
+		return b.parent.Find(name)
+	} else {
+		return b.compiler.CMod.Find(name)
+	}
+}
+
+func (b *Block) VisitStmt(v StmtVisitor) {
+	v.VisitBlock(b)
 }
 
 /*
@@ -1051,6 +1062,21 @@ type Value interface {
 	Type() TypeValue
 	Prep() []string
 	ToC() string
+	ResolveAsTypeValue() (TypeValue, bool)
+}
+
+func (o *CVal) ResolveAsTypeValue() (TypeValue, bool)      { return nil, false }
+func (o *SubVal) ResolveAsTypeValue() (TypeValue, bool)    { return nil, false }
+func (o *ImportVal) ResolveAsTypeValue() (TypeValue, bool) { return nil, false }
+func (o *TypeVal) ResolveAsTypeValue() (TypeValue, bool)   { return o.tv, true }
+func (o *NameVal) ResolveAsTypeValue() (TypeValue, bool) {
+	if gd, ok := o.dflt.Members[o.name]; ok {
+		if val, ok := gd.Value.(*TypeVal); ok {
+			return val.ResolveAsTypeValue()
+		}
+		panic(F("wanted TypeValue for %q (in package %q), got %#v", o.name, o.dflt.Package, gd.Value))
+	}
+	panic(F("cannot find member %q in package %q", o.name, o.dflt.Package))
 }
 
 type CVal struct {
@@ -1149,7 +1175,7 @@ func (val *ImportVal) Prep() []string {
 	return nil
 }
 
-func (cg *CGen) LoadModule(name string) *CMod {
+func (cg *CGen) LoadModule(name string, pr printer) *CMod {
 	log.Printf("LoadModule: << %q", name)
 	if already, ok := cg.Mods[name]; ok {
 		log.Printf("LoadModule: already loaded: %q", name)
@@ -1163,14 +1189,14 @@ func (cg *CGen) LoadModule(name string) *CMod {
 	}
 	defer r.Close()
 
-	cm := NewCMod(name, cg, cg.W)
+	cm := NewCMod(name, cg)
 	cg.Mods[name] = cm
 
 	log.Printf("LoadModule: Parser")
 	p := NewParser(r, filename)
 	p.ParseModule(cm, cg)
 	log.Printf("LoadModule: VisitGlobals")
-	cm.VisitGlobals(p)
+	cm.VisitGlobals(p, pr)
 	log.Printf("LoadModule: VisitGlobals Done")
 
 	if name == "builtin" {
@@ -1180,53 +1206,58 @@ func (cg *CGen) LoadModule(name string) *CMod {
 	return cm
 }
 
+type printer func(format string, args ...interface{})
+
 func CompileToC(r io.Reader, sourceName string, w io.Writer, opt *Options) {
+	pr := func(format string, args ...interface{}) {
+		z := fmt.Sprintf(format, args...)
+		log.Print("[[[[[  " + z + "  ]]]]]")
+		fmt.Fprintf(w, "%s\n", z)
+	}
+
 	cg, cm := NewCGenAndMainCMod(opt, w)
-	cm.P("#include <stdio.h>")
-	cm.P("#include \"runt.h\"")
+	pr("#include <stdio.h>")
+	pr("#include \"runt.h\"")
 	if !opt.SkipBuiltin {
-		cg.LoadModule("builtin")
+		cg.LoadModule("builtin", pr)
 	}
 	p := NewParser(r, sourceName)
 	p.ParseModule(cm, cg)
 
-	cm.VisitGlobals(p)
+	cm.VisitGlobals(p, pr)
 }
 
-func (cm *CMod) mustNotExistYet(s string) {
-	if _, ok := cm.Scope.GDefs[s]; ok {
-		Panicf("redefined global name: %s", s)
+func (cm *CMod) defineOnce(g *GDef) {
+	if _, ok := cm.Members[g.Name]; ok {
+		Panicf("module %s: redefined name: %s", cm.Package, g.Name)
 	}
+	cm.Members[g.Name] = g
+	g.CName = CName(g.Package, g.Name)
+	g.Package = cm.Package
 }
 
-func (cm *CMod) FirstSlotGlobals(p *Parser) {
+func (cm *CMod) FirstSlotGlobals(p *Parser, pr printer) {
 	// first visit: Slot the globals.
-	slot := func(g *GDef) {
-		g.Package = cm.Package
-		cm.mustNotExistYet(g.Name)
-		cm.Scope.GDefs[g.Name] = g
-		g.FullName = FullName(g.Package, g.Name)
-	}
 	for _, g := range p.Imports {
-		slot(g)
+		cm.defineOnce(g)
 	}
 	for _, g := range p.Types {
-		slot(g)
+		cm.defineOnce(g)
 	}
 	for _, g := range p.Consts {
-		slot(g)
+		cm.defineOnce(g)
 	}
 	for _, g := range p.Vars {
-		slot(g)
+		cm.defineOnce(g)
 	}
 	for _, g := range p.Funcs {
-		slot(g)
+		cm.defineOnce(g)
 	}
 }
 
-func (cm *CMod) SecondBuildGlobals(p *Parser) {
+func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 	for _, g := range p.Imports {
-		cm.CGen.LoadModule(g.Name)
+		cm.CGen.LoadModule(g.Name, pr)
 		g.Value = &ImportVal{g.Name}
 		// If we care to do imports in order,
 		// this is a good place to remember it.
@@ -1239,7 +1270,7 @@ func (cm *CMod) SecondBuildGlobals(p *Parser) {
 			tmpX := NameTX{g.Name, g.Init, cm}
 			tmpV := CompileTX(qc, tmpX, g.Init)
 			if tmpV.TV == nil {
-				panic(g.FullName)
+				panic(g.CName)
 			}
 			g.Value = &TypeVal{tmpV.TV}
 		}
@@ -1251,9 +1282,9 @@ func (cm *CMod) SecondBuildGlobals(p *Parser) {
 	}
 	for _, g := range p.Vars {
 		Say(g.Package, g.Name, "2V")
-		typeValue := g.Type.VisitExpr(cm.QuickCompiler(g)).(*TypeVal).tv
+		typeValue := g.Type.VisitExpr(cm.QuickCompiler(g)).Type()
 		g.Value = &CVal{
-			c: g.FullName,
+			c: g.CName,
 			t: typeValue,
 		}
 		if g.Init != nil {
@@ -1288,50 +1319,50 @@ func (cm *CMod) SecondBuildGlobals(p *Parser) {
 			}
 		*/
 
-		cm.P("//2F// %s // %s //", g.Name, g.Value)
+		pr("//2F// %s // %s //", g.Name, g.Value)
 	}
 }
 
-func (cm *CMod) ThirdDefineGlobals(p *Parser) {
+func (cm *CMod) ThirdDefineGlobals(p *Parser, pr printer) {
 	// Third: Define the globals, except for functions.
 	say := func(how string, g *GDef) {
-		cm.P("// Third == %s %s ==", how, g.FullName)
+		pr("// Third == %s %s ==", how, g.CName)
 	}
 	_ = say
 	for _, g := range p.Types {
 		Say("Third Types: " + g.Package + " " + g.Name)
 		say("type", g)
-		cm.P("typedef %s %s;", g.Value.(*TypeVal).tv.CType(), g.FullName)
+		pr("typedef %s %s;", g.Value.(*TypeVal).tv.CType(), g.CName)
 	}
 	for _, g := range p.Vars {
 		Say("Third Vars: " + g.Package + " " + g.Name)
 		say("var", g)
-		Say("%s %s;", g.Value, g.FullName)
-		Say("%s %s;", g.Value.Type(), g.FullName)
-		Say("%s %s;", g.Value.Type().CType(), g.FullName)
-		cm.P("%s %s;", g.Value.Type().CType(), g.FullName)
+		Say("%s %s;", g.Value, g.CName)
+		Say("%s %s;", g.Value.Type(), g.CName)
+		Say("%s %s;", g.Value.Type().CType(), g.CName)
+		pr("%s %s;", g.Value.Type().CType(), g.CName)
 	}
 	for _, g := range p.Funcs {
 		if g.Value != nil {
 			ft := g.Value.Type().(*FunctionTV)
-			decl := ft.FuncRec.SignatureStr(g.FullName)
+			decl := ft.FuncRec.SignatureStr(g.CName)
 			_ = ft
 			Say("Third Funcs: " + g.Package + " " + g.Name)
 			say("func", g)
 			Say("extern %s;", decl)
-			cm.P("extern %s; //3F//", decl)
+			pr("extern %s; //3F//", decl)
 		} else {
-			cm.P("extern FUNC_TODO_1355 %s.%s; //3F//", g.Package, g.Name)
+			pr("extern FUNC_TODO_1355 %s.%s; //3F//", g.Package, g.Name)
 		}
 	}
 }
 
-func (cm *CMod) FourthInitGlobals(p *Parser) {
+func (cm *CMod) FourthInitGlobals(p *Parser, pr printer) {
 	// Fourth: Initialize the global vars.
 	if false {
-		cm.P("void INIT() {")
+		pr("void INIT() {")
 		say := func(how string, g *GDef) {
-			cm.P("// Fourth == %s %s ==", how, g.FullName)
+			pr("// Fourth == %s %s ==", how, g.CName)
 		}
 		for _, g := range p.Vars {
 			Say("Fourth(Var) " + g.Package + " " + g.Name)
@@ -1349,7 +1380,7 @@ func (cm *CMod) FourthInitGlobals(p *Parser) {
 		for _, g := range p.Funcs {
 			Say("// Fourth(Func) TODO: Inline init functions:", g)
 		}
-		cm.P("} // INIT()")
+		pr("} // INIT()")
 	}
 
 	for _, g := range p.Meths {
@@ -1381,14 +1412,15 @@ func (cm *CMod) FourthInitGlobals(p *Parser) {
 		*/
 	}
 }
-func (cm *CMod) FifthPrintFunctions(p *Parser) {
+func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 	for _, g := range p.Funcs {
 		Say("Fifth " + g.Package + " " + g.Name)
-		cm.P("// Fifth FUNC: %T %s %q;", g.Value.Type(), g.Value.Type().CType(), g.FullName)
+		pr("// Fifth FUNC: %T %s %q;", "#", "#", g.CName)
+		pr("// Fifth FUNC: %T %s %q;", g.Value.Type(), "#", g.CName)
+		pr("// Fifth FUNC: %T %s %q;", g.Value.Type(), g.Value.Type().CType(), g.CName)
 		co := cm.QuickCompiler(g)
 		co.EmitFunc(g)
-		cm.P(co.Buf.String())
-		cm.Flush()
+		pr(co.Buf.String())
 	}
 
 	for _, g := range p.Meths {
@@ -1410,11 +1442,10 @@ func (cm *CMod) FifthPrintFunctions(p *Parser) {
 		}
 
 		Say("Fifth " + g.Package + " #" + structType.ToC() + "# " + g.Name)
-		cm.P("// Fifth METH: #T #s %q;" /#g.Value.Type(), g.Value.Type().CType(),#/, g.Name)
+		pr("// Fifth METH: #T #s %q;" /#g.Value.Type(), g.Value.Type().CType(),#/, g.Name)
 		co := cm.QuickCompiler(g)
 		co.EmitFunc(g)
-		cm.P(co.Buf.String())
-		cm.Flush()
+		pr(co.Buf.String())
 
 		/#
 			if structType, ok := pointedType.E.(*StructTV); ok |
@@ -1432,106 +1463,88 @@ func (cm *CMod) FifthPrintFunctions(p *Parser) {
 	}
 }
 
-func (cm *CMod) VisitGlobals(p *Parser) {
-	cm.FirstSlotGlobals(p)
-	cm.SecondBuildGlobals(p)
-	cm.ThirdDefineGlobals(p)
-	cm.FourthInitGlobals(p)
-	cm.FifthPrintFunctions(p)
-	cm.Flush()
+func (cm *CMod) VisitGlobals(p *Parser, pr printer) {
+	cm.FirstSlotGlobals(p, pr)
+	cm.SecondBuildGlobals(p, pr)
+	cm.ThirdDefineGlobals(p, pr)
+	cm.FourthInitGlobals(p, pr)
+	cm.FifthPrintFunctions(p, pr)
 }
 
 type GDef struct {
-	CGen     *CGen
-	Package  string
-	Name     string
-	FullName string
-	Init     Expr  // for Const or Var or Type
-	Value    Value // Next resolve global names to Values.
-	Type     Expr  // for Const or Var
-	TV       TypeValue
-	Active   bool
+	Used    bool
+	CGen    *CGen
+	Package string
+	Name    string
+	CName   string
+
+	Init Expr // for Const or Var or Type
+	Type Expr // for Const or Var or Func
+
+	Value Value     // Next resolve global names to Values.
+	TV    TypeValue // Only for Type: or embed in Value?
 }
 
-type Scope struct {
-	Name   string
-	GDefs  map[string]*GDef // by short name
-	Parent *Scope           // upper scope
-	GDef   *GDef            // if local to a function
-	CMod   *CMod            // if owned by a module
-	CGen   *CGen            // for finding Builtins.
+type Scope interface {
+	Find(string) *GDef
 }
-type CMod struct {
-	W       *bufio.Writer
+
+type CMod struct { // isa Scope
 	Package string
 	CGen    *CGen
-	Scope   *Scope // members of module.
+	Members map[string]*GDef
 }
+
+func (cm *CMod) Find(s string) *GDef {
+	if d, ok := cm.Members[s]; ok {
+		return d
+	}
+	if cm.Package == "builtin" {
+		return cm.CGen.Prims.Find(s)
+	} else {
+		return cm.CGen.BuiltinMod.Find(s)
+	}
+}
+
 type CGen struct {
-	Prims       *Scope
 	Mods        map[string]*CMod // by module name
 	BuiltinMod  *CMod
+	Prims       *CMod
 	ModsInOrder []string // reverse definition order
 	Options     *Options
 	W           *bufio.Writer
 }
 
-func NewScope(name string, parent *Scope, gdef *GDef, cmod *CMod, cgen *CGen) *Scope {
-	return &Scope{
-		Name:   name,
-		GDefs:  make(map[string]*GDef),
-		Parent: parent,
-		GDef:   gdef,
-		CMod:   cmod,
-		CGen:   cgen,
-	}
-}
-func (sco *Scope) Find(s string) (*GDef, *Scope, bool) {
-	for p := sco; p != nil; p = p.Parent {
-		if gdef, ok := p.GDefs[s]; ok {
-			return gdef, p, true
-		}
-	}
-	bim := sco.CGen.BuiltinMod
-	if bim != nil {
-		if gdef, ok := bim.Scope.GDefs[s]; ok {
-			return gdef, bim.Scope, true
-		}
-	}
-	prims := sco.CGen.Prims
-	if gdef, ok := prims.GDefs[s]; ok {
-		return gdef, prims, true
-	}
-	return nil, nil, false
-}
-
-func NewCMod(name string, cg *CGen, w io.Writer) *CMod {
+func NewCMod(name string, cg *CGen) *CMod {
 	mod := &CMod{
-		W:       bufio.NewWriter(w),
 		Package: name,
 		CGen:    cg,
+		Members: make(map[string]*GDef),
 	}
-	mod.Scope = NewScope(name, nil, nil, mod, cg)
+	//< mod.Dog = NewDog(name, nil, nil, mod, cg)
 	return mod
 }
 func NewCGenAndMainCMod(opt *Options, w io.Writer) (*CGen, *CMod) {
-	mainMod := NewCMod("main", nil, w)
+	mainMod := NewCMod("main", nil)
 	cg := &CGen{
 		Mods:    map[string]*CMod{"main": mainMod},
-		W:       mainMod.W,
 		Options: opt,
 	}
-	cg.Prims = NewScope("_prims_", nil, nil, nil, cg)
+	cg.Prims = &CMod{
+		Package: "", // Use empty package name for Prims.
+		CGen:    cg,
+		Members: make(map[string]*GDef),
+	}
 	mainMod.CGen = cg
 
-	// Populate PrimScope
+	// Populate PrimDog
 	for _, e := range PrimTypeObjList {
-		cg.Prims.GDefs[e.Name] = &GDef{
-			Name:     e.Name,
-			FullName: "P_" + e.Name,
-			Value:    &TypeVal{e},
-			TV:       TypeTO, // the metatype
-			Active:   true,
+		cg.Prims.Members[e.Name] = &GDef{
+			Name:  e.Name,
+			CName: "P_" + e.Name,
+			Value: &TypeVal{e},
+			TV:    TypeTO,
+			Used:  false,
 		}
 	}
 
@@ -1541,8 +1554,9 @@ func NewCGenAndMainCMod(opt *Options, w io.Writer) (*CGen, *CMod) {
 func (cm *CMod) VisitTypeExpr(x Expr) TypeValue {
 	var gdef *GDef = nil
 	val := x.VisitExpr(NewCompiler(cm, gdef))
-	if tv, ok := val.(*TypeVal); ok {
-		return tv.tv
+	// if tv, ok := val.(*TypeVal); ok #
+	if tv, ok := val.ResolveAsTypeValue(); ok {
+		return tv
 	} else {
 		log.Panicf("Expected expr [ %v ] to compile to TypeValue, but it compiled to [ %v ]", x, val)
 		panic(0)
@@ -1556,12 +1570,14 @@ func (cm *CMod) QuickCompiler(gdef *GDef) *Compiler {
 	return NewCompiler(cm, gdef)
 }
 
+/*
 func (cm *CMod) P(format string, args ...interface{}) {
 	fmt.Fprintf(cm.W, format+"\n", args...)
 }
 func (cm *CMod) Flush() {
 	cm.W.Flush()
 }
+*/
 
 func AssignNewVar(in NameTV, out NameTV) string {
 	ctype := in.TV.CType()
@@ -1579,36 +1595,25 @@ type DeferRec struct {
 type Compiler struct {
 	CMod         *CMod
 	CGen         *CGen
-	GDef         *GDef
+	Subject      *GDef
 	BreakTo      string
 	ContinueTo   string
 	CurrentBlock *Block
-	Locals       *Scope
 	Defers       []*DeferRec
-	Buf          bytes.Buffer
+	Buf          Buf
 }
 
-func NewCompiler(cm *CMod, gdef *GDef) *Compiler {
+func NewCompiler(cm *CMod, subject *GDef) *Compiler {
 	co := &Compiler{
-		CMod: cm,
-		CGen: cm.CGen,
-		GDef: gdef,
+		CMod:    cm,
+		CGen:    cm.CGen,
+		Subject: subject,
 	}
-
-	Say("cm.Scope", cm.Scope)
-	Say("cm.CGen", cm.CGen)
-	Say("gdef", gdef)
-	gloss := "locals of something"
-	if gdef != nil {
-		gloss = "locals of " + gdef.FullName
-	}
-	co.Locals = NewScope(gloss, cm.Scope, gdef, nil, cm.CGen)
 	return co
 }
 
 func (co *Compiler) P(format string, args ...interface{}) {
-	fmt.Fprintf(&co.Buf, format, args...)
-	co.Buf.WriteByte('\n')
+	co.Buf.P(format, args...)
 }
 
 // Compiler for Expressions
@@ -1632,14 +1637,17 @@ func (co *Compiler) VisitIdent(x *IdentX) Value {
 	return z
 }
 func (co *Compiler) _VisitIdent_(x *IdentX) Value {
-	if gdef, _, ok := co.Locals.Find(x.X); ok {
-		if gdef.Value != nil {
-			return gdef.Value
-		}
-		return &NameVal{name: x.X, dflt: nil}
-	}
-	log.Panicf("Identifier not found: %q in %v", x.X, co.GDef)
-	return nil
+	return &NameVal{x.X, co.CMod}
+	/*
+			if gdef, _, ok := co.Locals.Find(x.X); ok {
+				if gdef.Value != nil {
+					return gdef.Value
+				}
+				return &NameVal{name: x.X, dflt: nil}
+			}
+		log.Panicf("Identifier not found: %q in %v", x.X, co.Subject)
+		return nil
+	*/
 }
 func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 	a := x.A.VisitExpr(co)
@@ -1663,55 +1671,56 @@ func (co *Compiler) VisitFunction(x *FunctionX) Value {
 }
 
 func (co *Compiler) VisitCall(x *CallX) Value {
-	co.CMod.W.Flush()
-	ser := Serial("call")
-	co.P("// %s: Calling Func: %#v", ser, x.Func)
-	for i, a := range x.Args {
-		co.P("// %s: Calling with Arg [%d]: %#v", ser, i, a)
-	}
-
-	co.P("{")
-	log.Printf("x.Func: %#v", x.Func)
-	funcVal := x.Func.VisitExpr(co)
-	_ = funcVal // TODO
-
-	log.Printf("funcVal: %#v", funcVal)
-	funcTV, ok := funcVal.Type().(*FunctionTV)
-	if !ok {
-		log.Printf("needed a value type, but got %v", funcVal.Type())
-		_ = funcVal.Type().(*FunctionTV)
-	}
-	funcRec := funcTV.FuncRec
-
-	var argc []string
-	for i, in := range funcRec.Ins {
-		value := x.Args[i].VisitExpr(co)
-		if !reflect.DeepEqual(value.Type(), in.TV) {
-			Say(funcVal)
-			Say(value)
-			Say(value.Type())
-			Say(in)
-			Say(in.TV)
-			log.Printf("WARNING: Function %q expects type %s for arg %d named %s, but got %q with type %s", funcVal.ToC(), in.String(), i, in.Name, value.ToC(), value.Type().String())
+	/*
+		ser := Serial("call")
+		co.P("// %s: Calling Func: %#v", ser, x.Func)
+		for i, a := range x.Args {
+			co.P("// %s: Calling with Arg [%d]: %#v", ser, i, a)
 		}
-		argc = append(argc, value.ToC())
-	}
-	if len(funcRec.Outs) != 1 {
-		var multi []NameTV
-		for j, out := range funcRec.Outs {
-			rj := Format("_multi_%s_%d", ser, j)
-			vj := NameTV{rj, out.TV}
-			multi = append(multi, vj)
-			// TODO // co.Locals[rj] = out.TV
-			argc = append(argc, rj)
+
+		co.P("{")
+		log.Printf("x.Func: %#v", x.Func)
+		funcVal := x.Func.VisitExpr(co)
+		_ = funcVal // TODO
+
+		log.Printf("funcVal: %#v", funcVal)
+		funcTV, ok := funcVal.Type().(*FunctionTV)
+		if !ok {
+			log.Printf("needed a value type, but got %v", funcVal.Type())
+			_ = funcVal.Type().(*FunctionTV)
 		}
-		c := Format("(%s)(%s)", funcVal.ToC(), strings.Join(argc, ", "))
-		return &CVal{c: c, t: &MultiTV{multi}}
-	} else {
-		c := Format("(%s)(%s)", funcVal.ToC(), strings.Join(argc, ", "))
-		t := funcRec.Outs[0].TV
-		return &CVal{c: c, t: t}
-	}
+		funcRec := funcTV.FuncRec
+
+		var argc []string
+		for i, in := range funcRec.Ins {
+			value := x.Args[i].VisitExpr(co)
+			if !reflect.DeepEqual(value.Type(), in.TV) {
+				Say(funcVal)
+				Say(value)
+				Say(value.Type())
+				Say(in)
+				Say(in.TV)
+				log.Printf("WARNING: Function %q expects type %s for arg %d named %s, but got %q with type %s", funcVal.ToC(), in.String(), i, in.Name, value.ToC(), value.Type().String())
+			}
+			argc = append(argc, value.ToC())
+		}
+		if len(funcRec.Outs) != 1 {
+			var multi []NameTV
+			for j, out := range funcRec.Outs {
+				rj := Format("_multi_%s_%d", ser, j)
+				vj := NameTV{rj, out.TV}
+				multi = append(multi, vj)
+				// TODO // co.Locals[rj] = out.TV
+				argc = append(argc, rj)
+			}
+			c := Format("(%s)(%s)", funcVal.ToC(), strings.Join(argc, ", "))
+			return &CVal{c: c, t: &MultiTV{multi}}
+		} else {
+			c := Format("(%s)(%s)", funcVal.ToC(), strings.Join(argc, ", "))
+			t := funcRec.Outs[0].TV
+			return &CVal{c: c, t: t}
+		}
+	*/
 	panic("TODO=1733")
 }
 
@@ -1721,27 +1730,6 @@ func (co *Compiler) VisitSub(x *SubX) Value {
 		t: IntTO,
 	}
 }
-
-func (co *Compiler) ResolveType(tv TypeValue) TypeValue {
-	if fwd, ok := tv.(*ForwardTV); ok {
-		if cm, ok := co.CGen.Mods[fwd.GDef.Package]; ok {
-			if gd, ok := cm.Scope.GDefs[fwd.GDef.Name]; ok {
-				tv = gd.Init.(TypeValue)
-			}
-			/* TODO
-			} else if gd, ok := co.CGen.BuiltinMod.Scope.GDefs[fwd.Name]; ok {
-				tv = gd.Init.(TypeValue)
-			*/
-		}
-	}
-	return tv
-}
-
-/* ?TODO?
-func (co *Compiler) ResolveTypeOfValue(val Value) Value {
-	return &CVal{c: val.ToC(), t: co.ResolveType(val.Type())}
-}
-*/
 
 func (co *Compiler) VisitDot(dot *DotX) Value {
 	log.Printf("VisitDot: <------ %v", dot)
@@ -1755,14 +1743,16 @@ func (co *Compiler) VisitDot(dot *DotX) Value {
 		log.Printf("MODS: %#v", co.CGen.Mods)
 		if otherMod, ok := co.CGen.Mods[modName]; ok {
 			log.Printf("OM %#v", otherMod)
-			log.Printf("GD %#v", otherMod.Scope.GDefs)
-			_, ok := otherMod.Scope.GDefs[dot.Member]
+			_, ok := otherMod.Members[dot.Member]
 			if !ok {
 				panic(Format("cannot find member %s in module %s", dot.Member, modName))
 			}
-			z := otherMod.QuickCompiler(co.GDef).VisitIdent(&IdentX{X: dot.Member})
-			L("VisitDot returns Imported thing: %#v", z)
-			return z
+			panic(1728)
+			/*
+				z := otherMod.QuickCompiler(co.GDef).VisitIdent(&IdentX{X: dot.Member})
+				L("VisitDot returns Imported thing: %#v", z)
+				return z
+			*/
 		} else {
 			panic(Format("imported %q but cannot find it in CGen.Mods: %#v", modName, co.CGen.Mods))
 		}
@@ -1805,7 +1795,7 @@ func (co *Compiler) VisitDot(dot *DotX) Value {
 
 // Compiler for Statements
 func (co *Compiler) VisitAssign(ass *AssignS) {
-	co.P("//## assign..... %v   %v   %v", ass.A, ass.Op, ass.B)
+	L("//## assign..... %v   %v   %v", ass.A, ass.Op, ass.B)
 	lenA, lenB := len(ass.A), len(ass.B)
 	_ = lenA
 	_ = lenB // TODO
@@ -1822,10 +1812,10 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 				}
 
 				local := &GDef{
-					Name:     name,
-					FullName: Format("v_%s", name),
+					Name:  name,
+					CName: Format("v_%s", name),
 				}
-				co.Locals.GDefs[id.X] = local
+				co.CurrentBlock.locals[id.X] = local
 			} else {
 				log.Panicf("Expected an identifier in LHS of `:=` but got %v", a)
 			}
@@ -2011,7 +2001,7 @@ func (co *Compiler) VisitBlock(a *Block) {
 	}
 	prevBlock := co.CurrentBlock
 	co.CurrentBlock = a
-	for i, e := range a.Stmts {
+	for i, e := range a.stmts {
 		log.Printf("VisitBlock[%d]", i)
 		e.VisitStmt(co)
 		log.Printf("VisitBlock[%d] ==>\n<<<\n%s\n>>>", i, co.Buf.String())
@@ -2023,12 +2013,14 @@ type Buf struct {
 	W bytes.Buffer
 }
 
-func (buf *Buf) A(s string) {
+func (buf *Buf) XXX_A(s string) {
 	buf.W.WriteString(s)
 	buf.W.WriteByte('\n')
 }
 func (buf *Buf) P(format string, args ...interface{}) {
-	fmt.Fprintf(&buf.W, format, args...)
+	z := fmt.Sprintf(format, args...)
+	log.Printf("<<<[ %s ]>>>", z)
+	buf.W.WriteString(z)
 	buf.W.WriteByte('\n')
 }
 func (buf *Buf) String() string {
@@ -2036,16 +2028,14 @@ func (buf *Buf) String() string {
 }
 
 func (co *Compiler) EmitFunc(gd *GDef) {
-	scope := &Scope{
-		Name:   Format("Locals of %s", gd.FullName),
-		GDefs:  make(map[string]*GDef),
-		GDef:   gd,
-		CGen:   co.CGen,
-		Parent: co.CMod.Scope,
+	block := &Block{
+		debugName: gd.CName,
+		locals:    make(map[string]*GDef),
+		parent:    nil,
+		compiler:  co,
 	}
-	co.Locals = scope
 	rec := gd.TV.(*FunctionTV).FuncRec
-	co.P(rec.SignatureStr(gd.FullName))
+	co.P(rec.SignatureStr(gd.CName))
 
 	for i, in := range rec.Ins {
 		var name string
@@ -2056,11 +2046,11 @@ func (co *Compiler) EmitFunc(gd *GDef) {
 		}
 
 		local := &GDef{
-			Name:     name,
-			FullName: Format("in_%s", name),
-			TV:       in.TV,
+			Name:  name,
+			CName: Format("in_%s", name),
+			TV:    in.TV,
 		}
-		co.Locals.GDefs[name] = local
+		block.locals[name] = local
 	}
 
 	for i, out := range rec.Outs {
@@ -2072,11 +2062,11 @@ func (co *Compiler) EmitFunc(gd *GDef) {
 		}
 
 		local := &GDef{
-			Name:     name,
-			FullName: Format("(*out_%s)", name),
-			TV:       out.TV,
+			Name:  name,
+			CName: Format("(*out_%s)", name),
+			TV:    out.TV,
 		}
-		co.Locals.GDefs[name] = local
+		block.locals[name] = local
 	}
 
 	if rec.FuncRecX.Body != nil {
