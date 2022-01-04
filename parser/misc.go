@@ -25,6 +25,21 @@ func assert(b bool) {
 		panic("assert fails")
 	}
 }
+func asserteq_i(a, b int) {
+	if !(a == b) {
+		panic(F("asserteq_i fails: %d vs %d", a, b))
+	}
+}
+func assertle_i(a, b int) {
+	if !(a <= b) {
+		panic(F("assertle_i fails: %d vs %d", a, b))
+	}
+}
+func assertlt_i(a, b int) {
+	if !(a < b) {
+		panic(F("assertlt_i fails: %d vs %d", a, b))
+	}
+}
 
 const CantString = "--?--"
 
@@ -66,6 +81,9 @@ func Panicf(format string, args ...interface{}) string {
 
 func CName(args ...string) string {
 	return strings.Join(args, "__")
+}
+func D(i int) string {
+	return fmt.Sprintf("%d", i)
 }
 
 var _serial_prev uint = 100

@@ -418,7 +418,9 @@ func (o *Parser) ParseBlock() *Block {
 	return b
 }
 func (o *Parser) ParseBareBlock() *Block {
-	b := &Block{}
+	b := &Block{
+		locals: make(map[string]*GDef),
+	}
 	for o.Word != "}" && o.Word != "case" && o.Word != "default" {
 		switch o.Kind {
 		case L_EOL:
@@ -549,7 +551,7 @@ LOOP:
 					Package: o.Package,
 					Name:    w,
 					Init:    x,
-					Type:    tx,
+					Type_:   tx,
 				}
 				o.Consts = append(o.Consts, gd)
 				o.ConstsMap[w] = gd
@@ -567,7 +569,7 @@ LOOP:
 				gd := &GDef{
 					Package: o.Package,
 					Name:    w,
-					Type:    tx,
+					Type_:   tx,
 					Init:    i,
 				}
 				o.Vars = append(o.Vars, gd)
