@@ -1281,8 +1281,8 @@ func (cm *CMod) defineOnce(g *GDef) {
 		Panicf("module %s: redefined name: %s", cm.Package, g.Name)
 	}
 	cm.Members[g.Name] = g
-	g.CName = CName(g.Package, g.Name)
 	g.Package = cm.Package
+	g.CName = CName(g.Package, g.Name)
 }
 
 func (cm *CMod) FirstSlotGlobals(p *Parser, pr printer) {
