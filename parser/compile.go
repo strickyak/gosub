@@ -292,30 +292,11 @@ type FunctionTV struct {
 	FuncRec *FuncRec
 }
 
-// Needed because parser can create a TypeValue before
-// compiler starts running.
-type XXX_ForwardTV struct {
-	GDef *GDef
-}
-
 type MultiTV struct {
 	Multi []NameTV
 }
 
 const kResolveTooDeep = 16
-
-/*
-func (tv *ForwardTV) Resolve() TypeValue {
-	for i := 0; i < kResolveTooDeep; i++ {
-		if fwd2, ok := tv.GDef.TV.(*ForwardTV); ok {
-			tv = fwd2
-		} else {
-			return tv.GDef.TV
-		}
-	}
-	panic("Resolve too deep")
-}
-*/
 
 // Type values have type TypeTV (the metatype).
 func (tv *PrimTV) Type() TypeValue    { return &TypeTV{} }
@@ -324,7 +305,6 @@ func (tv *PointerTV) Type() TypeValue { return &TypeTV{} }
 func (tv *SliceTV) Type() TypeValue   { return &TypeTV{} }
 func (tv *MapTV) Type() TypeValue     { return &TypeTV{} }
 
-//func (tv *ForwardTV) Type() TypeValue   { return tv.Resolve() }
 func (tv *StructTV) Type() TypeValue    { return &TypeTV{} }
 func (tv *InterfaceTV) Type() TypeValue { return &TypeTV{} }
 func (tv *FunctionTV) Type() TypeValue  { return &TypeTV{} }
@@ -354,9 +334,6 @@ func (tv *MapTV) ToC() string {
 	return Format("ZMap(%s, %s)", tv.K, tv.V)
 }
 
-//func (tv *ForwardTV) ToC() string {
-//return Format("ZForwardTV(%s.%s)", tv.GDef.Package, tv.GDef.Name)
-//}
 func (tv *StructTV) ToC() string {
 	return Format("ZStruct(%s)", tv.StructRec.Name)
 }
@@ -379,9 +356,6 @@ func (o *PrimTV) Intlike() bool {
 	return false
 }
 
-//func (o *ForwardTV) Equal(typ TypeValue) bool {
-//return o.Resolve().Equal(typ)
-//}
 func (o *FunctionTV) Equal(typ TypeValue) bool {
 	switch t := typ.(type) {
 	case *FunctionTV:
@@ -458,8 +432,6 @@ func (o *InterfaceTV) CType() string { return "Interface" }
 func (o *TypeTV) CType() string      { return "Type" }
 func (o *MultiTV) CType() string     { return "Multi" }
 
-//func (o *ForwardTV) CType() string   { return o.Resolve().CType() }
-
 func (o *FunctionTV) CType() string { return o.FuncRec.PtrTypedef }
 
 func (o *TypeTV) Assign(c string, typ TypeValue) (z string, ok bool) {
@@ -520,17 +492,6 @@ func (o *InterfaceTV) Assign(c string, typ TypeValue) (z string, ok bool) {
 	return "", false
 }
 
-/*
-func (o *ForwardTV) Assign(c string, typ TypeValue) (z string, ok bool) {
-	z, ok = o.Resolve().Assign(c, typ)
-	return
-}
-
-func (o *ForwardTV) Cast(c string, typ TypeValue) (z string, ok bool) {
-	z, ok = o.Resolve().Cast(c, typ)
-	return
-}
-*/
 func (o *SliceTV) Cast(c string, typ TypeValue) (z string, ok bool) {
 	if o.Equal(typ) {
 		return c, true
@@ -588,17 +549,12 @@ func (o *MultiTV) Cast(c string, typ TypeValue) (z string, ok bool) {
 	panic("MultiTV cannot Cast (yet)")
 }
 
-func (tv *PrimTV) String() string    { return Format("PrimTV(%q)", tv.Name) }
+func (tv *PrimTV) String() string    { panic(666); return Format("PrimTV(%q)", tv.Name) }
 func (tv *TypeTV) String() string    { return Format("TypeTV(%q)", tv.Name) }
 func (tv *PointerTV) String() string { return Format("PointerTV(%v)", tv.E) }
 func (tv *SliceTV) String() string   { return Format("SliceTV(%v)", tv.E) }
 func (tv *MapTV) String() string     { return Format("MapTV(%v=>%v)", tv.K, tv.V) }
 
-/*
-func (tv *ForwardTV) String() string {
-	return Format("ForwardTV(%v.%v)", tv.GDef.Package, tv.GDef.Name)
-}
-*/
 func (tv *StructTV) String() string {
 	return Format("StructTV(%v)", tv.StructRec.Name)
 }
@@ -1312,17 +1268,15 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 		// this is a good place to remember it.
 		cm.CGen.ModsInOrder = append(cm.CGen.ModsInOrder, g.Name)
 	}
-	for _, _ = range p.Types {
-		for _, g := range p.Types {
-			Say(g.Package, g.Name, "2T")
-			qc := cm.QuickCompiler(g)
-			tmpX := NameTX{g.Name, g.Init, cm}
-			tmpV := CompileTX(qc, tmpX, g.Init)
-			if tmpV.TV == nil {
-				panic(g.CName)
-			}
-			g.Value = &TypeVal{tmpV.TV}
+	for _, g := range p.Types {
+		Say(g.Package, g.Name, "2T")
+		qc := cm.QuickCompiler(g)
+		tmpX := NameTX{g.Name, g.Init, cm}
+		tmpV := CompileTX(qc, tmpX, g.Init)
+		if tmpV.TV == nil {
+			panic(g.CName)
 		}
+		g.Value = &TypeVal{tmpV.TV}
 	}
 	for _, g := range p.Consts {
 		Say(g.Package, g.Name, "2C")
@@ -1331,10 +1285,14 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 	}
 	for _, g := range p.Vars {
 		Say(g.Package, g.Name, "2V")
-		typeValue := g.Type_.VisitExpr(cm.QuickCompiler(g)).Type()
+		val := g.Type_.VisitExpr(cm.QuickCompiler(g))
+		tv, ok := val.ResolveAsTypeValue()
+		if !ok {
+			panic(F("got %#v when we wanted a TypeValue", val))
+		}
 		g.Value = &CVal{
 			c: g.CName,
-			t: typeValue,
+			t: tv,
 		}
 		if g.Init != nil {
 			// We are writing the global init() function.
@@ -1386,10 +1344,10 @@ func (cm *CMod) ThirdDefineGlobals(p *Parser, pr printer) {
 	for _, g := range p.Vars {
 		Say("Third Vars: " + g.Package + " " + g.Name)
 		say("var", g)
-		Say("%s %s;", g.Value, g.CName)
-		Say("%s %s;", g.Value.Type(), g.CName)
-		Say("%s %s;", g.Value.Type().CType(), g.CName)
-		pr("%s %s;", g.Value.Type().CType(), g.CName)
+		Say("1387", g.Value, g.CName)
+		Say("1388", g.Value.Type(), g.CName)
+		Say("1389", g.Value.Type().CType(), g.CName)
+		pr("%s %s; //1390", g.Value.Type().CType(), g.CName)
 	}
 	for _, g := range p.Funcs {
 		if g.Init == nil {
@@ -1671,15 +1629,6 @@ func (cm *CMod) VisitExpr(x Expr) Value {
 func (cm *CMod) QuickCompiler(gdef *GDef) *Compiler {
 	return NewCompiler(cm, gdef)
 }
-
-/*
-func (cm *CMod) P(format string, args ...interface{}) {
-	fmt.Fprintf(cm.W, format+"\n", args...)
-}
-func (cm *CMod) Flush() {
-	cm.W.Flush()
-}
-*/
 
 func AssignNewVar(in NameTV, out NameTV) string {
 	ctype := in.TV.CType()

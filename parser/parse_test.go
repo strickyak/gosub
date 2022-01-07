@@ -85,6 +85,6 @@ func TestFunc0(t *testing.T) {
 		LibDir:      "/none/",
 		SkipBuiltin: true,
 	})
-	want := `nando`
+	want := `void main__zero() {}`
 	SimplyEqual(t, w.String(), want)
 }
