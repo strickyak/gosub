@@ -424,11 +424,11 @@ func (o *PointerTV) TypeOfHandle() (z string, ok bool) {
 }
 
 func (o *PrimTV) CType() string      { return "P_" + o.Name }
-func (o *SliceTV) CType() string     { return "Slice" }
-func (o *MapTV) CType() string       { return "Map" }
-func (o *StructTV) CType() string    { return "Struct" }
-func (o *PointerTV) CType() string   { return "Pointer" }
-func (o *InterfaceTV) CType() string { return "Interface" }
+func (o *SliceTV) CType() string     { return F("Slice_(%s)", o.E.CType()) }
+func (o *MapTV) CType() string       { return F("Map_(%s,%s)", o.K.CType(), o.V.CType()) }
+func (o *StructTV) CType() string    { return F("Struct_(%s)", o.StructRec.Name) }
+func (o *PointerTV) CType() string   { return F("Pointer_(%s)", o.E.CType()) }
+func (o *InterfaceTV) CType() string { return F("Interface_(%s)", o.InterfaceRec.Name) }
 func (o *TypeTV) CType() string      { return "Type" }
 func (o *MultiTV) CType() string     { return "Multi" }
 
@@ -854,7 +854,7 @@ func RegisterFuncRec(fn *FuncRec) {
 func (r *FuncRec) SignatureStr(daFunc string) string {
 	var b bytes.Buffer
 	if len(r.Outs) == 1 {
-		P(&b, "%s ", r.Outs[0].TV)
+		P(&b, "%s ", r.Outs[0].TV.CType())
 	} else {
 		P(&b, "void ")
 	}
@@ -864,16 +864,16 @@ func (r *FuncRec) SignatureStr(daFunc string) string {
 			b.WriteByte(',')
 		}
 		Say(nat)
-		Say(nat.TV)
-		P(&b, "%s in_%s", nat.TV, SerialIfEmpty(nat.Name))
+		Say(nat.TV.CType())
+		P(&b, "%s in_%s", nat.TV.CType(), SerialIfEmpty(nat.Name))
 	}
 	if len(r.Outs) != 1 {
 		for i, nat := range r.Outs {
 			if i > 0 {
 				b.WriteByte(',')
 			}
-			L("out [%d]: %s", i, nat.TV)
-			P(&b, "%s *out_%s", nat.TV, SerialIfEmpty(nat.Name))
+			L("out [%d]: %s", i, nat.TV.CType())
+			P(&b, "%s *out_%s", nat.TV.CType(), SerialIfEmpty(nat.Name))
 		}
 	}
 	b.WriteByte(')')
