@@ -1,5 +1,5 @@
-#ifndef _GOSUB_RUNTIME_C_H_
-#define _GOSUB_RUNTIME_C_H_
+#ifndef _GOSUB_RUNTIME_RUNT_H_
+#define _GOSUB_RUNTIME_RUNT_H_
 
 
 #ifdef unix
@@ -11,10 +11,11 @@
 typedef unsigned char bool;
 typedef unsigned char byte;
 typedef unsigned long word;
-typedef void omarker();
+
+typedef void omarker();  // TODO: GC
 #define true 1
 #define false 0
-#define INF 255
+#define INF 255       // sometimes this is INFinity, if type is byte
 #define NIL ((word)0)
 #include "bigmem.h"
 
@@ -29,7 +30,6 @@ typedef void omarker();
 #define Map_(K,V) Map
 #define Interface_(NAME) Interface
 #define Struct_(NAME) Struct
-#define main__main main
 
 typedef const char* P__type_;
 typedef void* P__any_;
@@ -65,5 +65,9 @@ typedef struct _interface {
 } Interface; 
 
 void F_BUILTIN_println(int i);
+
+extern Slice MakeSlice();
+extern Slice AppendSlice(Slice a, P_int x);
+extern void builtin__println(Slice args);
 
 #endif

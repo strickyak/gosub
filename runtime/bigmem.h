@@ -1,18 +1,7 @@
-#ifndef _BIGMEM_H_
-#define _BIGMEM_H_
+#ifndef GOSUB_BIGMEM_H_
+#define GOSUB_BIGMEM_H_
 
 #include "runt.h"
-
-// typedef unsigned char bool;
-// typedef unsigned char byte;
-// typedef unsigned long word;
-// #define true 1
-// #define false 0
-
-// #ifndef INF
-// #define INF 0xFF /* infinity, not a valid byte index */
-// #define NIL ((word)0)
-// #endif
 
 #ifndef GUARD
 #define GUARD 1 /* must be 0 or 1 */
@@ -20,12 +9,15 @@
 
 #define GUARD_ONE 0xAA
 #define GUARD_TWO 0xBB
+#define GUARD_THREE 0xCC
 
 typedef struct BigHeader {
+    byte guard0;
     byte guard1;
     byte cap;
-    byte cls;
     byte guard2;
+    byte cls;
+    byte guard3;
 } BigHeader;
 
 void oinit(word begin, word end, omarker fn);

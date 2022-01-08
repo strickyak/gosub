@@ -1,7 +1,60 @@
 #include "runt.h"
 
-extern void F_main__main();
+extern void main__main();
 
+byte Mem[50000];
+
+void MarkerFunc(void) {}
+
+int main(int argc, const char* argv[]) {
+  oinit((word)Mem, (word)Mem + sizeof(Mem), MarkerFunc);
+  main__main();
+  return 0;
+}
+
+Slice MakeSlice() {
+  Slice z = {0, 0, 0};
+  return z;
+}
+
+Slice AppendSlice(Slice a, P_int x) {
+  if (!a.base) {
+    // Initial allocation.
+#define INITIAL_CAP 100
+    word p = oalloc(INITIAL_CAP, 1);
+    assert(p);
+    a.base = p;
+    a.offset = 0;
+    a.len = 0;
+  }
+  byte cap = ocap(a.base);
+  if (a.offset + a.len + sizeof(P_int) > cap) {
+#define MAX_CAP 254
+    assert (cap < MAX_CAP);
+
+    word p = oalloc(MAX_CAP, 1);
+    assert(p);
+    omemcpy(p, a.base, cap);
+    a.base = p;
+  }
+  assert(a.offset + a.len + sizeof(P_int) <= cap);
+  *(P_int*)(a.base + a.offset + a.len) = x;
+  a.len += sizeof(P_int);
+  return a;
+}
+
+void builtin__println(Slice args) {
+  if (!args.base) return;
+
+  fprintf(stderr, "## println: args{$%lx, $%x, $%x}\n", (long)args.base, args.offset, args.len);
+  for (int i=0; i*sizeof(P_int)<args.len; i++) {
+    P_int* p= (P_int*)(args.base + args.offset);
+    printf("%d ", p[i]);
+  }
+  printf("\n");
+}
+
+#if 0
 word Q(int x) {
   unsigned u = (unsigned)x;
   return (u << 1) | 1;
@@ -33,8 +86,4 @@ void F_BUILTIN_println(int i) {
     printf(" %d\n", i);
     fflush(stdout);
 }
-
-int main(int argc, const char* argv[]) {
-  F_main__main();
-  return 0;
-}
+#endif

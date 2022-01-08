@@ -1179,8 +1179,6 @@ func CompileToC(r io.Reader, sourceName string, w io.Writer, opt *Options) {
 	}
 
 	cg, cm := NewCGenAndMainCMod(opt, w)
-	pr(`#include <stdio.h>`)
-	pr(``)
 	pr(`#include "runt.h"`)
 	pr(``)
 	if !opt.SkipBuiltin {
@@ -1759,7 +1757,7 @@ func (co *Compiler) VisitCall(x *CallX) Value {
 		sliceName := CName(ser, "in", "vec")
 		co.AddLocalTemp(sliceName, sliceType, "MakeSlice()")
 		for i := 0; i < numExtras; i++ {
-			co.P("%s = AppendSlice(%s, %s) // For extra input #%d", sliceName, sliceName, argVals[numNormal+i].ToC(), i)
+			co.P("%s = AppendSlice(%s, %s); // For extra input #%d", sliceName, sliceName, argVals[numNormal+i].ToC(), i)
 		}
 		fins = append(fins, NameTV{sliceName, sliceType})
 		argc = append(argc, sliceName)
