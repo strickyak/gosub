@@ -1759,7 +1759,7 @@ func (co *Compiler) VisitCall(x *CallX) Value {
 		sliceName := CName(ser, "in", "vec")
 		co.AddLocalTemp(sliceName, sliceType, "MakeSlice()")
 		for i := 0; i < numExtras; i++ {
-			co.P("%s = AppendSlice(%s, %s) // For extra input #%d", sliceName, sliceName, argVals[numNormal+i], i)
+			co.P("%s = AppendSlice(%s, %s) // For extra input #%d", sliceName, sliceName, argVals[numNormal+i].ToC(), i)
 		}
 		fins = append(fins, NameTV{sliceName, sliceType})
 		argc = append(argc, sliceName)
@@ -1774,10 +1774,10 @@ func (co *Compiler) VisitCall(x *CallX) Value {
 			co.AddLocalTemp(rj, out.TV, "")
 			argc = append(argc, F("&%s", rj))
 		}
-		c := Format("(%s)(%s)", funcVal.ToC(), strings.Join(argc, ", "))
+		c := Format("(%s(%s)/*1777*/)", funcVal.ToC(), strings.Join(argc, ", "))
 		return &CVal{c: c, t: &MultiTV{multi}}
 	} else {
-		c := Format("(%s)(%s)", funcVal.ToC(), strings.Join(argc, ", "))
+		c := Format("(%s(%s)/*1780*/)", funcVal.ToC(), strings.Join(argc, ", "))
 		t := fouts[0].TV
 		return &CVal{c: c, t: t}
 	}
@@ -1923,7 +1923,7 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 		co.P("// @@@@ Please Call %v", callVal)
 		co.P("// @@@@ Please Call %#v", callVal)
 
-		co.P("(void) %s; // Call with no assign: 1932", callVal.ToC())
+		co.P("/*(void)*/ %s; // Call with no assign: 1932", callVal.ToC())
 
 	case len(ass.A) > 1 && bcall != nil:
 		// From 1 call, to 2 or more assigned vars.

@@ -3,7 +3,7 @@ all:
 	go run gosub.go  < $T   > $T.c
 	clang-format -i --style=Google $T.c
 	cat -n $T.c
-	cc -Iruntime $T.c runt.c bigmem.c
+	cc -Iruntime $T.c runtime/runt.c runtime/bigmem.c
 	./a.out
 
 ci:
