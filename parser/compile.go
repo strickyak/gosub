@@ -549,7 +549,7 @@ func (o *MultiTV) Cast(c string, typ TypeValue) (z string, ok bool) {
 	panic("MultiTV cannot Cast (yet)")
 }
 
-func (tv *PrimTV) String() string    { panic(666); return Format("PrimTV(%q)", tv.Name) }
+func (tv *PrimTV) String() string    { return Format("PrimTV(%q)", tv.Name) }
 func (tv *TypeTV) String() string    { return Format("TypeTV(%q)", tv.Name) }
 func (tv *PointerTV) String() string { return Format("PointerTV(%v)", tv.E) }
 func (tv *SliceTV) String() string   { return Format("SliceTV(%v)", tv.E) }
@@ -1013,7 +1013,6 @@ var PrimTypeObjList = []*PrimTV{
 type Value interface {
 	String() string
 	Type() TypeValue
-	// Prep() []string
 	ToC() string
 	ResolveAsTypeValue() (TypeValue, bool)
 	ResolveAsValue() Value
@@ -1060,7 +1059,6 @@ func (o *NameVal) ResolveAsTypeValue() (TypeValue, bool) {
 }
 
 type CVal struct {
-	// prep []string
 	c string // C language expression
 	t TypeValue
 }
@@ -1080,11 +1078,7 @@ type TypeVal struct {
 }
 
 func (val *CVal) String() string {
-	//if val.prep == nil {
 	return Format("(%s:%s)", val.c, val.t)
-	//} else {
-	//return Format("({%s}%s:%s)", strings.Join(val.prep, ";"), val.c, val.t)
-	//}
 }
 func (val *NameVal) String() string {
 	return Format("(%s:NameVal@%s)", val.name, val.dflt.Package)
@@ -1116,23 +1110,6 @@ func (val *SubVal) Type() TypeValue {
 	return &PrimTV{Name: Format("(tv:TODO:Sub:%s:%s)", val.container, val.sub)}
 }
 
-/*
-func (val *CVal) Prep() []string {
-	return val.prep
-}
-func (val *NameVal) Prep() []string {
-	return nil
-}
-func (val *TypeVal) Prep() []string {
-	return nil
-}
-func (val *SubVal) Prep() []string {
-	var z []string
-	z = append(z, val.container.Prep()...)
-	return append(z, val.sub.Prep()...)
-}
-*/
-
 func (val *CVal) ToC() string {
 	return val.c
 }
@@ -1159,9 +1136,6 @@ func (val *ImportVal) ToC() string {
 }
 func (val *ImportVal) Type() TypeValue {
 	return ImportTO
-}
-func (val *ImportVal) Prep() []string {
-	return nil
 }
 
 func (cg *CGen) LoadModule(name string, pr printer) *CMod {
@@ -1424,8 +1398,6 @@ func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 	for _, g := range p.Funcs {
 		Say("Fifth " + g.Package + " " + g.Name)
 		pr("// Fifth FUNC: %T %s %q;", "#", "#", g.CName)
-		//# pr("// Fifth FUNC: %T %s %q;", g.Value.Type(), "#", g.CName)
-		//# pr("// Fifth FUNC: %T %s %q;", g.Value.Type(), g.Value.Type().CType(), g.CName)
 		if g.Init != nil {
 			co := cm.QuickCompiler(g)
 			co.EmitFunc(g)
@@ -1637,7 +1609,7 @@ type Compiler struct {
 	ContinueTo   string
 	CurrentBlock *Block
 	Defers       []*DeferRec
-	Buf          Buf
+	Buf          *Buf
 }
 
 func NewCompiler(cm *CMod, subject *GDef) *Compiler {
@@ -1645,15 +1617,17 @@ func NewCompiler(cm *CMod, subject *GDef) *Compiler {
 		CMod:    cm,
 		CGen:    cm.CGen,
 		Subject: subject,
+		Buf:     &Buf{},
 	}
 	return co
 }
 
 func (co *Compiler) P(format string, args ...interface{}) {
 	co.Buf.P(format, args...)
+	co.Buf.P("\n")
 }
 
-func (co *Compiler) AddLocalTemp(tempName string, tempType TypeValue, initC string) string {
+func (co *Compiler) AddLocalTemp(tempName string, tempType TypeValue, initC string) {
 	b := co.CurrentBlock
 	if _, ok := b.locals[tempName]; ok {
 		panic(F("CurrentBlock already has local with name: %q", tempName))
@@ -1665,7 +1639,11 @@ func (co *Compiler) AddLocalTemp(tempName string, tempType TypeValue, initC stri
 		Value: &CVal{c: tempName, t: tempType}, // Redundant?
 		TV:    tempType,
 	}
-	return F("%s = %s;", tempName, initC)
+	if initC != "" {
+		co.P("%s = %s; // AddLocalTemp", tempName, initC)
+	} else {
+		co.P("// %s uses default init // AddLocalTemp", tempName)
+	}
 }
 
 // Compiler for Expressions
@@ -1713,24 +1691,37 @@ func (co *Compiler) VisitFunction(x *FunctionX) Value {
 }
 
 func (co *Compiler) VisitCall(x *CallX) Value {
-	/*
-		type CallX struct {
-			Func Expr
-			Args []Expr
-		}
-	*/
+	// type CallX struct { Func Expr; Args []Expr; }
 	ser := Serial("call")
-	var prep []string
+	//< var prep []string
+	if ser == "call_103" {
+		panic(ser)
+	}
+
+	co.P("// This is VisitCall %s", ser)
+	co.P("// This is VisitCall %s", ser)
+	co.P("// Func is X %#v", x.Func)
+	co.P("// Args is len %d", len(x.Args))
+	for i, a := range x.Args {
+		co.P("// Args[%d] is X %#v", i, a)
+	}
 
 	funcVal := x.Func.VisitExpr(co)
 	funcValType := funcVal.Type()
 	funcRec := funcValType.(*FunctionTV).FuncRec
 	fins := funcRec.Ins
 	fouts := funcRec.Outs
+	co.P("// IsMethod = %v", funcRec.IsMethod)
+	co.P("// HasDotDotDot = %v", funcRec.HasDotDotDot)
 
 	var argVals []Value
 	for _, e := range x.Args {
 		argVals = append(argVals, e.VisitExpr(co))
+	}
+
+	co.P("// Func is V %#v", funcVal)
+	for i, a := range argVals {
+		co.P("// Args[%d] is V %#v", i, a)
 	}
 
 	var extraFin NameTV
@@ -1753,21 +1744,24 @@ func (co *Compiler) VisitCall(x *CallX) Value {
 		}
 	}
 
+	co.P("// 1765: extraFin=%v ;; sliceType=%v ;; numNormal=%d ;; numExtras=%d", extraFin, sliceType, numNormal, numExtras)
+
 	var argc []string
+
 	// For the non-DotDotDot arguments
 	for i, fin := range fins {
 		temp := CName(ser, "in", D(i), fin.Name)
-		prep = append(prep, co.AddLocalTemp(temp, fin.TV, argVals[i].ToC()))
+		co.AddLocalTemp(temp, fin.TV, argVals[i].ToC())
 		argc = append(argc, temp)
 	}
 
 	if funcRec.HasDotDotDot {
 		sliceName := CName(ser, "in", "vec")
-		prep = append(prep, co.AddLocalTemp(sliceName, sliceType, "MakeSlice()"))
+		co.AddLocalTemp(sliceName, sliceType, "MakeSlice()")
 		for i := 0; i < numExtras; i++ {
-			prep = append(prep, F("%s = AppendSlice(%s, %s)", sliceName, sliceName, argVals[numNormal+i]))
+			co.P("%s = AppendSlice(%s, %s) // For extra input #%d", sliceName, sliceName, argVals[numNormal+i], i)
 		}
-		//## fins = append(fins, NameTV{sliceName, sliceType})
+		fins = append(fins, NameTV{sliceName, sliceType})
 		argc = append(argc, sliceName)
 	}
 
@@ -1871,6 +1865,7 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 		rvalues = append(rvalues, e.VisitExpr(co))
 	}
 
+	// Create local vars, if := is used.
 	if ass.Op == ":=" {
 		for _, a := range ass.A {
 			if id, ok := a.(*IdentX); ok {
@@ -1878,7 +1873,7 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 				if id.X != "" && id.X != "_" {
 					name = id.X
 				} else {
-					name = Serial("tmp_")
+					name = Serial("tmp")
 				}
 
 				local := &GDef{
@@ -1886,7 +1881,7 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 					CName: Format("v_%s", name),
 				}
 				if _, ok := co.CurrentBlock.locals[id.X]; ok {
-					L("Already defined local: %q", id.X)
+					co.P("// Already defined local: %q", id.X)
 				} else {
 					co.CurrentBlock.locals[id.X] = local
 				}
@@ -1921,39 +1916,15 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 
 	case ass.A == nil && bcall != nil:
 		// No assignment.  Just a function call.
-		log.Printf("bcall=%#v", bcall)
-		callVal := bcall.VisitExpr(co)
-		log.Printf("callVal=%#v", callVal)
+		callVal := rvalues[0]
 
 		_ = callVal // throw away the result.
 
-		/* TODO
+		co.P("// @@@@ Please Call %v", callVal)
+		co.P("// @@@@ Please Call %#v", callVal)
 
-				funcname := funcRec.Function.Name
-				log.Printf("funcname=%s", funcname)
+		co.P("(void) %s; // Call with no assign: 1932", callVal.ToC())
 
-				if lenB != len(bcall.Args) {
-					panic(Format("Function %s wants %d args, got %d", funcname, len(bcall.Args), lenB))
-				}
-				ser := Serial("call")
-				co.P("{ // %s", ser)
-				c := Format(" %s( fp", funcname)
-				for i, in := range funcRec.Ins {
-					val := ass.B[i].VisitExpr(co)
-					expectedType := in.TV
-					if expectedType != val.Type() {
-						panic(Format("bad type: expected %s, got %s", expectedType, val.Type()))
-					}
-					co.P("  %s %s_in_%d = %s;", in.TV.CType(), ser, i, val.ToC())
-					c += Format(", %s_in_%d", ser, i)
-				}
-				for i, out := range funcRec.Outs {
-					co.P("  %s %s_out_%d;", out.TV.CType(), ser, i)
-					c += Format(", &%s_out_%d", ser, i)
-				}
-				c += " );"
-				co.P("  %s\n} // %s", c, ser)
-		        TODO */
 	case len(ass.A) > 1 && bcall != nil:
 		// From 1 call, to 2 or more assigned vars.
 		var buf Buf
@@ -2077,7 +2048,8 @@ func (co *Compiler) VisitBlock(a *Block) {
 	co.CurrentBlock = a
 	a.compiler = prevBlock.compiler // TODO is this good?
 	for i, e := range a.stmts {
-		log.Printf("VisitBlock[%d]", i)
+		ser := Serial("block")
+		co.P("// @@ VisitBlock[%s,%d] <= %q", ser, i, F("%v", e))
 		e.VisitStmt(co)
 		log.Printf("VisitBlock[%d] ==>\n<<<\n%s\n>>>", i, co.Buf.String())
 	}
@@ -2112,6 +2084,7 @@ func (co *Compiler) EmitFunc(gd *GDef) {
 	rec := gd.TV.(*FunctionTV).FuncRec
 	co.P(rec.SignatureStr(gd.CName))
 
+	// Figure out the names of Func inputs, and create locals for them.
 	for i, in := range rec.Ins {
 		var name string
 		if in.Name != "" && in.Name != "_" {
@@ -2128,6 +2101,7 @@ func (co *Compiler) EmitFunc(gd *GDef) {
 		block.locals[name] = local
 	}
 
+	// Figure out the names of Func outputs, and create locals for them.
 	for i, out := range rec.Outs {
 		var name string
 		if out.Name != "" && out.Name != "_" {
@@ -2144,17 +2118,38 @@ func (co *Compiler) EmitFunc(gd *GDef) {
 		block.locals[name] = local
 	}
 
-	if rec.FuncRecX.Body != nil {
-		co.P("{\n")
-		prevBlock := co.CurrentBlock
-		co.CurrentBlock = rec.FuncRecX.Body
-		rec.FuncRecX.Body.compiler = co
-		rec.FuncRecX.Body.VisitStmt(co)
-		co.CurrentBlock = prevBlock
-		co.P("\n}\n")
-	} else {
+	if rec.FuncRecX.Body == nil {
+		// Function has no body, so it should be natively-defined.
 		co.P("; //EmitFunc: NATIVE\n")
+		return
 	}
+
+	// For the normal case of a function with a body.
+	// Emit the translated body onto a buffer.
+	// Then define the local variables, and initialize them,
+	// and emit them before you emit the body from the buffer.
+
+	co.P("{\n")
+
+	prevBuf := co.Buf
+	co.Buf = &Buf{}
+
+	prevBlock := co.CurrentBlock
+	co.CurrentBlock = rec.FuncRecX.Body
+	rec.FuncRecX.Body.compiler = co
+	rec.FuncRecX.Body.VisitStmt(co)
+	co.CurrentBlock = prevBlock
+
+	prevBuf.P("// Adding LOCALS to Func")
+	for name, e := range rec.FuncRecX.Body.locals {
+		prevBuf.P("// LOCAL %q IS %v", name, e)
+		prevBuf.P("auto %v %v; // DEF LOCAL 2145", e.TV.CType(), e.CName)
+	}
+
+	prevBuf.P(co.Buf.String())
+	co.Buf = prevBuf
+
+	co.P("\n}\n")
 }
 
 ///////////////////////////////////////////////////////////
