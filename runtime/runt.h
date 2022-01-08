@@ -25,11 +25,17 @@ typedef void omarker();
 
 #endif /* unix */
 
-typedef unsigned char t_bool;
-typedef unsigned char t_uint1;
-typedef signed char t_int1;
-typedef unsigned int t_uint2;
-typedef signed int t_int2;
+#define Slice_(T) Slice
+#define Map_(K,V) Map
+#define Interface_(NAME) Interface
+#define Struct_(NAME) Struct
+#define main__main main
+
+typedef const char* P__type_;
+typedef void* P__any_;
+typedef int P_int;
+typedef unsigned int P_uint;
+typedef unsigned char P_byte;
 
 enum ClsNum {
     C_Free = 0,

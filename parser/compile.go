@@ -827,22 +827,6 @@ type FuncRec struct {
 // Maps global typedef names to the C definition.
 var FuncPtrTypedefs = make(map[string]string)
 
-/*
-func UNUSED_MethRecToFuncRec(mr *FuncRec) *FuncRec {
-	ins := []X_NameAndType{*mr.Receiver}
-	ins = append(ins, mr.Ins...)
-	fn := &FuncRec{
-		Receiver:     nil,
-		Ins:          ins,
-		Outs:         mr.Outs,
-		HasDotDotDot: mr.HasDotDotDot,
-		Body:         mr.Body,
-	}
-	RegisterFuncRec(fn) // TODO: should this be lazy?
-	return fn
-}
-*/
-
 func RegisterFuncRec(fn *FuncRec) {
 	// TODO: should this be lazy?
 	name := Serial("funk")
@@ -1221,8 +1205,10 @@ func CompileToC(r io.Reader, sourceName string, w io.Writer, opt *Options) {
 	}
 
 	cg, cm := NewCGenAndMainCMod(opt, w)
-	pr("#include <stdio.h>")
-	pr("#include \"runt.h\"")
+	pr(`#include <stdio.h>`)
+	pr(``)
+	pr(`#include "runt.h"`)
+	pr(``)
 	if !opt.SkipBuiltin {
 		cg.LoadModule("builtin", pr)
 	}
