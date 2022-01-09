@@ -2,12 +2,8 @@
 
 extern void main__main();
 
-byte Mem[50000];
-
-void MarkerFunc(void) {}
-
 int main(int argc, const char* argv[]) {
-  oinit((word)Mem, (word)Mem + sizeof(Mem), MarkerFunc);
+  oinit(0, 0, 0);  // noop
   main__main();
   return 0;
 }

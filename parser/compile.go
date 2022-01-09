@@ -700,7 +700,7 @@ type AssignS struct {
 }
 
 func (o *AssignS) String() string {
-	return fmt.Sprintf("\nAssign(%v <%q> %v)\n", o.A, o.Op, o.B)
+	return fmt.Sprintf("\nAssign{=%v <%q> %v=}\n", o.A, o.Op, o.B)
 }
 
 func (o *AssignS) VisitStmt(v StmtVisitor) {
@@ -1608,6 +1608,7 @@ type Compiler struct {
 	CurrentBlock *Block
 	Defers       []*DeferRec
 	Buf          *Buf
+	slots        map[string]*GDef // not really G
 }
 
 func NewCompiler(cm *CMod, subject *GDef) *Compiler {
@@ -1616,6 +1617,7 @@ func NewCompiler(cm *CMod, subject *GDef) *Compiler {
 		CGen:    cm.CGen,
 		Subject: subject,
 		Buf:     &Buf{},
+		slots:   make(map[string]*GDef),
 	}
 	return co
 }
@@ -1623,25 +1625,6 @@ func NewCompiler(cm *CMod, subject *GDef) *Compiler {
 func (co *Compiler) P(format string, args ...interface{}) {
 	co.Buf.P(format, args...)
 	co.Buf.P("\n")
-}
-
-func (co *Compiler) AddLocalTemp(tempName string, tempType TypeValue, initC string) {
-	b := co.CurrentBlock
-	if _, ok := b.locals[tempName]; ok {
-		panic(F("CurrentBlock already has local with name: %q", tempName))
-	}
-	L("AddLocalTemp: b=%#v", b)
-	b.locals[tempName] = &GDef{
-		Name:  tempName,
-		CName: tempName,
-		Value: &CVal{c: tempName, t: tempType}, // Redundant?
-		TV:    tempType,
-	}
-	if initC != "" {
-		co.P("%s = %s; // AddLocalTemp", tempName, initC)
-	} else {
-		co.P("// %s uses default init // AddLocalTemp", tempName)
-	}
 }
 
 // Compiler for Expressions
@@ -1659,12 +1642,7 @@ func (co *Compiler) VisitLitString(x *LitStringX) Value {
 	}
 }
 func (co *Compiler) VisitIdent(x *IdentX) Value {
-	if co.CurrentBlock != nil {
-		gd := co.CurrentBlock.Find(x.X)
-		return gd
-	}
-	return co.CMod.Find(x.X)
-	// return &NameVal{x.X, co.CMod}
+	return co.FindName(x.X)
 }
 func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 	a := x.A.VisitExpr(co)
@@ -1749,18 +1727,18 @@ func (co *Compiler) VisitCall(x *CallX) Value {
 	// For the non-DotDotDot arguments
 	for i, fin := range fins {
 		temp := CName(ser, "in", D(i), fin.Name)
-		co.AddLocalTemp(temp, fin.TV, argVals[i].ToC())
-		argc = append(argc, temp)
+		gd := co.AddLocalTemp(temp, fin.TV, argVals[i].ToC())
+		argc = append(argc, gd.CName)
 	}
 
 	if funcRec.HasDotDotDot {
 		sliceName := CName(ser, "in", "vec")
-		co.AddLocalTemp(sliceName, sliceType, "MakeSlice()")
+		sliceVar := co.AddLocalTemp(sliceName, sliceType, "MakeSlice()")
 		for i := 0; i < numExtras; i++ {
-			co.P("%s = AppendSlice(%s, %s); // For extra input #%d", sliceName, sliceName, argVals[numNormal+i].ToC(), i)
+			co.P("%s = AppendSlice(%s, %s); // For extra input #%d", sliceVar.CName, sliceVar.CName, argVals[numNormal+i].ToC(), i)
 		}
-		fins = append(fins, NameTV{sliceName, sliceType})
-		argc = append(argc, sliceName)
+		fins = append(fins, NameTV{sliceVar.CName, sliceType})
+		argc = append(argc, sliceVar.CName)
 	}
 
 	if len(fouts) != 1 {
@@ -1769,8 +1747,8 @@ func (co *Compiler) VisitCall(x *CallX) Value {
 			rj := Format("_multi_%s_%d", ser, j)
 			vj := NameTV{rj, out.TV}
 			multi = append(multi, vj)
-			co.AddLocalTemp(rj, out.TV, "")
-			argc = append(argc, F("&%s", rj))
+			gd := co.AddLocalTemp(rj, out.TV, "")
+			argc = append(argc, F("&%s", gd.CName))
 		}
 		c := Format("(%s(%s)/*1777*/)", funcVal.ToC(), strings.Join(argc, ", "))
 		return &CVal{c: c, t: &MultiTV{multi}}
@@ -1851,6 +1829,14 @@ func (co *Compiler) VisitDot(dot *DotX) Value {
 }
 
 // Compiler for Statements
+func (co *Compiler) AssignSingle(right Value, left Value) {
+	switch t := right.(type) {
+	case *SubVal:
+		panic(F("todo SubVal L1835: %v", t))
+	default:
+		co.P("%s = %s; // L1837", right.ToC(), left.ToC())
+	}
+}
 func (co *Compiler) VisitAssign(ass *AssignS) {
 	L("//## assign..... %v   %v   %v", ass.A, ass.Op, ass.B)
 	lenA, lenB := len(ass.A), len(ass.B)
@@ -1864,6 +1850,7 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 	}
 
 	// Create local vars, if := is used.
+	var newLocals []*GDef
 	if ass.Op == ":=" {
 		for _, a := range ass.A {
 			if id, ok := a.(*IdentX); ok {
@@ -1873,16 +1860,8 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 				} else {
 					name = Serial("tmp")
 				}
-
-				local := &GDef{
-					Name:  name,
-					CName: Format("v_%s", name),
-				}
-				if _, ok := co.CurrentBlock.locals[id.X]; ok {
-					co.P("// Already defined local: %q", id.X)
-				} else {
-					co.CurrentBlock.locals[id.X] = local
-				}
+				gd := co.DefineLocal("v", name, IntTO)
+				newLocals = append(newLocals, gd)
 			} else {
 				log.Panicf("Expected an identifier in LHS of `:=` but got %v", a)
 			}
@@ -1900,7 +1879,7 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 
 	switch {
 	case ass.B == nil:
-		// An lvalue followed by ++ or --.
+		// CASE: An lvalue followed by ++ or --.
 		if len(ass.A) != 1 {
 			Panicf("operator %v requires one lvalue on the left, got %v", ass.Op, ass.A)
 		}
@@ -1908,12 +1887,8 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 		cvar := ass.A[0].VisitExpr(co).ToC()
 		co.P("  (%s)%s;", cvar, ass.Op)
 
-	case ass.A == nil && bcall == nil:
-		// No assignment.  Just a non-function.  Does this happen?
-		panic(Format("Lone expr is not a function call: [%v]", ass.B))
-
 	case ass.A == nil && bcall != nil:
-		// No assignment.  Just a function call.
+		// CASE: No assignment.  Just a function call.
 		callVal := rvalues[0]
 
 		_ = callVal // throw away the result.
@@ -1921,10 +1896,14 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 		co.P("// @@@@ Please Call %v", callVal)
 		co.P("// @@@@ Please Call %#v", callVal)
 
-		co.P("/*(void)*/ %s; // Call with no assign: 1932", callVal.ToC())
+		co.P("%s; // Call with no assign: 1932", callVal.ToC())
+
+	case ass.A == nil && bcall == nil:
+		// CASE: No assignment.  Just a non-function not allowed.
+		panic(Format("Lone expr is not a function call: [%v]", ass.B))
 
 	case len(ass.A) > 1 && bcall != nil:
-		// From 1 call, to 2 or more assigned vars.
+		// CASE From 1 call, to 2 or more assigned vars.
 		var buf Buf
 		buf.P("((%s)(", bcall.Func.VisitExpr(co).ToC())
 		for i, arg := range bcall.Args {
@@ -1941,7 +1920,18 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 			buf.P("&(%s)", arg.VisitExpr(co).ToC())
 		}
 		buf.P("))")
+	case len(ass.A) == 1 && len(ass.B) == 1:
+		// CASE: Simple 1,1
+		var target Value
+		if newLocals != nil {
+			target = newLocals[0]
+		} else {
+			target = ass.A[0].VisitExpr(co)
+		}
+		co.AssignSingle(target, ass.B[0].VisitExpr(co))
+
 	default:
+		// CASE: more than 1: same: (right) == len(left)
 		if len(ass.A) != len(ass.B) {
 			Panicf("wrong number of values in assign: left has %d, right has %d", len(ass.A), len(ass.B))
 		}
@@ -2072,13 +2062,51 @@ func (buf *Buf) String() string {
 	return buf.W.String()
 }
 
-func (co *Compiler) EmitFunc(gd *GDef) {
+func (co *Compiler) FindName(name string) *GDef {
+	if co.CurrentBlock != nil {
+		return co.CurrentBlock.Find(name)
+	}
+	return co.CMod.Find(name)
+}
+func (co *Compiler) AddLocalTemp(tempName string, tempType TypeValue, initC string) *GDef {
+	gd := co.DefineLocal("tmp", tempName, tempType)
+	co.P("%s = %s; // L1632", gd.CName, initC)
+	return gd
+}
+
+func (co *Compiler) DefineLocal(prefix string, name string, tv TypeValue) *GDef {
+	cname := Format("v_%s", name)
+	local := &GDef{
+		Name:  name,
+		CName: cname,
+		Value: &CVal{c: cname, t: tv}, // Redundant?
+		TV:    tv,
+	}
+	if _, ok := co.CurrentBlock.locals[name]; ok {
+		co.P("// Already defined local: %q", name)
+	} else {
+		co.CurrentBlock.locals[name] = local
+	}
+	co.slots[local.CName] = local
+	return local
+}
+func (co *Compiler) FinishScope() {
+	co.CurrentBlock = co.CurrentBlock.parent
+}
+func (co *Compiler) StartScope() *Block {
+	ser := Serial("scope")
+	co.P("// Starting Scope: %q", ser)
 	block := &Block{
-		debugName: gd.CName,
+		debugName: ser,
 		locals:    make(map[string]*GDef),
-		parent:    nil,
+		parent:    co.CurrentBlock,
 		compiler:  co,
 	}
+	co.CurrentBlock = block
+	return block
+}
+func (co *Compiler) EmitFunc(gd *GDef) {
+	block := co.StartScope()
 	rec := gd.TV.(*FunctionTV).FuncRec
 	co.P(rec.SignatureStr(gd.CName))
 
@@ -2137,16 +2165,18 @@ func (co *Compiler) EmitFunc(gd *GDef) {
 	rec.FuncRecX.Body.compiler = co
 	rec.FuncRecX.Body.VisitStmt(co)
 	co.CurrentBlock = prevBlock
+	cBody := co.Buf.String()
 
-	prevBuf.P("// Adding LOCALS to Func")
-	for name, e := range rec.FuncRecX.Body.locals {
-		prevBuf.P("// LOCAL %q IS %v", name, e)
-		prevBuf.P("auto %v %v; // DEF LOCAL 2145", e.TV.CType(), e.CName)
-	}
-
-	prevBuf.P(co.Buf.String())
 	co.Buf = prevBuf
+	co.P("// Adding LOCALS to Func:")
+	for name, e := range co.slots {
+		co.P("// LOCAL %q IS %v", name, e)
+		co.P("auto %v %v = {0}; // DEF LOCAL 2145", e.TV.CType(), e.CName)
+	}
+	co.P("// Added LOCALS to Func.")
+	co.P(cBody)
 
+	co.FinishScope()
 	co.P("\n}\n")
 }
 

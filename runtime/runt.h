@@ -34,6 +34,7 @@ typedef void omarker();  // TODO: GC
 typedef const char* P__type_;
 typedef void* P__any_;
 typedef int P_int;
+typedef int P__const_int_;
 typedef unsigned int P_uint;
 typedef unsigned char P_byte;
 
