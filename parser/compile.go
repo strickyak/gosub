@@ -1033,7 +1033,7 @@ type Value interface {
 }
 
 func (o *GDef) String() string {
-	return F("GDef[%s.%s=%s]", o.Name, o.Package, o.CName)
+	return F("GDef[%s@%s=%s:%s]", o.Name, o.Package, o.CName, o.TV)
 }
 func (o *GDef) ToC() string {
 	return o.CName
@@ -2055,18 +2055,14 @@ func (co *Compiler) VisitSwitch(sws *SwitchS) {
 }
 func (co *Compiler) VisitBlock(a *Block) {
 	if a == nil {
-		panic(8881)
+		panic("L2058")
 	}
-	prevBlock := co.CurrentBlock
-	co.CurrentBlock = a
-	a.compiler = prevBlock.compiler // TODO is this good?
 	for i, e := range a.stmts {
 		ser := Serial("block")
 		co.P("// @@ VisitBlock[%s,%d] <= %q", ser, i, F("%v", e))
 		e.VisitStmt(co)
 		log.Printf("VisitBlock[%d] ==>\n<<<\n%s\n>>>", i, co.Buf.String())
 	}
-	co.CurrentBlock = prevBlock
 }
 
 type Buf struct {
@@ -2088,12 +2084,12 @@ func (buf *Buf) String() string {
 }
 
 func (co *Compiler) FindName(name string) *GDef {
-	L("nando x")
+	L("nando x: %q", name)
 	if co.CurrentBlock != nil {
-		L("nando z")
+		L("nando z: %q [block %v]", name, co.CurrentBlock.locals)
 		return co.CurrentBlock.Find(name)
 	}
-	L("nando y")
+	L("nando y: %q [cmod @%q]", name, co.CMod.Package)
 	return co.CMod.Find(name)
 }
 func (co *Compiler) DefineLocalTemp(tempName string, tempType TypeValue, initC string) *GDef {
@@ -2103,7 +2099,7 @@ func (co *Compiler) DefineLocalTemp(tempName string, tempType TypeValue, initC s
 }
 
 func (co *Compiler) DefineLocal(prefix string, name string, tv TypeValue) *GDef {
-	cname := Format("v_%s", name)
+	cname := Format("%s_%s", prefix, name)
 	local := &GDef{
 		Name:  name,
 		CName: cname,
@@ -2111,17 +2107,19 @@ func (co *Compiler) DefineLocal(prefix string, name string, tv TypeValue) *GDef 
 		TV:    tv,
 	}
 	if _, ok := co.CurrentBlock.locals[name]; ok {
-		co.P("// Already defined local: %q", name)
+		panic(F("// Local var Already defined: %s", name))
 	} else {
 		co.CurrentBlock.locals[name] = local
+		L("bilbo %q 111 Current Block Locals: %v", name, co.CurrentBlock.locals)
 	}
 	co.slots[local.CName] = local
+	L("bilbo %q 222 Compiler slots: %v", name, co.slots)
 	return local
 }
 func (co *Compiler) FinishScope() {
 	co.CurrentBlock = co.CurrentBlock.parent
 }
-func (co *Compiler) StartScope() *Block {
+func (co *Compiler) StartScope() {
 	ser := Serial("scope")
 	co.P("// Starting Scope: %q", ser)
 	block := &Block{
@@ -2131,10 +2129,9 @@ func (co *Compiler) StartScope() *Block {
 		compiler:  co,
 	}
 	co.CurrentBlock = block
-	return block
 }
 func (co *Compiler) EmitFunc(gd *GDef) {
-	block := co.StartScope()
+	co.StartScope()
 	rec := gd.TV.(*FunctionTV).FuncRec
 	co.P(rec.SignatureStr(gd.CName))
 
@@ -2146,30 +2143,21 @@ func (co *Compiler) EmitFunc(gd *GDef) {
 		} else {
 			name = Format("__%d", i)
 		}
-
-		local := &GDef{
-			Name:  name,
-			CName: Format("in_%s", name),
-			TV:    in.TV,
-		}
-		block.locals[name] = local
+		co.DefineLocal("in", name, in.TV)
 	}
 
 	// Figure out the names of Func outputs, and create locals for them.
-	for i, out := range rec.Outs {
-		var name string
-		if out.Name != "" && out.Name != "_" {
-			name = out.Name
-		} else {
-			name = Format("__%d", i)
+	// Unless there is only one out -- then it is a direct return.
+	if len(rec.Outs) > 1 {
+		for i, out := range rec.Outs {
+			var name string
+			if out.Name != "" && out.Name != "_" {
+				name = out.Name
+			} else {
+				name = Format("__%d", i)
+			}
+			co.DefineLocal("out", name, out.TV)
 		}
-
-		local := &GDef{
-			Name:  name,
-			CName: Format("(*out_%s)", name),
-			TV:    out.TV,
-		}
-		block.locals[name] = local
 	}
 
 	if rec.FuncRecX.Body == nil {
@@ -2188,16 +2176,17 @@ func (co *Compiler) EmitFunc(gd *GDef) {
 	prevBuf := co.Buf
 	co.Buf = &Buf{}
 
-	prevBlock := co.CurrentBlock
-	co.CurrentBlock = rec.FuncRecX.Body
-	rec.FuncRecX.Body.compiler = co
+	rec.FuncRecX.Body.compiler = co // TODO ???
 	rec.FuncRecX.Body.VisitStmt(co)
-	co.CurrentBlock = prevBlock
 	cBody := co.Buf.String()
 
 	co.Buf = prevBuf
 	co.P("// Adding LOCALS to Func:")
 	for name, e := range co.slots {
+		if strings.HasPrefix(e.CName, "in_") || strings.HasPrefix(e.CName, "out_") {
+			// These are declared in the formal params of the C function.
+			continue
+		}
 		co.P("// LOCAL %q IS %v", name, e)
 		co.P("auto %v %v = {0}; // DEF LOCAL 2145", e.TV.CType(), e.CName)
 	}
