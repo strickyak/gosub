@@ -679,6 +679,7 @@ func (o *SubX) VisitExpr(v ExprVisitor) Value {
 
 type StmtVisitor interface {
 	VisitAssign(*AssignS)
+	VisitVar(*VarStmt)
 	VisitWhile(*WhileS)
 	VisitSwitch(*SwitchS)
 	VisitIf(*IfS)
@@ -705,6 +706,19 @@ func (o *AssignS) String() string {
 
 func (o *AssignS) VisitStmt(v StmtVisitor) {
 	v.VisitAssign(o)
+}
+
+type VarStmt struct {
+	name string
+	tx   Expr
+}
+
+func (o *VarStmt) String() string {
+	return fmt.Sprintf("\nVarS{=%v %v=}\n", o.name, o.tx)
+}
+
+func (o *VarStmt) VisitStmt(v StmtVisitor) {
+	v.VisitVar(o)
 }
 
 type ReturnS struct {
@@ -1512,12 +1526,21 @@ func (cm *CMod) Find(s string) *GDef {
 		}
 		panic(F("Find %q, but with nil CMod", s))
 	}
+	L("Searching %q .......", cm.Package)
+	for debug_k, debug_v := range cm.Members {
+		L("....... debug %q %v", debug_k, debug_v)
+	}
+	L(".......")
 	if d, ok := cm.Members[s]; ok {
 		return d
 	}
-	if cm.Package == "builtin" {
+
+	switch cm.Package {
+	case "": // Prims
+		panic(F("Cannot find %q", s))
+	case "builtin":
 		return cm.CGen.Prims.Find(s)
-	} else {
+	default:
 		return cm.CGen.BuiltinMod.Find(s)
 	}
 }
@@ -1727,13 +1750,13 @@ func (co *Compiler) VisitCall(x *CallX) Value {
 	// For the non-DotDotDot arguments
 	for i, fin := range fins {
 		temp := CName(ser, "in", D(i), fin.Name)
-		gd := co.AddLocalTemp(temp, fin.TV, argVals[i].ToC())
+		gd := co.DefineLocalTemp(temp, fin.TV, argVals[i].ToC())
 		argc = append(argc, gd.CName)
 	}
 
 	if funcRec.HasDotDotDot {
 		sliceName := CName(ser, "in", "vec")
-		sliceVar := co.AddLocalTemp(sliceName, sliceType, "MakeSlice()")
+		sliceVar := co.DefineLocalTemp(sliceName, sliceType, "MakeSlice()")
 		for i := 0; i < numExtras; i++ {
 			co.P("%s = AppendSlice(%s, %s); // For extra input #%d", sliceVar.CName, sliceVar.CName, argVals[numNormal+i].ToC(), i)
 		}
@@ -1747,13 +1770,13 @@ func (co *Compiler) VisitCall(x *CallX) Value {
 			rj := Format("_multi_%s_%d", ser, j)
 			vj := NameTV{rj, out.TV}
 			multi = append(multi, vj)
-			gd := co.AddLocalTemp(rj, out.TV, "")
+			gd := co.DefineLocalTemp(rj, out.TV, "")
 			argc = append(argc, F("&%s", gd.CName))
 		}
-		c := Format("(%s(%s)/*1777*/)", funcVal.ToC(), strings.Join(argc, ", "))
+		c := Format("(%s(%s)/*L1777*/)", funcVal.ToC(), strings.Join(argc, ", "))
 		return &CVal{c: c, t: &MultiTV{multi}}
 	} else {
-		c := Format("(%s(%s)/*1780*/)", funcVal.ToC(), strings.Join(argc, ", "))
+		c := Format("(%s(%s)/*L1780*/)", funcVal.ToC(), strings.Join(argc, ", "))
 		t := fouts[0].TV
 		return &CVal{c: c, t: t}
 	}
@@ -1828,7 +1851,9 @@ func (co *Compiler) VisitDot(dot *DotX) Value {
 	panic("DotXXX")
 }
 
-// Compiler for Statements
+func (co *Compiler) VisitVar(v *VarStmt) {
+	_ = co.DefineLocal("v", v.name, co.CMod.VisitTypeExpr(v.tx))
+}
 func (co *Compiler) AssignSingle(right Value, left Value) {
 	switch t := right.(type) {
 	case *SubVal:
@@ -2063,12 +2088,15 @@ func (buf *Buf) String() string {
 }
 
 func (co *Compiler) FindName(name string) *GDef {
+	L("nando x")
 	if co.CurrentBlock != nil {
+		L("nando z")
 		return co.CurrentBlock.Find(name)
 	}
+	L("nando y")
 	return co.CMod.Find(name)
 }
-func (co *Compiler) AddLocalTemp(tempName string, tempType TypeValue, initC string) *GDef {
+func (co *Compiler) DefineLocalTemp(tempName string, tempType TypeValue, initC string) *GDef {
 	gd := co.DefineLocal("tmp", tempName, tempType)
 	co.P("%s = %s; // L1632", gd.CName, initC)
 	return gd

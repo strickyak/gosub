@@ -1,7 +1,7 @@
 #include "runt.h"
 
 void oinit(word begin, word end, omarker fn) {
-    fprintf(stderr, "oinit: noop\n");
+    fprintf(stderr, "## oinit: noop\n");
 }
 
 word oalloc(byte len, byte cls) {

@@ -337,6 +337,11 @@ func (o *Parser) TakeEOL() {
 
 func (o *Parser) ParseStmt(b *Block) Stmt {
 	switch o.Word {
+	case "var":
+		o.Next()
+		varIdent := o.TakeIdent()
+		varType := o.ParseType()
+		return &VarStmt{varIdent, varType}
 	case "if":
 		o.Next()
 		pred := o.ParseExpr()
@@ -422,25 +427,14 @@ func (o *Parser) ParseBareBlock() *Block {
 		locals: make(map[string]*GDef),
 	}
 	for o.Word != "}" && o.Word != "case" && o.Word != "default" {
-		switch o.Kind {
-		case L_EOL:
+		if o.Kind == L_EOL {
 			o.TakeEOL()
-		case L_Ident:
-			switch o.Word {
-			case "var":
-				o.Next()
-				s := o.TakeIdent()
-				t := o.ParseType()
-				_, _ = s, t
-				panic("433 TODO add a var statement")
-				//< b.LocalXs = append(b.LocalXs, NameTX{s, t, o.CMod})
-			default:
-				stmt := o.ParseStmt(b)
-				if stmt != nil {
-					b.stmts = append(b.stmts, stmt)
-				}
-				o.TakeEOL()
+		} else {
+			stmt := o.ParseStmt(b)
+			if stmt != nil {
+				b.stmts = append(b.stmts, stmt)
 			}
+			o.TakeEOL()
 		}
 	}
 	return b

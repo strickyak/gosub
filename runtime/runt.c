@@ -5,6 +5,7 @@ extern void main__main();
 int main(int argc, const char* argv[]) {
   oinit(0, 0, 0);  // noop
   main__main();
+  fprintf(stderr, "## Exit.\n");
   return 0;
 }
 
