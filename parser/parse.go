@@ -103,7 +103,7 @@ func (o *Parser) ParsePrim() Expr {
 func (o *Parser) ParseConstructor(handleClass string) Expr {
 	o.TakePunc("{")
 	ctor := &ConstructorX{
-		Name: handleClass,
+		name: handleClass,
 	}
 LOOP:
 	for {
@@ -229,7 +229,7 @@ func (o *Parser) ParseType() Expr {
 func (o *Parser) ParseStructType(name string) *StructRecX {
 	o.TakePunc("{")
 	rec := &StructRecX{
-		Name: name,
+		name: name,
 	}
 LOOP:
 	for {
@@ -255,7 +255,7 @@ LOOP:
 func (o *Parser) ParseInterfaceType(name string) *InterfaceRecX {
 	o.TakePunc("{")
 	rec := &InterfaceRecX{
-		Name: name,
+		name: name,
 	}
 LOOP:
 	for {
@@ -465,7 +465,7 @@ func (o *Parser) ParseFunctionSignature(fn *FuncRecX) {
 			last := fn.Ins[numIns-1]
 			Say(fn.Ins[numIns-1])
 			elementNat := NameTX{"", last.Expr, o.CMod}
-			wrapWithSliceTX := NameTX{last.Name, &SliceTX{E: elementNat}, o.CMod}
+			wrapWithSliceTX := NameTX{last.name, &SliceTX{E: elementNat}, o.CMod}
 			fn.Ins[numIns-1] = wrapWithSliceTX //- &SliceTV{BaseTV{}, fn.Ins[numIns-1].TV}
 			Say(fn.Ins[numIns-1])
 		}
@@ -527,7 +527,7 @@ LOOP:
 				w := o.Word
 				o.Next()
 				gd := &GDef{
-					Name: w,
+					name: w,
 					// TV:   &ImportTV{BaseTV{w}},
 					TV: ImportTO,
 				}
@@ -543,9 +543,9 @@ LOOP:
 				x := o.ParseExpr()
 				gd := &GDef{
 					Package: o.Package,
-					Name:    w,
-					Init:    x,
-					Type_:   tx,
+					name:    w,
+					initx:   x,
+					typex:   tx,
 				}
 				o.Consts = append(o.Consts, gd)
 				o.ConstsMap[w] = gd
@@ -562,9 +562,9 @@ LOOP:
 				}
 				gd := &GDef{
 					Package: o.Package,
-					Name:    w,
-					Type_:   tx,
-					Init:    i,
+					name:    w,
+					typex:   tx,
+					initx:   i,
 				}
 				o.Vars = append(o.Vars, gd)
 				o.VarsMap[w] = gd
@@ -584,8 +584,8 @@ LOOP:
 				}
 				gd := &GDef{
 					Package: o.Package,
-					Name:    w,
-					Init:    tx,
+					name:    w,
+					initx:   tx,
 					TV:      TypeTO,
 				}
 				o.Types = append(o.Types, gd)
@@ -614,8 +614,8 @@ LOOP:
 				fn := o.ParseFunc(receiver)
 				gd := &GDef{
 					Package: o.Package,
-					Name:    name,
-					Init:    &FunctionX{fn},
+					name:    name,
+					initx:   &FunctionX{fn},
 				}
 				if receiver == nil {
 					o.Funcs = append(o.Funcs, gd)

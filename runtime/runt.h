@@ -32,7 +32,6 @@ typedef void omarker();  // TODO: GC
 #define Struct_(NAME) Struct
 
 typedef const char* P__type_;
-typedef void* P__any_;
 typedef int P_int;
 typedef int P__const_int_;
 typedef unsigned int P_uint;
@@ -49,26 +48,34 @@ enum ClsNum {
 
 typedef struct _string {
     word base;
-    word offset;
-    word len;
+    P_uint offset;
+    P_uint len;
 } String;
+typedef String P_string;
 
 typedef struct _slice {
     word base;
-    word offset;
-    word len;
+    P_uint offset;
+    P_uint len;
 } Slice;
 
 typedef struct _interface {
-    word handle;  // for structs
-    word pointer;  // for everything else
-    const char* type;
+    // TODO // word handle;  // for structs
+    void* pointer;  // for everything else
+    const char* typecode;
 } Interface; 
+typedef Interface P__any_;
 
-void F_BUILTIN_println(int i);
+extern void F_BUILTIN_println(int i);
 
+extern void panic_s(const char*);
+extern String MakeStringFromC(const char* s);
 extern Slice MakeSlice();
-extern Slice AppendSlice(Slice a, P_int x);
+extern Slice AppendSliceInt(Slice a, P_int x);
+extern Slice SliceAppend(Slice a, void* addr, int size);
+extern void SliceGet(Slice a, int size, int nth, void* value);
+extern void SlicePut(Slice a, int size, int nth, void* value);
+extern int SliceLen(Slice a, int size);
 extern void builtin__println(Slice args);
 
 #endif

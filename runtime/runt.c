@@ -9,15 +9,32 @@ int main(int argc, const char* argv[]) {
   return 0;
 }
 
+void panic_s(const char* why) {
+  fprintf(stderr, "\nPANIC: %s\n", why);
+  assert(0);
+}
+
+String MakeStringFromC(const char* s) {
+  int n = strlen(s);
+  if(n >= INF-1) panic_s("MakeStringFromC: too long");
+  word p = oalloc(n+1, 1);
+  assert(p);
+  strcpy((char*)p, s);
+  String z = {p, 0, n};
+  return z;
+}
+
 Slice MakeSlice() {
   Slice z = {0, 0, 0};
   return z;
 }
 
-Slice AppendSlice(Slice a, P_int x) {
+#define INITIAL_CAP 100
+#define MAX_CAP 254
+
+Slice AppendSliceInt(Slice a, P_int x) {
   if (!a.base) {
     // Initial allocation.
-#define INITIAL_CAP 100
     word p = oalloc(INITIAL_CAP, 1);
     assert(p);
     a.base = p;
@@ -26,7 +43,6 @@ Slice AppendSlice(Slice a, P_int x) {
   }
   byte cap = ocap(a.base);
   if (a.offset + a.len + sizeof(P_int) > cap) {
-#define MAX_CAP 254
     assert (cap < MAX_CAP);
 
     word p = oalloc(MAX_CAP, 1);
@@ -40,47 +56,71 @@ Slice AppendSlice(Slice a, P_int x) {
   return a;
 }
 
+Slice SliceAppend(Slice a, void* addr, int size) {
+  if (!a.base) {
+    // Initial allocation.
+    word p = oalloc(INITIAL_CAP, 1);
+    assert(p);
+    a.base = p;
+    a.offset = 0;
+    a.len = 0;
+  }
+  byte cap = ocap(a.base);
+  if (a.offset + a.len + size > cap) {
+    assert (cap < MAX_CAP);
+
+    word p = oalloc(MAX_CAP, 1);
+    assert(p);
+    omemcpy(p, a.base, cap);
+    a.base = p;
+  }
+  assert(a.offset + a.len + size <= cap);
+  memcpy((char*)a.base + a.offset + a.len, addr, size);
+  a.len += size;
+  return a;
+}
+void SliceGet(Slice a, int size, int nth, void* value) {
+  if (!a.base) panic_s("Get on nil slice");
+  if (nth*size >= a.len) panic_s("Get slice index OOB");
+  memcpy(value, (char*)a.base + a.offset + nth*size, size);
+}
+void SlicePut(Slice a, int size, int nth, void* value) {
+  if (!a.base) panic_s("Put on nil slice");
+  if (nth*size >= a.len) panic_s("Put slice index OOB");
+  memcpy((char*)a.base + a.offset + nth*size, value, size);
+}
+int SliceLen(Slice a, int size) {
+  if (!a.base) return 0;
+  return a.len / size;
+}
+
 void builtin__println(Slice args) {
   if (!args.base) return;
 
   fprintf(stderr, "## println: args{$%lx, $%x, $%x}\n", (long)args.base, args.offset, args.len);
-  for (int i=0; i*sizeof(P_int)<args.len; i++) {
-    P_int* p= (P_int*)(args.base + args.offset);
-    printf("%d ", p[i]);
+
+  if (true) {
+
+    for (int i=0; i*sizeof(P__any_)<args.len; i++) {
+      P__any_* p= (P__any_*)(args.base + args.offset);
+      printf("%d ", *(int*)(p[i].pointer));
+    }
+
+  } else if (true) {
+
+    for (int i=0; i*sizeof(P_int)<args.len; i++) {
+      P_int* p= (P_int*)(args.base + args.offset);
+      printf("%d ", p[i]);
+    }
+
+  } else {
+
+    for (int i=0; i<args.len; i++) {
+      byte* p= (byte*)(args.base + args.offset);
+      printf("$%02x ", p[i]);
+    }
+
   }
+
   printf("\n");
 }
-
-#if 0
-word Q(int x) {
-  unsigned u = (unsigned)x;
-  return (u << 1) | 1;
-}
-
-int N(word x) {
-  unsigned u = x>>1;
-  return (int)u;
-}
-
-String s_new(byte n) {
-    word guts = oalloc(n, C_Bytes);
-    String z = {
-      guts,
-      Q(0),
-      Q(n),
-    };
-    return z;
-}
-String s_from_c(const char* s) {
-    int n = strlen(s);
-    assert(n < INF);
-    String z = s_new((byte)n);
-    strcpy((char*)z.base, s);
-    return z;
-}
-
-void F_BUILTIN_println(int i) {
-    printf(" %d\n", i);
-    fflush(stdout);
-}
-#endif
