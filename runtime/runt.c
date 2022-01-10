@@ -103,7 +103,12 @@ void builtin__println(Slice args) {
 
     for (int i=0; i*sizeof(P__any_)<args.len; i++) {
       P__any_* p= (P__any_*)(args.base + args.offset);
-      printf("%d ", *(int*)(p[i].pointer));
+      fprintf(stderr, "typecode: %s\n", p[i].typecode);
+      if (!strcmp(p[i].typecode, "s")) {
+        printf("%s ", *(char**)(p[i].pointer));
+      } else {
+        printf("%d ", *(int*)(p[i].pointer));
+      }
     }
 
   } else if (true) {

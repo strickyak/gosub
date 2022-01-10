@@ -15,6 +15,7 @@ test: _FORCE_
 	set -x; make T=test/t4.go >&2 && ./a.out > _ && diff -b test/t4.want _
 	set -x; make T=test/t5.go >&2 && ./a.out > _ && diff -b test/t5.want _
 	set -x; make T=test/t6.go >&2 && ./a.out > _ && diff -b test/t6.want _
+	set -x; make T=test/t8.go >&2 && ./a.out > _ && diff -b test/t8.want _
 	echo ALL TESTS GOOD.
 
 ci:

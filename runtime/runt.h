@@ -4,10 +4,11 @@
 
 #ifdef unix
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <assert.h>
+#include <memory.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 typedef unsigned char bool;
 typedef unsigned char byte;
 typedef unsigned long word;
