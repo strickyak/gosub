@@ -1057,38 +1057,26 @@ type Value interface {
 	Type() TypeValue
 	ToC() string
 	ResolveAsTypeValue() (TypeValue, bool)
-	ResolveAsValue() Value
 }
 
 // Value in GDef may be too circular?
-func (o *GDef) TYPE() TypeValue {
-	return o.Value.Type()
+func (o *GDef) TYPEOF() TypeValue {
+	return o.typeof
 }
 
 func (o *GDef) String() string {
-	return F("GDef[%s pkg=%s cn=%s t=%v]", o.name, o.Package, o.CName, o.TYPE())
+	return F("GDef[%s pkg=%s cn=%s t=%v]", o.name, o.Package, o.CName, o.TYPEOF())
 }
 func (o *GDef) ToC() string {
 	return o.CName
 }
 func (o *GDef) Type() TypeValue {
-	return o.TYPE()
-}
-
-func (o *GDef) ResolveAsValue() Value      { return o.Value }
-func (o *CVal) ResolveAsValue() Value      { return o }
-func (o *SubVal) ResolveAsValue() Value    { return o }
-func (o *ImportVal) ResolveAsValue() Value { return o }
-func (o *TypeVal) ResolveAsValue() Value   { return o }
-func (o *NameVal) ResolveAsValue() Value {
-	gd := o.dflt.Find(o.name)
-	return gd.Value
+	return o.TYPEOF()
 }
 
 func (o *GDef) ResolveAsTypeValue() (TypeValue, bool) {
-	L("GDef.ResolveAsTypeValue < %s > Value: %T :: %v", o, o.Value, o.Value)
-	if tval, ok := o.Value.(*TypeVal); ok {
-		return tval.tv, true
+	if o.istype != nil {
+		return o.istype, true
 	}
 	return nil, false
 }
@@ -1096,22 +1084,10 @@ func (o *CVal) ResolveAsTypeValue() (TypeValue, bool)      { return nil, false }
 func (o *SubVal) ResolveAsTypeValue() (TypeValue, bool)    { return nil, false }
 func (o *ImportVal) ResolveAsTypeValue() (TypeValue, bool) { return nil, false }
 func (o *TypeVal) ResolveAsTypeValue() (TypeValue, bool)   { return o.tv, true }
-func (o *NameVal) ResolveAsTypeValue() (TypeValue, bool) {
-	gd := o.dflt.Find(o.name)
-	if val, ok := gd.Value.(*TypeVal); ok {
-		return val.ResolveAsTypeValue()
-	}
-	panic(F("wanted TypeValue for %q (in package %q), got %#v", o.name, o.dflt.Package, gd.Value))
-}
 
 type CVal struct {
 	c string // C language expression
 	t TypeValue
-}
-
-type NameVal struct {
-	name string
-	dflt *CMod
 }
 
 type SubVal struct {
@@ -1126,9 +1102,6 @@ type TypeVal struct {
 func (val *CVal) String() string {
 	return Format("(%s:%s)", val.c, val.t)
 }
-func (val *NameVal) String() string {
-	return Format("(%s:NameVal@%s)", val.name, val.dflt.Package)
-}
 func (val *TypeVal) String() string {
 	return Format("(%s:TypeVal)", val.tv)
 }
@@ -1139,16 +1112,6 @@ func (val *SubVal) String() string {
 func (val *CVal) Type() TypeValue {
 	return val.t
 }
-func (val *NameVal) Type() TypeValue {
-	gd := val.dflt.Find(val.name)
-	if gd.Value == val {
-		panic(F("Looping NameVal.Type for name %q dflt %q", val.name, val.dflt.Package))
-	}
-	if gd.Value.Type() == nil {
-		panic(F("NameVal.Type for %q (@%q) has nil Value.Type(): %#v", val.name, val.dflt.Package, gd))
-	}
-	return gd.Value.Type()
-}
 func (val *TypeVal) Type() TypeValue {
 	return TypeTO
 }
@@ -1158,9 +1121,6 @@ func (val *SubVal) Type() TypeValue {
 
 func (val *CVal) ToC() string {
 	return val.c
-}
-func (val *NameVal) ToC() string {
-	return val.dflt.Find(val.name).Value.ToC()
 }
 func (val *TypeVal) ToC() string {
 	return F("q", F("TYPE[%#v]", val.tv))
@@ -1267,7 +1227,7 @@ func (cm *CMod) FirstSlotGlobals(p *Parser, pr printer) {
 func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 	for _, g := range p.Imports {
 		cm.CGen.LoadModule(g.name, pr)
-		g.Value = &ImportVal{g.name}
+		g.typeof = ImportTO
 		// If we care to do imports in order,
 		// this is a good place to remember it.
 		cm.CGen.ModsInOrder = append(cm.CGen.ModsInOrder, g.name)
@@ -1280,12 +1240,13 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 		if tmpV.TV == nil {
 			panic(g.CName)
 		}
-		g.Value = &TypeVal{tmpV.TV}
+		g.istype = tmpV.TV
+		g.typeof = TypeTO
 	}
 	for _, g := range p.Consts {
 		Say(g.Package, g.name, "2C")
 		// not allowing g.Type on constants.
-		g.Value = g.initx.VisitExpr(cm.QuickCompiler(g))
+		g.constval = g.initx.VisitExpr(cm.QuickCompiler(g))
 	}
 	for _, g := range p.Vars {
 		Say(g.Package, g.name, "2V")
@@ -1294,11 +1255,10 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 		if !ok {
 			panic(F("got %#v when we wanted a TypeValue", val))
 		}
-		g.Value = &CVal{
-			c: g.CName,
-			t: tv,
-		}
+		g.typeof = tv
+		g.istype = nil // to be sure
 		if g.initx != nil {
+			panic("initx L1259")
 			// We are writing the global init() function.
 			initS := &AssignS{
 				A:  []Expr{&IdentX{g.name, cm}},
@@ -1307,30 +1267,6 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 			}
 			initS.VisitStmt(cm.QuickCompiler(g))
 		}
-	}
-	for _, g := range p.Funcs {
-		Say(g.Package, g.name, "2F")
-
-		p := g.initx // .Type().(*FunctionTV).FuncRec
-		log.Printf("bilbo %v", p)
-		//panic(p)
-
-		//XX g.Value = g.initx.VisitExpr(cm.QuickCompiler(g))
-		//XX Say(g.Value, g.name, "2F.")
-
-		/*
-			qc := cm.QuickCompiler(g)
-
-			p := g.initx.Type().(*FunctionTV).FuncRec
-			for i, e := range p.Ins {
-				p.Ins[i] = CompileTX(qc, e, g.initx)
-			}
-			for i, e := range p.Outs {
-				p.Outs[i] = CompileTX(qc, e, g.initx)
-			}
-		*/
-
-		pr("//2F// %s // %s //", g.name, g.Value)
 	}
 }
 
@@ -1343,43 +1279,33 @@ func (cm *CMod) ThirdDefineGlobals(p *Parser, pr printer) {
 	for _, g := range p.Types {
 		Say("Third Types: " + g.Package + " " + g.name)
 		say("type", g)
-		pr("typedef %s %s;", g.Value.(*TypeVal).tv.CType(), g.CName)
+		pr("typedef %s %s;", g.istype.CType(), g.CName)
 	}
 	for _, g := range p.Vars {
 		Say("Third Vars: " + g.Package + " " + g.name)
-		say("var", g)
-		Say("1387", g.Value, g.CName)
-		Say("1388", g.Value.Type(), g.CName)
-		Say("1389", g.Value.Type().CType(), g.CName)
-		pr("%s %s; //1390", g.Value.Type().CType(), g.CName)
+		Say("var", g)
+		Say("CName", g.CName)
+		Say("typeof", g.typeof)
+		Say("CType", g.typeof.CType())
+		pr("%s %s; //1390", g.typeof.CType(), g.CName)
 	}
 	for _, g := range p.Funcs {
+		Say("Third Funcs: " + g.Package + " " + g.name)
 		if g.initx == nil {
 			panic(F("extern FUNC_1355 %s.%s; //3F//", g.Package, g.name))
 		}
 		co := cm.QuickCompiler(g)
-		pr("// Func initx: %#v", g.initx)
+		pr("// Func %q initx: %#v", g.CName, g.initx)
 
 		fx := g.initx.(*FunctionX)
+		assert(fx != nil)
 		frx := fx.FuncRecX
 		fr := frx.VisitFuncRecX(co)
 		g.typex = fx
-		g.TV = &FunctionTV{fr}
-		g.Value = &CVal{c: CName(cm.Package, g.name), t: g.TV}
-
-		pr("// third func: g.Value=%#v", g.Value)
-		pr("// third func: g.typex=%#v", g.typex)
-		pr("// third func: g.TV=%#v", g.TV)
-
-		assert(g.typex != nil)
-		pr("// Func typex: %#v", g.typex)
+		g.typeof = &FunctionTV{fr}
+		pr("// Func %q typex: %#v", g.CName, g.typex)
 
 		_ = fx
-		// decl := fx.FuncRecX.SignatureStr(g.CName)
-		Say("Third Funcs: " + g.Package + " " + g.name)
-		say("func", g)
-		//Say("extern %s;", decl)
-		//pr("extern %s; //3F//", decl)
 	}
 }
 
@@ -1509,8 +1435,9 @@ type GDef struct {
 	initx Expr // for Const or Var or Type
 	typex Expr // for Const or Var or Func
 
-	Value Value     // Next resolve global names to Values.
-	TV    TypeValue // Only for Type: or embed in Value?
+	istype   TypeValue
+	typeof   TypeValue
+	constval Value
 }
 
 type Scope interface {
@@ -1524,48 +1451,23 @@ type CMod struct { // isa Scope
 }
 
 func (cm *CMod) Find(s string) *GDef {
-	switch s {
-	case "nil":
-		return &GDef{
-			name:  s,
-			Value: &CVal{c: "NULL", t: NilTO},
-		}
-	case "true":
-		return &GDef{
-			name:  s,
-			Value: &CVal{c: "1", t: BoolTO},
-		}
-	case "false":
-		return &GDef{
-			name:  s,
-			Value: &CVal{c: "0", t: BoolTO},
-		}
-	}
 	if cm == nil {
-		// Fall back to just the prims.
-		for _, e := range PrimTypeObjList {
-			if e.name == s {
-				L("Fallback to PrimTypeObjList for %q", s)
-				return &GDef{
-					name:  e.name,
-					Value: &TypeVal{e},
-				}
-			}
-		}
 		panic(F("Find %q, but with nil CMod", s))
+		return cm.CGen.Prims.Find(s)
 	}
+
+	// just debug log:
 	L("Searching %q .......", cm.Package)
 	for debug_k, debug_v := range cm.Members {
 		L("....... debug %q %v", debug_k, debug_v)
 	}
 	L(".......")
+
 	if d, ok := cm.Members[s]; ok {
 		return d
 	}
 
 	switch cm.Package {
-	case "": // Prims
-		panic(F("Cannot find %q", s))
 	case "builtin":
 		return cm.CGen.Prims.Find(s)
 	default:
@@ -1607,12 +1509,27 @@ func NewCGenAndMainCMod(opt *Options, w io.Writer) (*CGen, *CMod) {
 	// Populate PrimDog
 	for _, e := range PrimTypeObjList {
 		cg.Prims.Members[e.name] = &GDef{
-			name:  e.name,
-			CName: "P_" + e.name,
-			Value: &TypeVal{e},
-			TV:    TypeTO,
-			Used:  false,
+			name:   e.name,
+			CName:  "P_" + e.name,
+			istype: e,
+			typeof: TypeTO,
+			Used:   false,
 		}
+	}
+	cg.Prims.Members["nil"] = &GDef{
+		name:   "nil",
+		CName:  "P_nil",
+		typeof: NilTO,
+	}
+	cg.Prims.Members["true"] = &GDef{
+		name:   "true",
+		CName:  "P_true",
+		typeof: BoolTO,
+	}
+	cg.Prims.Members["false"] = &GDef{
+		name:   "false",
+		CName:  "P_false",
+		typeof: BoolTO,
 	}
 
 	return cg, mainMod
@@ -2167,10 +2084,9 @@ func (co *Compiler) DefineLocalTemp(tempName string, tempType TypeValue, initC s
 func (co *Compiler) DefineLocal(prefix string, name string, tv TypeValue) *GDef {
 	cname := Format("%s_%s", prefix, name)
 	local := &GDef{
-		name:  name,
-		CName: cname,
-		Value: &CVal{c: cname, t: tv}, // Redundant?
-		TV:    tv,
+		name:   name,
+		CName:  cname,
+		typeof: tv,
 	}
 	if _, ok := co.CurrentBlock.locals[name]; ok {
 		panic(F("// Local var Already defined: %s", name))
@@ -2198,7 +2114,7 @@ func (co *Compiler) StartScope() {
 }
 func (co *Compiler) EmitFunc(gd *GDef) {
 	co.StartScope()
-	rec := gd.TV.(*FunctionTV).FuncRec
+	rec := gd.typeof.(*FunctionTV).FuncRec
 	co.P(rec.SignatureStr(gd.CName))
 
 	// Figure out the names of Func inputs, and create locals for them.
@@ -2254,7 +2170,7 @@ func (co *Compiler) EmitFunc(gd *GDef) {
 			continue
 		}
 		co.P("// LOCAL %q IS %v", name, e)
-		co.P("auto %v %v = {0}; // DEF LOCAL 2145", e.TV.CType(), e.CName)
+		co.P("auto %v %v = {0}; // DEF LOCAL 2145", e.typeof.CType(), e.CName)
 	}
 	co.P("// Added LOCALS to Func.")
 	co.P(cBody)

@@ -527,9 +527,8 @@ LOOP:
 				w := o.Word
 				o.Next()
 				gd := &GDef{
-					name: w,
-					// TV:   &ImportTV{BaseTV{w}},
-					TV: ImportTO,
+					name:   w,
+					typeof: ImportTO,
 				}
 				o.Imports = append(o.Imports, gd)
 				o.ImportsMap[w] = gd
@@ -586,7 +585,7 @@ LOOP:
 					Package: o.Package,
 					name:    w,
 					initx:   tx,
-					TV:      TypeTO,
+					typeof:  TypeTO,
 				}
 				o.Types = append(o.Types, gd)
 				o.TypesMap[w] = gd
