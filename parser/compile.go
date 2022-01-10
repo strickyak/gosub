@@ -1066,13 +1066,13 @@ func (o *GDef) TYPE() TypeValue {
 }
 
 func (o *GDef) String() string {
-	return F("GDef[%s@%s=%s:%v]", o.name, o.Package, o.CName, o.TYPE())
+	return F("GDef[%s pkg=%s cn=%s t=%v]", o.name, o.Package, o.CName, o.TYPE())
 }
 func (o *GDef) ToC() string {
 	return o.CName
 }
 func (o *GDef) Type() TypeValue {
-	return o.TV
+	return o.TYPE()
 }
 
 func (o *GDef) ResolveAsValue() Value      { return o.Value }
