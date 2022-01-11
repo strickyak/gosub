@@ -348,7 +348,19 @@ func (o *Parser) ParseStmt(b *Block) Stmt {
 		yes := o.ParseBlock()
 		var no *Block
 		if o.Word == "else" {
-			no = o.ParseBlock()
+			o.Next()
+			if o.Word == "if" {
+				noStmt := o.ParseStmt(b)
+				no = &Block{
+					debugName: "elseIf",
+					locals:    make(map[string]*GDef),
+					stmts:     []Stmt{noStmt},
+					parent:    b,
+					compiler:  b.compiler,
+				}
+			} else {
+				no = o.ParseBlock()
+			}
 		}
 		return &IfS{pred, yes, no}
 	case "for":

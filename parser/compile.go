@@ -1371,7 +1371,7 @@ func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 		if g.initx != nil {
 			co := cm.QuickCompiler(g)
 			co.EmitFunc(g)
-			pr(co.Buf.String())
+			pr("\n%s\n", co.Buf.String())
 		} else {
 			pr("// Cannot print function without body -- it must be extern.")
 		}
@@ -1606,6 +1606,10 @@ func (co *Compiler) VisitIdent(x *IdentX) Value {
 func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 	a := x.A.VisitExpr(co)
 	b := x.B.VisitExpr(co)
+	L("BinOp: a = %#v", a)
+	L("BinOp: b = %#v", b)
+	L("BinOp: a.ToC = %s", a.ToC())
+	L("BinOp: b.ToC = %s", b.ToC())
 	return &CVal{
 		c: Format("(%s) %s (%s)", a.ToC(), x.Op, b.ToC()),
 		t: IntTO,
@@ -2173,7 +2177,8 @@ func (co *Compiler) EmitFunc(gd *GDef) {
 		co.P("auto %v %v = {0}; // DEF LOCAL 2145", e.typeof.CType(), e.CName)
 	}
 	co.P("// Added LOCALS to Func.")
-	co.P(cBody)
+	L("CBODY IS %q", cBody)
+	co.P("\n%s\n", cBody)
 
 	co.FinishScope()
 	co.P("\n}\n")
