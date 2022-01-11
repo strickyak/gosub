@@ -70,7 +70,7 @@ func (o *Parser) ParsePrim() Expr {
 			return &InterfaceTX{nil}
 		}
 		if o.Word == "struct" {
-			panic("Keyword `struct` not expected, except after `type`")
+			panic("Keyword `struct` not expected, except after global `type`")
 		}
 		z := &IdentX{o.Word, o.CMod}
 		o.Next()
@@ -367,6 +367,8 @@ func (o *Parser) ParseStmt(b *Block) Stmt {
 		o.Next()
 		var pred Expr
 		if o.Word != "{" {
+			// TODO: For the three-part `for`, we need to parse either an expression or a statement.
+			// That means a special case, allowing an expression that is not a funtion call, as a statement.
 			pred = o.ParseExpr()
 		}
 		b2 := o.ParseBlock()
@@ -606,18 +608,18 @@ LOOP:
 				if o.Word == "(" {
 					// Distinguished Receiver:
 					o.Next()
-					var rName string
-					var rType Expr
-					firstX := o.ParseExpr() // limitation: name required.
-					if o.Word == ")" {
-						// Only one expr: it is the rType.
-						rName = Serial("unnamed")
-						rType = firstX
-					} else {
-						// Two exprs: rName and rType
-						rName = firstX.(*IdentX).X
-						rType = o.ParseExpr()
+					rName := "_"
+
+					if o.Kind == L_Ident {
+						// The receiver is named.
+						rName = o.Word
+						o.Next()
 					}
+
+					if o.Word != "*" {
+						panic(F("Got %q but expected '*': Method receiver type must be pointer to struct", o.Word))
+					}
+					rType := o.ParseExpr()
 					o.TakePunc(")")
 					receiver = &NameTX{rName, rType, o.CMod}
 				}
