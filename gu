@@ -1,0 +1,31 @@
+#!/bin/sh -ex
+#
+# "gu": run "g"osub on "u"nix.
+#
+# Usage:
+#   alias gu=./gu 
+#   gu test test/t1.go
+
+D=$(dirname $0)
+
+case $1 in
+  test )
+    go run "$D/gosub.go" --libdir $D/lib/   < $2   > $2.c
+    clang-format -i --style=Google $2.c || : optional
+    cat -n $2.c >&2
+    cat $2.c | sed 's;//.*;;' | sed '/^ *$/d' | sed 's/^/| /' >&2
+    cc -g -I"$D/runtime" $2.c $D/runtime/runt.c $D/runtime/bigmem.c
+    ./a.out > $2.got
+    grep '^// expect:' <$2 | sed 's;// expect:;;' > $2.want
+    if diff -w $2.want $2.got
+    then
+      echo Good: $2 >&2
+    else
+      echo DIFFERENT: $2 >&2
+      exit 1
+    fi
+    ;;
+  * )
+    echo "$0: Unknown command: $1" >&2
+    exit 13
+esac

@@ -1982,16 +1982,16 @@ func (co *Compiler) VisitReturn(ret *ReturnS) {
 }
 func (co *Compiler) VisitWhile(wh *WhileS) {
 	label := Serial("while")
-	co.P("Break_%s:  while(1) {", label)
+	co.P("while(1) { Cont_%s: {}", label)
 	if wh.Pred != nil {
-		co.P("    t_bool _while_ = (t_bool)(%s);", wh.Pred.VisitExpr(co).ToC())
+		co.P("    bool _while_ = (bool)(%s);", wh.Pred.VisitExpr(co).ToC())
 		co.P("    if (!_while_) break;")
 	}
 	savedB, savedC := co.BreakTo, co.ContinueTo
 	co.BreakTo, co.ContinueTo = "Break_"+label, "Cont_"+label
 	wh.Body.VisitStmt(co)
 	co.P("  }")
-	co.P("Cont_%s: {}", label)
+	co.P("Break_%s: {}", label)
 	co.BreakTo, co.ContinueTo = savedB, savedC
 }
 func (co *Compiler) VisitBreak(sws *BreakS) {
@@ -2007,7 +2007,7 @@ func (co *Compiler) VisitContinue(sws *ContinueS) {
 	co.P("goto %s;", co.ContinueTo)
 }
 func (co *Compiler) VisitIf(ifs *IfS) {
-	co.P("  { t_bool _if_ = %s;", ifs.Pred.VisitExpr(co).ToC())
+	co.P("  { bool _if_ = %s;", ifs.Pred.VisitExpr(co).ToC())
 	co.P("  if( _if_ ) {")
 	ifs.Yes.VisitStmt(co)
 	if ifs.No != nil {
@@ -2017,7 +2017,7 @@ func (co *Compiler) VisitIf(ifs *IfS) {
 	co.P("  }}")
 }
 func (co *Compiler) VisitSwitch(sws *SwitchS) {
-	co.P("  { t_int _switch_ = %s;", sws.Switch.VisitExpr(co).ToC())
+	co.P("  { int _switch_ = %s;", sws.Switch.VisitExpr(co).ToC())
 	for _, c := range sws.Cases {
 		co.P("  if (")
 		for _, m := range c.Matches {

@@ -9,13 +9,7 @@ all:
 	./a.out
 
 test: _FORCE_
-	set -x; make T=test/t1.go >&2 && ./a.out > _ && diff -b test/t1.want _
-	set -x; make T=test/t2.go >&2 && ./a.out > _ && diff -b test/t2.want _
-	set -x; make T=test/t3.go >&2 && ./a.out > _ && diff -b test/t3.want _
-	set -x; make T=test/t4.go >&2 && ./a.out > _ && diff -b test/t4.want _
-	set -x; make T=test/t5.go >&2 && ./a.out > _ && diff -b test/t5.want _
-	set -x; make T=test/t6.go >&2 && ./a.out > _ && diff -b test/t6.want _
-	set -x; make T=test/t8.go >&2 && ./a.out > _ && diff -b test/t8.want _
+	set -x; for x in test/t*.go ; do ./gu test $$x ; done
 	echo ALL TESTS GOOD.
 
 ci:
@@ -25,6 +19,6 @@ fmt:
 	gofmt -w *.go */*.go
 
 clean:
-	rm *.s *.o a.out */*.go.c
+	set -x ; rm -f *.s *.o a.out */*.go.c */*.want */*.got _ __ _[0-9]*
 
 _FORCE_:

@@ -10,3 +10,5 @@ func compute() int {
 func main() {
 	println(compute())
 }
+
+// expect: 220

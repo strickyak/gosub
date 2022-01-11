@@ -10,3 +10,5 @@ func main() {
 	c = a + b
 	println(c)
 }
+
+// expect: 150
