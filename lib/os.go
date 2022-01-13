@@ -1,6 +1,8 @@
 package os
 
-type File struct{}
+type File struct {
+	fd int
+}
 
 var Stdin *File
 var Stdout *File

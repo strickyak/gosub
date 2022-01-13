@@ -100,6 +100,9 @@ func (r *StructRecX) String() string {
 	return Format("structX %s", r.name)
 }
 func (r *InterfaceRecX) String() string {
+	if r == nil {
+		panic("L103")
+	}
 	return Format("interfaceX %s", r.name)
 }
 func (r *FuncRecX) String() string {
@@ -158,10 +161,16 @@ func (o *PointerTX) String() string { return Format("PointerTX(%v)", o.E) }
 func (o *SliceTX) String() string   { println(o.E.String()); return Format("SliceTX(%v)", o.E) }
 func (o *MapTX) String() string     { return Format("MapTX(%v=>%v)", o.K, o.V) }
 func (o *StructTX) String() string {
-	return "TX:" + o.StructRecX.String()
+	if o.StructRecX == nil {
+		return "StructTX[nil]"
+	}
+	return F("StructTX[%v]", o.StructRecX.String())
 }
 func (o *InterfaceTX) String() string {
-	return "TX:" + o.InterfaceRecX.String()
+	if o.InterfaceRecX == nil {
+		return "InterfaceTX[nil]"
+	}
+	return F("InterfaceTX[%v]", o.InterfaceRecX.String())
 }
 func (o *FunctionTX) String() string { return Format("FunctionTX(%v)", o.FuncRecX) }
 
@@ -449,6 +458,20 @@ func (co *Compiler) ConvertTo(from Value, to Value) {
 		// Same type, just assign.
 		co.P("&%s = %s; // L451", to.ToC(), from.ToC())
 		return
+	}
+
+	if from.Type() == ConstIntTO {
+		switch to.Type() {
+		case ByteTO:
+			co.P("%s = (P_byte)(%s);", to.ToC(), from.ToC())
+			return
+		case IntTO:
+			co.P("%s = (P_int)(%s);", to.ToC(), from.ToC())
+			return
+		case UintTO:
+			co.P("%s = (P_uint)(%s);", to.ToC(), from.ToC())
+			return
+		}
 	}
 
 	// Case of assigning to interface{}.
@@ -1123,7 +1146,7 @@ func (val *CVal) ToC() string {
 	return val.c
 }
 func (val *TypeVal) ToC() string {
-	return F("q", F("TYPE[%#v]", val.tv))
+	return val.tv.TypeCode()
 }
 func (val *SubVal) ToC() string {
 	panic(1240)
@@ -1268,6 +1291,37 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 			initS.VisitStmt(cm.QuickCompiler(g))
 		}
 	}
+	for _, g := range p.Meths {
+		Say("Second Meths: " + g.Package + " " + g.name)
+		pr("// Meth %q initx: %#v", g.CName, g.initx)
+		// qc := cm.QuickCompiler(g)
+		funcX := g.initx.(*FunctionX)
+		rec := funcX.FuncRecX
+		assert(rec.IsMethod)
+		assert(len(rec.Ins) > 0)
+		rx := rec.Ins[0]
+		r := rx.Expr.VisitExpr(rx.Mod.QuickCompiler(g))
+		Say("Receiver", r)
+		Say("Receiver ToC", r.ToC())
+		Say("Receiver Type", r.Type())
+		rav, ok := r.ResolveAsTypeValue()
+		if !ok {
+			panic(F("L1309: expected a type for method receiver, but got %v", r))
+		}
+		pointerType, ok := rav.(*PointerTV)
+		if !ok {
+			panic(F("L1313: Expected pointer to struct as method receiver; got %v", r.Type()))
+		}
+		Say("pointerType", pointerType)
+		structType, ok := pointerType.E.(*StructTV)
+		if !ok {
+			panic(F("L1318: Expected pointer to struct as method receiver; got %v", r.Type()))
+		}
+		Say(structType, structType)
+		structType.StructRec.Fields = append(structType.StructRec.Fields, NameTV{g.name, g.typeof})
+
+		Say("Got Second Meths:", g)
+	}
 }
 
 func (cm *CMod) ThirdDefineGlobals(p *Parser, pr printer) {
@@ -1278,8 +1332,19 @@ func (cm *CMod) ThirdDefineGlobals(p *Parser, pr printer) {
 	_ = say
 	for _, g := range p.Types {
 		Say("Third Types: " + g.Package + " " + g.name)
-		say("type", g)
+		Say("type", V(g))
+		Say("typeof", V(g.istype))
 		pr("typedef %s %s;", g.istype.CType(), g.CName)
+		if st, ok := g.istype.(*StructTV); ok {
+			// Gather fields in struct.
+			L("omg struct! %v :: %d fields %d meths", st, len(st.StructRec.Fields), len(st.StructRec.Meths))
+			for _, field := range st.StructRec.Fields {
+				L("omg field %q :: %v", field.name, field.TV)
+			}
+			for _, meth := range st.StructRec.Meths {
+				L("omg meth %q :: %v", meth.name, meth.TV)
+			}
+		}
 	}
 	for _, g := range p.Vars {
 		Say("Third Vars: " + g.Package + " " + g.name)
@@ -1291,21 +1356,22 @@ func (cm *CMod) ThirdDefineGlobals(p *Parser, pr printer) {
 	}
 	for _, g := range p.Funcs {
 		Say("Third Funcs: " + g.Package + " " + g.name)
-		if g.initx == nil {
-			panic(F("extern FUNC_1355 %s.%s; //3F//", g.Package, g.name))
-		}
-		co := cm.QuickCompiler(g)
 		pr("// Func %q initx: %#v", g.CName, g.initx)
-
-		fx := g.initx.(*FunctionX)
-		assert(fx != nil)
-		frx := fx.FuncRecX
-		fr := frx.VisitFuncRecX(co)
-		g.typex = fx
-		g.typeof = &FunctionTV{fr}
-		pr("// Func %q typex: %#v", g.CName, g.typex)
-
-		_ = fx
+		co := cm.QuickCompiler(g)
+		funcX := g.initx.(*FunctionX)
+		g.typex = funcX
+		funcRec := funcX.FuncRecX.VisitFuncRecX(co)
+		g.typeof = &FunctionTV{funcRec}
+	}
+	for _, g := range p.Meths {
+		Say("Third Meths: " + g.Package + " " + g.name)
+		pr("// Meth %q initx: %#v", g.CName, g.initx)
+		co := cm.QuickCompiler(g)
+		funcX := g.initx.(*FunctionX)
+		g.typex = funcX
+		funcRec := funcX.FuncRecX.VisitFuncRecX(co)
+		g.typeof = &FunctionTV{funcRec}
+		Say("Got Third Meths:", g)
 	}
 }
 
@@ -1451,13 +1517,8 @@ type CMod struct { // isa Scope
 }
 
 func (cm *CMod) Find(s string) *GDef {
-	if cm == nil {
-		panic(F("Find %q, but with nil CMod", s))
-		return cm.CGen.Prims.Find(s)
-	}
-
 	// just debug log:
-	L("Searching %q .......", cm.Package)
+	L("Searching %q for %q .......", cm.Package, s)
 	for debug_k, debug_v := range cm.Members {
 		L("....... debug %q %v", debug_k, debug_v)
 	}
@@ -1468,6 +1529,8 @@ func (cm *CMod) Find(s string) *GDef {
 	}
 
 	switch cm.Package {
+	case "":
+		panic(F("Cannot find %q", s))
 	case "builtin":
 		return cm.CGen.Prims.Find(s)
 	default:
@@ -1536,9 +1599,8 @@ func NewCGenAndMainCMod(opt *Options, w io.Writer) (*CGen, *CMod) {
 }
 
 func (cm *CMod) VisitTypeExpr(x Expr) TypeValue {
-	var gdef *GDef = nil
-	val := x.VisitExpr(NewCompiler(cm, gdef))
-	// if tv, ok := val.(*TypeVal); ok #
+	L("VisitTypeExpr: %v", x)
+	val := x.VisitExpr(NewCompiler(cm, nil))
 	if tv, ok := val.ResolveAsTypeValue(); ok {
 		return tv
 	} else {
@@ -1547,8 +1609,7 @@ func (cm *CMod) VisitTypeExpr(x Expr) TypeValue {
 	}
 }
 func (cm *CMod) VisitExpr(x Expr) Value {
-	var gdef *GDef = nil
-	return x.VisitExpr(NewCompiler(cm, gdef))
+	return x.VisitExpr(NewCompiler(cm, nil))
 }
 func (cm *CMod) QuickCompiler(gdef *GDef) *Compiler {
 	return NewCompiler(cm, gdef)
@@ -1601,6 +1662,7 @@ func (co *Compiler) VisitLitString(x *LitStringX) Value {
 	}
 }
 func (co *Compiler) VisitIdent(x *IdentX) Value {
+	L("VisitIdent: %s", x.X)
 	return co.FindName(x.X)
 }
 func (co *Compiler) VisitBinOp(x *BinOpX) Value {
@@ -1636,6 +1698,7 @@ func (co *Compiler) ReifyAs(x Value, as TypeValue) Value {
 	L("ccc x.Type %v", x.Type())
 	L("ccc as %v", as)
 	if x.Type().Equals(as) {
+		// CASE types are same.  Easy.
 		cVal := x.ToC()
 		if match := IDENTIFIER.MatchString(cVal); match {
 			return x
@@ -1644,8 +1707,12 @@ func (co *Compiler) ReifyAs(x Value, as TypeValue) Value {
 		gd := co.DefineLocalTemp(ser, x.Type(), cVal)
 		return gd
 	}
+
+	// CASE types are different.
+	// First, reify as the input type.
 	reifiedX := co.ReifyAs(x, x.Type())
 
+	// Then convert.
 	ser := Serial("reify_as")
 	y := co.DefineLocalTemp(ser, as, "")
 	co.ConvertTo(reifiedX, y)
@@ -1764,7 +1831,6 @@ func (co *Compiler) VisitDot(dot *DotX) Value {
 	val := dot.X.VisitExpr(co)
 	log.Printf("VisitDot: val-- %T ---- %v", val, val)
 
-	//< if imp, ok := val.(*ImportVal); ok |
 	if val.Type() == ImportTO {
 		L("YES: %#v", val)
 		gd := val.(*GDef)
@@ -1774,30 +1840,11 @@ func (co *Compiler) VisitDot(dot *DotX) Value {
 			log.Printf("OM %#v", otherMod)
 			if x, ok := otherMod.Members[dot.Member]; ok {
 				L("member: %v", x)
+				return x
 			} else {
 				panic(F("member not found: %q", dot.Member))
 			}
 		}
-		/*
-			modName := val.name()
-			log.Printf("DOT %q %#v", modName, dot.Member)
-			log.Printf("MODS: %#v", co.CGen.Mods)
-			if otherMod, ok := co.CGen.Mods[modName]; ok {
-				log.Printf("OM %#v", otherMod)
-				_, ok := otherMod.Members[dot.Member]
-				if !ok {
-					panic(Format("cannot find member %s in module %s", dot.Member, modName))
-				}
-				panic(1728)
-				/|
-					z := otherMod.QuickCompiler(co.GDef).VisitIdent(&IdentX{X: dot.Member})
-					L("VisitDot returns Imported thing: %#v", z)
-					return z
-				|/
-			} else {
-				panic(Format("imported %q but cannot find it in CGen.Mods: %#v", modName, co.CGen.Mods))
-			}
-		*/
 	}
 
 	/*
@@ -1813,6 +1860,7 @@ func (co *Compiler) VisitDot(dot *DotX) Value {
 			Say("structType", structType)
 			rec := structType.StructRec
 			Say("rec", rec)
+			Say("rec", F("%#v", rec))
 			if ftype, ok := FindTypeByName(rec.Fields, dot.Member); ok {
 				z := &CVal{
 					c: Format("(%s).%s", val.ToC(), dot.Member),

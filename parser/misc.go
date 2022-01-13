@@ -41,6 +41,10 @@ func assertlt_i(a, b int) {
 	}
 }
 
+func V(a interface{}) string {
+	return Format("%#v", a)
+}
+
 const CantString = "--?--"
 
 func TryString(a fmt.Stringer) (z string) {
