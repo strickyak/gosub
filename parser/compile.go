@@ -129,7 +129,7 @@ func (r *FuncRecX) String() string {
 }
 
 func (r *StructRec) String() string {
-	return Format("struct %s", r.name)
+	return Format("struct %s", r.cname)
 }
 func (r *InterfaceRec) String() string {
 	return Format("interface %s", r.name)
@@ -354,7 +354,7 @@ func (tv *MapTV) ToC() string {
 }
 
 func (tv *StructTV) ToC() string {
-	return Format("ZStruct(%s)", tv.StructRec.name)
+	return Format("ZStruct(%s)", tv.StructRec.cname)
 }
 func (tv *InterfaceTV) ToC() string {
 	return Format("ZInterface(%s/%d)", tv.InterfaceRec.name, len(tv.InterfaceRec.Meths))
@@ -420,7 +420,7 @@ func (o *MapTV) Equals(typ TypeValue) bool {
 func (o *StructTV) Equals(typ TypeValue) bool {
 	switch t := typ.(type) {
 	case *StructTV:
-		return o.StructRec.name == t.StructRec.name
+		return o.StructRec.cname == t.StructRec.cname
 	}
 	return false
 }
@@ -437,7 +437,7 @@ func (o *MultiTV) Equals(typ TypeValue) bool {
 
 func (o *PointerTV) TypeOfHandle() (z string, ok bool) {
 	if st, ok := o.E.(*StructTV); ok {
-		return st.StructRec.name, true
+		return st.StructRec.cname, true
 	}
 	return "", false
 }
@@ -445,8 +445,8 @@ func (o *PointerTV) TypeOfHandle() (z string, ok bool) {
 func (o *PrimTV) CType() string      { return "P_" + o.name }
 func (o *SliceTV) CType() string     { return F("Slice_(%s)", o.E.CType()) }
 func (o *MapTV) CType() string       { return F("Map_(%s,%s)", o.K.CType(), o.V.CType()) }
-func (o *StructTV) CType() string    { return F("Struct_(%s)", o.StructRec.name) }
-func (o *PointerTV) CType() string   { return F("Pointer_(%s)", o.E.CType()) }
+func (o *StructTV) CType() string    { return F("struct %s ", o.StructRec.cname) }
+func (o *PointerTV) CType() string   { return F("%s*", o.E.CType()) }
 func (o *InterfaceTV) CType() string { return F("Interface_(%s)", o.InterfaceRec.name) }
 func (o *TypeTV) CType() string      { return "Type" }
 func (o *MultiTV) CType() string     { return "Multi" }
@@ -607,7 +607,7 @@ func (tv *SliceTV) String() string   { return Format("SliceTV(%v)", tv.E) }
 func (tv *MapTV) String() string     { return Format("MapTV(%v=>%v)", tv.K, tv.V) }
 
 func (tv *StructTV) String() string {
-	return Format("StructTV(%v)", tv.StructRec.name)
+	return Format("StructTV(%v)", tv.StructRec.cname)
 }
 func (tv *InterfaceTV) String() string {
 	if tv.InterfaceRec.Meths == nil {
@@ -944,13 +944,14 @@ type InterfaceRecX struct {
 
 type StructRec struct {
 	name   string
-	Mod    *CMod
+	cname  string
 	Fields []NameTV
 	Meths  []NameTV
 }
 
 type InterfaceRec struct {
 	name  string
+	cname string
 	Mod   *CMod
 	Meths []NameTV
 }
@@ -1287,9 +1288,9 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 		// Annotate structs & interfaces with their module.
 		switch t := g.istype.(type) {
 		case *StructTV:
-			t.StructRec.Mod = cm
+			t.StructRec.cname = CName(cm.Package, t.StructRec.name)
 		case *InterfaceTV:
-			t.InterfaceRec.Mod = cm
+			t.InterfaceRec.cname = CName(cm.Package, t.InterfaceRec.name)
 		}
 	}
 	for _, g := range p.Consts {
@@ -1355,15 +1356,18 @@ func (cm *CMod) ThirdDefineGlobals(p *Parser, pr printer) {
 		Say("Third Types: " + g.Package + " " + g.name)
 		Say("type", V(g))
 		Say("typeof", V(g.istype))
-		pr("typedef %s %s;", g.istype.CType(), g.CName)
+		//< pr("typedef %s %s;", g.istype.CType(), g.CName)
 		if st, ok := g.istype.(*StructTV); ok {
-			// Gather fields in struct.
 			L("omg struct! %v :: %d fields %d meths", st, len(st.StructRec.Fields), len(st.StructRec.Meths))
+			pr("struct %s {", g.CName)
 			for _, field := range st.StructRec.Fields {
 				L("omg field %q :: %v", field.name, field.TV)
+				pr("  %s f_%s;", field.TV.CType(), field.name)
 			}
+			pr("} // struct L1366")
 			for _, meth := range st.StructRec.Meths {
 				L("omg meth %q :: %v", meth.name, meth.TV)
+				pr("extern  %s %s; L1370", meth.TV.CType(), CName(g.CName, meth.name))
 			}
 		}
 	}
@@ -1397,7 +1401,7 @@ func (cm *CMod) ThirdDefineGlobals(p *Parser, pr printer) {
 		// Install meth on struct.
 		structRec := cm.StructRecOfReceiverOfFuncX(funcX)
 		structRec.Meths = append(structRec.Meths, NameTV{g.name, g.typeof})
-		g.CName = CName(g.Package, structRec.name, g.name)
+		g.CName = CName(structRec.cname, g.name)
 	}
 }
 
@@ -1913,7 +1917,7 @@ func (co *Compiler) VisitDot(dotx *DotX) Value {
 				}
 				bm := &BoundMethodVal{
 					receiver: val,
-					cmeth:    CName(rec.Mod.Package, rec.name, dotx.Member),
+					cmeth:    CName(rec.cname, dotx.Member),
 					mtype:    mtype,
 				}
 				L("VisitDot returns bound meth: %#v", bm)
