@@ -1293,35 +1293,36 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 	}
 	for _, g := range p.Meths {
 		Say("Second Meths: " + g.Package + " " + g.name)
-		pr("// Meth %q initx: %#v", g.CName, g.initx)
-		// qc := cm.QuickCompiler(g)
 		funcX := g.initx.(*FunctionX)
-		rec := funcX.FuncRecX
-		assert(rec.IsMethod)
-		assert(len(rec.Ins) > 0)
-		rx := rec.Ins[0]
-		r := rx.Expr.VisitExpr(rx.Mod.QuickCompiler(g))
-		Say("Receiver", r)
-		Say("Receiver ToC", r.ToC())
-		Say("Receiver Type", r.Type())
-		rav, ok := r.ResolveAsTypeValue()
-		if !ok {
-			panic(F("L1309: expected a type for method receiver, but got %v", r))
-		}
-		pointerType, ok := rav.(*PointerTV)
-		if !ok {
-			panic(F("L1313: Expected pointer to struct as method receiver; got %v", r.Type()))
-		}
-		Say("pointerType", pointerType)
-		structType, ok := pointerType.E.(*StructTV)
-		if !ok {
-			panic(F("L1318: Expected pointer to struct as method receiver; got %v", r.Type()))
-		}
-		Say(structType, structType)
-		structType.StructRec.Fields = append(structType.StructRec.Fields, NameTV{g.name, g.typeof})
-
-		Say("Got Second Meths:", g)
+		structRec := cm.StructRecOfReceiverOfFuncX(funcX)
+		structRec.Meths = append(structRec.Meths, NameTV{g.name, g.typeof})
 	}
+}
+
+func (cm *CMod) StructRecOfReceiverOfFuncX(funcX *FunctionX) *StructRec {
+	rec := funcX.FuncRecX
+	assert(rec.IsMethod)
+	assert(len(rec.Ins) > 0)
+	rx := rec.Ins[0]
+	r := rx.Expr.VisitExpr(rx.Mod.QuickCompiler(nil))
+	Say("Receiver", r)
+	Say("Receiver ToC", r.ToC())
+	Say("Receiver Type", r.Type())
+	tv, ok := r.ResolveAsTypeValue()
+	if !ok {
+		panic(F("L1309: expected a type for method receiver, but got %v", r))
+	}
+	pointerType, ok := tv.(*PointerTV)
+	if !ok {
+		panic(F("L1313: Expected pointer to struct as method receiver; got %v", r.Type()))
+	}
+	Say("pointerType", pointerType)
+	structType, ok := pointerType.E.(*StructTV)
+	if !ok {
+		panic(F("L1318: Expected pointer to struct as method receiver; got %v", r.Type()))
+	}
+	Say(structType, structType)
+	return structType.StructRec
 }
 
 func (cm *CMod) ThirdDefineGlobals(p *Parser, pr printer) {
