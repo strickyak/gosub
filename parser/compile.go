@@ -944,12 +944,14 @@ type InterfaceRecX struct {
 
 type StructRec struct {
 	name   string
+	Mod    *CMod
 	Fields []NameTV
 	Meths  []NameTV
 }
 
 type InterfaceRec struct {
 	name  string
+	Mod   *CMod
 	Meths []NameTV
 }
 
@@ -1103,10 +1105,11 @@ func (o *GDef) ResolveAsTypeValue() (TypeValue, bool) {
 	}
 	return nil, false
 }
-func (o *CVal) ResolveAsTypeValue() (TypeValue, bool)      { return nil, false }
-func (o *SubVal) ResolveAsTypeValue() (TypeValue, bool)    { return nil, false }
-func (o *ImportVal) ResolveAsTypeValue() (TypeValue, bool) { return nil, false }
-func (o *TypeVal) ResolveAsTypeValue() (TypeValue, bool)   { return o.tv, true }
+func (o *CVal) ResolveAsTypeValue() (TypeValue, bool)           { return nil, false }
+func (o *SubVal) ResolveAsTypeValue() (TypeValue, bool)         { return nil, false }
+func (o *ImportVal) ResolveAsTypeValue() (TypeValue, bool)      { return nil, false }
+func (o *BoundMethodVal) ResolveAsTypeValue() (TypeValue, bool) { return nil, false }
+func (o *TypeVal) ResolveAsTypeValue() (TypeValue, bool)        { return o.tv, true }
 
 type CVal struct {
 	c string // C language expression
@@ -1122,6 +1125,12 @@ type TypeVal struct {
 	tv TypeValue
 }
 
+type BoundMethodVal struct {
+	receiver Value
+	cmeth    string
+	mtype    TypeValue
+}
+
 func (val *CVal) String() string {
 	return Format("(%s:%s)", val.c, val.t)
 }
@@ -1130,6 +1139,9 @@ func (val *TypeVal) String() string {
 }
 func (val *SubVal) String() string {
 	return Format("(%s[%s])", val.container, val.sub)
+}
+func (val *BoundMethodVal) String() string {
+	return Format("BM(%v ; %s)", val.receiver, val.cmeth)
 }
 
 func (val *CVal) Type() TypeValue {
@@ -1141,6 +1153,10 @@ func (val *TypeVal) Type() TypeValue {
 func (val *SubVal) Type() TypeValue {
 	return &PrimTV{name: Format("(tv:TODO:Sub:%s:%s)", val.container, val.sub)}
 }
+func (val *BoundMethodVal) Type() TypeValue {
+	return val.mtype
+	return &PrimTV{name: Format("(tv:TODO:BoundMethodVal)")}
+}
 
 func (val *CVal) ToC() string {
 	return val.c
@@ -1151,6 +1167,9 @@ func (val *TypeVal) ToC() string {
 func (val *SubVal) ToC() string {
 	panic(1240)
 	// TODO: case string, slice, map.
+}
+func (val *BoundMethodVal) ToC() string {
+	panic(1169) // It's not that simple.
 }
 
 type ImportVal struct {
@@ -1265,6 +1284,13 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 		}
 		g.istype = tmpV.TV
 		g.typeof = TypeTO
+		// Annotate structs & interfaces with their module.
+		switch t := g.istype.(type) {
+		case *StructTV:
+			t.StructRec.Mod = cm
+		case *InterfaceTV:
+			t.InterfaceRec.Mod = cm
+		}
 	}
 	for _, g := range p.Consts {
 		Say(g.Package, g.name, "2C")
@@ -1290,12 +1316,6 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 			}
 			initS.VisitStmt(cm.QuickCompiler(g))
 		}
-	}
-	for _, g := range p.Meths {
-		Say("Second Meths: " + g.Package + " " + g.name)
-		funcX := g.initx.(*FunctionX)
-		structRec := cm.StructRecOfReceiverOfFuncX(funcX)
-		structRec.Meths = append(structRec.Meths, NameTV{g.name, g.typeof})
 	}
 }
 
@@ -1373,6 +1393,11 @@ func (cm *CMod) ThirdDefineGlobals(p *Parser, pr printer) {
 		funcRec := funcX.FuncRecX.VisitFuncRecX(co)
 		g.typeof = &FunctionTV{funcRec}
 		Say("Got Third Meths:", g)
+
+		// Install meth on struct.
+		structRec := cm.StructRecOfReceiverOfFuncX(funcX)
+		structRec.Meths = append(structRec.Meths, NameTV{g.name, g.typeof})
+		g.CName = CName(g.Package, structRec.name, g.name)
 	}
 }
 
@@ -1720,7 +1745,7 @@ func (co *Compiler) ReifyAs(x Value, as TypeValue) Value {
 	return y
 }
 
-func (co *Compiler) VisitCall(x *CallX) Value {
+func (co *Compiler) VisitCall(callx *CallX) Value {
 	// type CallX struct { Func Expr; Args []Expr; }
 	ser := Serial("call")
 	//< var prep []string
@@ -1730,22 +1755,33 @@ func (co *Compiler) VisitCall(x *CallX) Value {
 
 	co.P("// This is VisitCall %s", ser)
 	co.P("// This is VisitCall %s", ser)
-	co.P("// Func is X %#v", x.Func)
-	co.P("// Args is len %d", len(x.Args))
-	for i, a := range x.Args {
-		co.P("// Args[%d] is X %#v", i, a)
+	co.P("// Func is callx %#v", callx.Func)
+	co.P("// Args is len %d", len(callx.Args))
+	for i, a := range callx.Args {
+		co.P("// Args[%d] is callx %#v", i, a)
 	}
 
-	funcVal := x.Func.VisitExpr(co)
+	L("callx = %v", callx)
+	L("callx.Func = %v", callx.Func)
+	funcVal := callx.Func.VisitExpr(co)
+	L("funcVal = %v", funcVal)
 	funcValType := funcVal.Type()
+	L("funcValType = %v", funcValType)
 	funcRec := funcValType.(*FunctionTV).FuncRec
+	L("funcRec = %v", funcRec)
 	fins := funcRec.Ins
 	fouts := funcRec.Outs
 	co.P("// IsMethod = %v", funcRec.IsMethod)
 	co.P("// HasDotDotDot = %v", funcRec.HasDotDotDot)
 
+	var bm *BoundMethodVal
+
 	var argVals []Value
-	for _, e := range x.Args {
+	if bm, _ = funcVal.(*BoundMethodVal); bm != nil {
+		// Prepend receiver as first arg.
+		argVals = append(argVals, bm.receiver)
+	}
+	for _, e := range callx.Args {
 		argVals = append(argVals, e.VisitExpr(co))
 	}
 
@@ -1810,26 +1846,34 @@ func (co *Compiler) VisitCall(x *CallX) Value {
 			gd := co.DefineLocalTemp(rj, out.TV, "")
 			argc = append(argc, F("&%s", gd.CName))
 		}
-		c := Format("(%s(%s)/*L1777*/)", funcVal.ToC(), strings.Join(argc, ", "))
+		c := co.FormatCall(funcVal, argc, bm)
 		return &CVal{c: c, t: &MultiTV{multi}}
 	} else {
-		c := Format("(%s(%s)/*L1780*/)", funcVal.ToC(), strings.Join(argc, ", "))
+		c := co.FormatCall(funcVal, argc, bm)
 		t := fouts[0].TV
 		return &CVal{c: c, t: t}
 	}
 }
 
-func (co *Compiler) VisitSub(x *SubX) Value {
+func (co *Compiler) FormatCall(funcVal Value, argc []string, bm *BoundMethodVal) string {
+	if bm == nil {
+		return Format("(%s(%s)/*L1870*/)", funcVal.ToC(), strings.Join(argc, ", "))
+	}
+	return Format("(%s(%s)/*L1872*/)", bm.cmeth, strings.Join(argc, ", "))
+
+}
+
+func (co *Compiler) VisitSub(subx *SubX) Value {
 	return &CVal{
-		c: Format("SubXXX(%v)", x),
+		c: Format("SubXXX(%v)", subx),
 		t: IntTO,
 	}
 }
 
-func (co *Compiler) VisitDot(dot *DotX) Value {
-	log.Printf("VisitDot: <------ %v", dot)
-	// val := co.ResolveTypeOfValue(dot.X.VisitExpr(co))
-	val := dot.X.VisitExpr(co)
+func (co *Compiler) VisitDot(dotx *DotX) Value {
+	log.Printf("VisitDot: <------ %v", dotx)
+	// val := co.ResolveTypeOfValue(dotx.X.VisitExpr(co))
+	val := dotx.X.VisitExpr(co)
 	log.Printf("VisitDot: val-- %T ---- %v", val, val)
 
 	if val.Type() == ImportTO {
@@ -1839,21 +1883,14 @@ func (co *Compiler) VisitDot(dot *DotX) Value {
 
 		if otherMod, ok := co.CGen.Mods[modName]; ok {
 			log.Printf("OM %#v", otherMod)
-			if x, ok := otherMod.Members[dot.Member]; ok {
+			if x, ok := otherMod.Members[dotx.Member]; ok {
 				L("member: %v", x)
 				return x
 			} else {
-				panic(F("member not found: %q", dot.Member))
+				panic(F("member not found: %q", dotx.Member))
 			}
 		}
 	}
-
-	/*
-		if typ, ok := val.Type().(*PointerTV); ok {
-			val = &XXXSimpleValue{Format("(*(%s))", val.ToC()), typ.E}
-			L("VisitDot eliminating pointer: %#v of type %#v", val, val.Type())
-		}
-	*/
 
 	if pointedType, ok := val.Type().(*PointerTV); ok {
 		Say("pointedType", pointedType)
@@ -1862,21 +1899,25 @@ func (co *Compiler) VisitDot(dot *DotX) Value {
 			rec := structType.StructRec
 			Say("rec", rec)
 			Say("rec", F("%#v", rec))
-			if ftype, ok := FindTypeByName(rec.Fields, dot.Member); ok {
+			if ftype, ok := FindTypeByName(rec.Fields, dotx.Member); ok {
 				z := &CVal{
-					c: Format("(%s).%s", val.ToC(), dot.Member),
+					c: Format("(%s).%s", val.ToC(), dotx.Member),
 					t: ftype,
 				}
 				L("VisitDot returns Field: %#v", z)
 				return z
 			}
-			if mtype, ok := FindTypeByName(rec.Meths, dot.Member); ok {
-				z := &CVal{
-					c: Format("METH__%s__%s@(%s)", rec.name, dot.Member, val.ToC()),
-					t: mtype,
+			if mtype, ok := FindTypeByName(rec.Meths, dotx.Member); ok {
+				if mtype == nil {
+					panic(1893)
 				}
-				L("VisitDot returns meth: %#v", z)
-				return z
+				bm := &BoundMethodVal{
+					receiver: val,
+					cmeth:    CName(rec.Mod.Package, rec.name, dotx.Member),
+					mtype:    mtype,
+				}
+				L("VisitDot returns bound meth: %#v", bm)
+				return bm
 			}
 		}
 	}
@@ -1949,36 +1990,31 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 	case ass.A == nil && bcall != nil:
 		// CASE: No assignment.  Just a function call.
 		callVal := rvalues[0]
-
-		_ = callVal // throw away the result.
-
-		co.P("// @@@@ Please Call %v", callVal)
-		co.P("// @@@@ Please Call %#v", callVal)
-
-		co.P("%s; // Call with no assign: 1932", callVal.ToC())
+		co.P("%s; // Call with no assign: L2001", callVal.ToC())
 
 	case ass.A == nil && bcall == nil:
 		// CASE: No assignment.  Just a non-function not allowed.
-		panic(Format("Lone expr is not a function call: [%v]", ass.B))
+		panic(Format("L2005: Lone expr is not a function call: [%v]", ass.B))
 
 	case len(ass.A) > 1 && bcall != nil:
 		// CASE From 1 call, to 2 or more assigned vars.
-		var buf Buf
-		buf.P("((%s)(", bcall.Func.VisitExpr(co).ToC())
-		for i, arg := range bcall.Args {
-			if i > 0 {
-				buf.P(", ")
-			}
-			buf.P("%s", arg.VisitExpr(co).ToC())
+		callVal := rvalues[0]
+		mtv, ok := callVal.Type().(*MultiTV)
+		if !ok {
+			panic(F("L2011: When assigning to multi vars, expected call with %d results, but got %v", len(ass.A), callVal))
 		}
-		for i, arg := range ass.A {
-			if len(bcall.Args)+i > 0 {
-				buf.P(", ")
-			}
-			// TODO -- VisitAddr ?
-			buf.P("&(%s)", arg.VisitExpr(co).ToC())
+		if len(ass.A) != len(mtv.Multi) {
+			panic(F("L2014: When assigning to multi vars, expected call with %d results, but got %d results from %v", len(ass.A), len(mtv.Multi), callVal))
 		}
-		buf.P("))")
+
+		co.P("%s; // Call with multi assign: L2009", callVal.ToC())
+		for i, dest := range ass.A {
+			destVal := dest.VisitExpr(co)
+			// TODO Sub
+			// TODO type of destVal
+			co.P("&%s = %s; // Multi result [%d].  L2020", destVal.ToC(), mtv.Multi[i].name, i)
+		}
+
 	case len(ass.A) == 1 && len(ass.B) == 1:
 		// CASE: Simple 1,1
 		var target Value
@@ -2277,7 +2313,7 @@ func (o *Nando) VisitCall(x *CallX) Value {
 func (o *Nando) VisitSub(x *SubX) Value {
 	return nil
 }
-func (o *Nando) VisitDot(dot *DotX) Value {
+func (o *Nando) VisitDot(dotx *DotX) Value {
 	return nil
 }
 

@@ -16,6 +16,8 @@ typedef unsigned long word;
 typedef void omarker();  // TODO: GC
 #define true 1
 #define false 0
+#define P_true 1
+#define P_false 0
 #define INF 255       // sometimes this is INFinity, if type is byte
 #define NIL ((word)0)
 #include "bigmem.h"
@@ -30,13 +32,16 @@ typedef void omarker();  // TODO: GC
 #define Slice_(T) Slice
 #define Map_(K,V) Map
 #define Interface_(NAME) Interface
-#define Struct_(NAME) Struct
+#define Struct_(NAME) word
+#define Pointer_(NAME) VoidStar
 
 typedef const char* P__type_;
 typedef int P_int;
 typedef int P__const_int_;
 typedef unsigned int P_uint;
 typedef unsigned char P_byte;
+typedef unsigned char P_bool;
+typedef void* VoidStar;
 
 enum ClsNum {
     C_Free = 0,
