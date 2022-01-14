@@ -669,11 +669,12 @@ func (o *BinOpX) VisitExpr(v ExprVisitor) Value {
 
 type ConstructorX struct {
 	name   string
+	cname  string
 	Fields []NameTX
 }
 
 func (o *ConstructorX) String() string {
-	return fmt.Sprintf("Ctor(%q [[[%v]]])", o.name, o.Fields)
+	return fmt.Sprintf("Ctor(%q)", o.name)
 }
 func (o *ConstructorX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitConstructor(o)
@@ -1288,7 +1289,15 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 		// Annotate structs & interfaces with their module.
 		switch t := g.istype.(type) {
 		case *StructTV:
-			t.StructRec.cname = CName(cm.Package, t.StructRec.name)
+			cname := CName(cm.Package, t.StructRec.name)
+			t.StructRec.cname = cname
+			if _, already := G.classNums[cname]; already {
+				panic(F("struct already defined: %s", cname))
+			}
+			num := len(G.classes)
+			G.classNums[cname] = num
+			G.classes = append(G.classes, cname)
+			pr("#define C_%s %d", cname, num)
 		case *InterfaceTV:
 			t.InterfaceRec.cname = CName(cm.Package, t.InterfaceRec.name)
 		}
@@ -1308,6 +1317,7 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 		g.typeof = tv
 		g.istype = nil // to be sure
 		if g.initx != nil {
+			// Move this from Second to Fifth?
 			panic("initx L1259")
 			// We are writing the global init() function.
 			initS := &AssignS{
@@ -1317,6 +1327,7 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 			}
 			initS.VisitStmt(cm.QuickCompiler(g))
 		}
+		pr("extern %s %s; // L1320", g.typeof.CType(), g.CName)
 	}
 }
 
@@ -1359,15 +1370,16 @@ func (cm *CMod) ThirdDefineGlobals(p *Parser, pr printer) {
 		//< pr("typedef %s %s;", g.istype.CType(), g.CName)
 		if st, ok := g.istype.(*StructTV); ok {
 			L("omg struct! %v :: %d fields %d meths", st, len(st.StructRec.Fields), len(st.StructRec.Meths))
-			pr("struct %s {", g.CName)
+			pr("typedef struct %s {", g.CName)
 			for _, field := range st.StructRec.Fields {
 				L("omg field %q :: %v", field.name, field.TV)
 				pr("  %s f_%s;", field.TV.CType(), field.name)
 			}
-			pr("} // struct L1366")
+			pr("} %s; // struct L1366", g.CName)
 			for _, meth := range st.StructRec.Meths {
 				L("omg meth %q :: %v", meth.name, meth.TV)
-				pr("extern  %s %s; L1370", meth.TV.CType(), CName(g.CName, meth.name))
+				// too soon:
+				//::: pr("extern  %s %s; L1370", meth.TV.CType(), CName(g.CName, meth.name))
 			}
 		}
 	}
@@ -1461,6 +1473,22 @@ func (cm *CMod) FourthInitGlobals(p *Parser, pr printer) {
 	}
 }
 func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
+	for _, g := range p.Vars {
+		Say(g.Package, g.name, "5V")
+		if g.initx != nil {
+			ser := Serial("init")
+			pr("void %s() { // L1530", ser)
+
+			// We are writing the global init() function.
+			initS := &AssignS{
+				A:  []Expr{&IdentX{g.name, cm}},
+				Op: "=",
+				B:  []Expr{g.initx},
+			}
+			initS.VisitStmt(cm.QuickCompiler(g))
+			pr("}")
+		}
+	}
 	for _, g := range p.Funcs {
 		Say("Fifth " + g.Package + " " + g.name)
 		pr("// Fifth FUNC: %T %s %q;", "#", "#", g.CName)
@@ -1649,6 +1677,22 @@ type DeferRec struct {
 	ToDo string
 }
 
+type Global struct {
+	classes   []string
+	classNums map[string]int
+}
+
+var G *Global
+
+func init() {
+	G = &Global{
+		classes: []string{
+			"_FREE_", "_BYTES_", "_HANDLES_",
+		},
+		classNums: make(map[string]int),
+	}
+}
+
 type Compiler struct {
 	CMod         *CMod
 	CGen         *CGen
@@ -1659,6 +1703,7 @@ type Compiler struct {
 	Defers       []*DeferRec
 	Buf          *Buf
 	slots        map[string]*GDef // not really G
+	classes      []string
 }
 
 func NewCompiler(cm *CMod, subject *GDef) *Compiler {
@@ -1708,8 +1753,9 @@ func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 	}
 }
 func (co *Compiler) VisitConstructor(x *ConstructorX) Value {
+	panic("L1756: Need to find the StructRec for the `t` field")
 	return &CVal{
-		c: Format("(%s) alloc(C_%s)", x.name, x.name),
+		c: Format("(%s*) oalloc(sizeof(%s), C_%s)", x.cname, x.cname, x.cname),
 		t: &PointerTV{&StructTV{nil}}, // TODO!
 	}
 }

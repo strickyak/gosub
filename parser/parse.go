@@ -93,17 +93,22 @@ func (o *Parser) ParsePrim() Expr {
 		}
 		if o.Word == "&" {
 			o.Next()
+			// TODO: dot
 			handleClass := o.TakeIdent()
-			return o.ParseConstructor(handleClass)
+			if o.Word == "." {
+				panic("TODO parse dotted ctor L99")
+			}
+			return o.ParseConstructor(handleClass, o.Package)
 		}
 	}
 	panic("bad ParsePrim")
 }
 
-func (o *Parser) ParseConstructor(handleClass string) Expr {
+func (o *Parser) ParseConstructor(handleClass string, pkg string) Expr {
 	o.TakePunc("{")
 	ctor := &ConstructorX{
-		name: handleClass,
+		name:  handleClass,
+		cname: CName(pkg, handleClass),
 	}
 LOOP:
 	for {
