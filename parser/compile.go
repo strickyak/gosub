@@ -1051,7 +1051,7 @@ func GlobalName(pkg string, name string) string {
 // TODO ???
 var BoolTO = &PrimTV{name: "bool", typecode: "z"}
 var ByteTO = &PrimTV{name: "byte", typecode: "b"}
-var ConstIntTO = &PrimTV{name: "_const_int_", typecode: "z"}
+var ConstIntTO = &PrimTV{name: "_const_int_", typecode: "k"}
 var IntTO = &PrimTV{name: "int", typecode: "i"}
 var UintTO = &PrimTV{name: "uint", typecode: "u"}
 var StringTO = &PrimTV{name: "string", typecode: "s"}
@@ -1111,6 +1111,14 @@ func (o *SubVal) ResolveAsTypeValue() (TypeValue, bool)         { return nil, fa
 func (o *ImportVal) ResolveAsTypeValue() (TypeValue, bool)      { return nil, false }
 func (o *BoundMethodVal) ResolveAsTypeValue() (TypeValue, bool) { return nil, false }
 func (o *TypeVal) ResolveAsTypeValue() (TypeValue, bool)        { return o.tv, true }
+
+func ResolveAsInt(v Value) (string, bool) {
+	switch v.Type().TypeCode() {
+	case "b", "i", "u", "k":
+		return v.ToC(), true
+	}
+	return "", false
+}
 
 type CVal struct {
 	c string // C language expression
@@ -1799,7 +1807,66 @@ func (co *Compiler) ReifyAs(x Value, as TypeValue) Value {
 	return y
 }
 
+func (co *Compiler) VisitMake(args []Expr) Value {
+	if len(args) < 1 || len(args) > 3 {
+		panic("wrong number of args to `make`")
+	}
+	theType := args[0].VisitExpr(co)
+	theLen := "0"
+	var ok bool
+	if len(args) >= 2 {
+		a1 := args[1].VisitExpr(co)
+		theLen, ok = ResolveAsInt(args[1].VisitExpr(co))
+		if !ok {
+			panic(F("expected integer for arg 1 of make; got %v", a1))
+		}
+	}
+	theCap := "0"
+	if len(args) >= 3 {
+		a2 := args[2].VisitExpr(co)
+		theCap, ok = ResolveAsInt(args[2].VisitExpr(co))
+		if !ok {
+			panic(F("expected integer for arg 2 of make; got %v", a2))
+		}
+	}
+	tv, ok := theType.ResolveAsTypeValue()
+	if !ok {
+		panic("expected type as 1st arg to `make`")
+	}
+	switch t := tv.(type) {
+	case *SliceTV:
+		return &CVal{
+			c: F("MakeSlice(%q, %s, %s)", t.E.TypeCode(), theLen, theCap),
+			t: &SliceTV{tv},
+		}
+	}
+	panic(F("cannot `make` a %v", tv))
+}
+func (co *Compiler) VisitAppend(args []Expr, hasDotDotDot bool) Value {
+	// TODO dotdotdot
+	if len(args) != 2 {
+		panic("append must have 2 args")
+	}
+	a0 := args[0].VisitExpr(co)
+	a1 := args[1].VisitExpr(co)
+
+	return &CVal{
+		c: F("AppendSlice(%s, %s)", a0.ToC(), a1.ToC()),
+		t: a0.Type(),
+	}
+}
+
 func (co *Compiler) VisitCall(callx *CallX) Value {
+	if identx, ok := callx.Func.(*IdentX); ok {
+		if identx.X == "make" {
+			return co.VisitMake(callx.Args)
+		}
+		if identx.X == "append" {
+			// TODO dotdotdot
+			return co.VisitAppend(callx.Args, false)
+		}
+	}
+
 	// type CallX struct { Func Expr; Args []Expr; }
 	ser := Serial("call")
 	//< var prep []string
