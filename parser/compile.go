@@ -669,7 +669,6 @@ func (o *BinOpX) VisitExpr(v ExprVisitor) Value {
 
 type ConstructorX struct {
 	typeX  Expr
-	cname  string
 	Fields []NameTX
 }
 
@@ -1291,12 +1290,13 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 		case *StructTV:
 			cname := CName(cm.Package, t.StructRec.name)
 			t.StructRec.cname = cname
-			if _, already := G.classNums[cname]; already {
+			cg := cm.CGen
+			if _, already := cg.classNums[cname]; already {
 				panic(F("struct already defined: %s", cname))
 			}
-			num := len(G.classes)
-			G.classNums[cname] = num
-			G.classes = append(G.classes, cname)
+			num := len(cg.classes)
+			cg.classNums[cname] = num
+			cg.classes = append(cg.classes, cname)
 			pr("#define C_%s %d", cname, num)
 		case *InterfaceTV:
 			t.InterfaceRec.cname = CName(cm.Package, t.InterfaceRec.name)
@@ -1604,6 +1604,9 @@ type CGen struct {
 	ModsInOrder []string // reverse definition order
 	Options     *Options
 	W           *bufio.Writer
+
+	classes   []string
+	classNums map[string]int
 }
 
 func NewCMod(name string, cg *CGen) *CMod {
@@ -1620,6 +1623,10 @@ func NewCGenAndMainCMod(opt *Options, w io.Writer) (*CGen, *CMod) {
 	cg := &CGen{
 		Mods:    map[string]*CMod{"main": mainMod},
 		Options: opt,
+		classes: []string{
+			"_FREE_", "_BYTES_", "_HANDLES_",
+		},
+		classNums: make(map[string]int),
 	}
 	cg.Prims = &CMod{
 		Package: "", // Use empty package name for Prims.
@@ -1676,22 +1683,6 @@ func (cm *CMod) QuickCompiler(gdef *GDef) *Compiler {
 
 type DeferRec struct {
 	ToDo string
-}
-
-type Global struct {
-	classes   []string
-	classNums map[string]int
-}
-
-var G *Global
-
-func init() {
-	G = &Global{
-		classes: []string{
-			"_FREE_", "_BYTES_", "_HANDLES_",
-		},
-		classNums: make(map[string]int),
-	}
 }
 
 type Compiler struct {
@@ -1753,8 +1744,8 @@ func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 		t: IntTO,
 	}
 }
-func (co *Compiler) VisitConstructor(x *ConstructorX) Value {
-	tv := x.typeX.VisitExpr(co)
+func (co *Compiler) VisitConstructor(ctorX *ConstructorX) Value {
+	tv := ctorX.typeX.VisitExpr(co)
 	g, ok := tv.(*GDef)
 	if !ok {
 		panic(F("L1767: Constructor must be for struct name: %s", tv))
@@ -1768,13 +1759,13 @@ func (co *Compiler) VisitConstructor(x *ConstructorX) Value {
 		panic(F("L1764: Constructor must be for struct: %s", g.CName))
 	}
 	return &CVal{
-		c: Format("(%s*) oalloc(sizeof(%s), C_%s)", x.cname, x.cname, x.cname),
+		c: Format("(%s*) oalloc(sizeof(%s), C_%s)", g.CName, g.CName, g.CName),
 		t: &PointerTV{t},
 	}
 }
-func (co *Compiler) VisitFunction(x *FunctionX) Value {
-	L("VisitFunction: FuncRecX = %#v", x.FuncRecX)
-	funcRec := x.FuncRecX.VisitFuncRecX(co)
+func (co *Compiler) VisitFunction(funcX *FunctionX) Value {
+	L("VisitFunction: FuncRecX = %#v", funcX.FuncRecX)
+	funcRec := funcX.FuncRecX.VisitFuncRecX(co)
 	L("VisitFunction: FuncRec = %#v", funcRec)
 	t := &FunctionTV{funcRec}
 	return &CVal{c: "?1702?", t: t}
@@ -1998,7 +1989,7 @@ func (co *Compiler) AssignSingle(right Value, left Value) {
 	case *SubVal:
 		panic(F("todo SubVal L1835: %v", t))
 	default:
-		if strings.HasPrefix(left.ToC(), "(builtin__make(") {
+		if false && strings.HasPrefix(left.ToC(), "(builtin__make(") {
 			panic(F("make returns _any_; how to assign to %#v", right))
 		}
 		co.P("%s = %s; // L1837", right.ToC(), left.ToC())
