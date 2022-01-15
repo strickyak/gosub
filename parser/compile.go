@@ -2137,7 +2137,8 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 			destVal := dest.VisitExpr(co)
 			// TODO Sub
 			// TODO type of destVal
-			co.P("&%s = %s; // Multi result [%d].  L2020", destVal.ToC(), mtv.Multi[i].name, i)
+			// TODO: Why am I adding tmp_ to this multi result?
+			co.P("%s = tmp_%s; // Multi result [%d].  L2020", destVal.ToC(), mtv.Multi[i].name, i)
 		}
 
 	case len(ass.A) == 1 && len(ass.B) == 1:
