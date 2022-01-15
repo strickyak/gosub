@@ -669,6 +669,7 @@ func (o *BinOpX) VisitExpr(v ExprVisitor) Value {
 
 type ConstructorX struct {
 	name   string
+	pkg    string
 	cname  string
 	Fields []NameTX
 }
@@ -1164,7 +1165,7 @@ func (val *CVal) ToC() string {
 	return val.c
 }
 func (val *TypeVal) ToC() string {
-	return val.tv.TypeCode()
+	return F("%q", val.tv.TypeCode())
 }
 func (val *SubVal) ToC() string {
 	panic(1240)
@@ -1576,6 +1577,7 @@ type CMod struct { // isa Scope
 
 func (cm *CMod) Find(s string) *GDef {
 	// just debug log:
+	assert(cm != nil)
 	L("Searching %q for %q .......", cm.Package, s)
 	for debug_k, debug_v := range cm.Members {
 		L("....... debug %q %v", debug_k, debug_v)
@@ -1753,10 +1755,20 @@ func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 	}
 }
 func (co *Compiler) VisitConstructor(x *ConstructorX) Value {
-	panic("L1756: Need to find the StructRec for the `t` field")
+	//; panic("L1756: Need to find the StructRec for the `t` field")
+	L("VisitConstructor L1759: %#v", x)
+
+	g := co.CMod.CGen.Mods[x.pkg].Find(x.name)
+	if g.istype == nil {
+		panic(F("L1760: Constructor must be for struct: %s", x.cname))
+	}
+	t, ok := g.istype.(*StructTV)
+	if !ok {
+		panic(F("L1764: Constructor must be for struct: %s", x.cname))
+	}
 	return &CVal{
 		c: Format("(%s*) oalloc(sizeof(%s), C_%s)", x.cname, x.cname, x.cname),
-		t: &PointerTV{&StructTV{nil}}, // TODO!
+		t: &PointerTV{t},
 	}
 }
 func (co *Compiler) VisitFunction(x *FunctionX) Value {
@@ -1867,6 +1879,7 @@ func (co *Compiler) VisitCall(callx *CallX) Value {
 	// For the non-DotDotDot arguments
 	for i, fin := range fins {
 		temp := CName(ser, "in", D(i), fin.name)
+		L("argVals[%d] :: %T = %q", i, argVals[i], argVals[i].ToC())
 		gd := co.DefineLocalTemp(temp, fin.TV, argVals[i].ToC())
 		argc = append(argc, gd.CName)
 	}
@@ -1984,6 +1997,9 @@ func (co *Compiler) AssignSingle(right Value, left Value) {
 	case *SubVal:
 		panic(F("todo SubVal L1835: %v", t))
 	default:
+		if strings.HasPrefix(left.ToC(), "(builtin__make(") {
+			panic(F("make returns _any_; how to assign to %#v", right))
+		}
 		co.P("%s = %s; // L1837", right.ToC(), left.ToC())
 	}
 }

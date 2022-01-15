@@ -93,12 +93,19 @@ func (o *Parser) ParsePrim() Expr {
 		}
 		if o.Word == "&" {
 			o.Next()
-			// TODO: dot
-			handleClass := o.TakeIdent()
-			if o.Word == "." {
-				panic("TODO parse dotted ctor L99")
+			ctorType := o.ParseType()
+			// TODO: replace this mess with unevaluated typeX.
+			panic("TODO: replace this mess with unevaluated typeX.")
+			switch t := ctorType.(type) {
+			case *IdentX:
+				return o.ParseConstructor(t.X, o.Package)
+			case *DotX:
+				switch p := t.X.(type) {
+				case *IdentX:
+					return o.ParseConstructor(t.Member, p.X)
+				}
 			}
-			return o.ParseConstructor(handleClass, o.Package)
+			panic(F("Expected type name after `&` but got %v", ctorType))
 		}
 	}
 	panic("bad ParsePrim")
@@ -107,7 +114,9 @@ func (o *Parser) ParsePrim() Expr {
 func (o *Parser) ParseConstructor(handleClass string, pkg string) Expr {
 	o.TakePunc("{")
 	ctor := &ConstructorX{
+		// TODO: replace this mess with unevaluated typeX.
 		name:  handleClass,
+		pkg:   pkg,
 		cname: CName(pkg, handleClass),
 	}
 LOOP:
