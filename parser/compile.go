@@ -668,14 +668,13 @@ func (o *BinOpX) VisitExpr(v ExprVisitor) Value {
 }
 
 type ConstructorX struct {
-	name   string
-	pkg    string
+	typeX  Expr
 	cname  string
 	Fields []NameTX
 }
 
 func (o *ConstructorX) String() string {
-	return fmt.Sprintf("Ctor(%q)", o.name)
+	return fmt.Sprintf("Ctor(%v)", o.typeX)
 }
 func (o *ConstructorX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitConstructor(o)
@@ -1755,16 +1754,18 @@ func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 	}
 }
 func (co *Compiler) VisitConstructor(x *ConstructorX) Value {
-	//; panic("L1756: Need to find the StructRec for the `t` field")
-	L("VisitConstructor L1759: %#v", x)
+	tv := x.typeX.VisitExpr(co)
+	g, ok := tv.(*GDef)
+	if !ok {
+		panic(F("L1767: Constructor must be for struct name: %s", tv))
+	}
 
-	g := co.CMod.CGen.Mods[x.pkg].Find(x.name)
 	if g.istype == nil {
-		panic(F("L1760: Constructor must be for struct: %s", x.cname))
+		panic(F("L1760: Constructor must be for struct: %s", g.CName))
 	}
 	t, ok := g.istype.(*StructTV)
 	if !ok {
-		panic(F("L1764: Constructor must be for struct: %s", x.cname))
+		panic(F("L1764: Constructor must be for struct: %s", g.CName))
 	}
 	return &CVal{
 		c: Format("(%s*) oalloc(sizeof(%s), C_%s)", x.cname, x.cname, x.cname),
@@ -1786,7 +1787,7 @@ func (co *Compiler) ReifyAs(x Value, as TypeValue) Value {
 	L("ccc x.Type %v", x.Type())
 	L("ccc as %v", as)
 	if x.Type().Equals(as) {
-		// CASE types are same.  Easy.
+		// CASE: types are same.  Easy.
 		cVal := x.ToC()
 		if match := IDENTIFIER.MatchString(cVal); match {
 			return x
@@ -1796,7 +1797,7 @@ func (co *Compiler) ReifyAs(x Value, as TypeValue) Value {
 		return gd
 	}
 
-	// CASE types are different.
+	// CASE: types are different.
 	// First, reify as the input type.
 	reifiedX := co.ReifyAs(x, x.Type())
 
