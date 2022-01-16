@@ -110,21 +110,21 @@ LOOP:
 		switch o.Kind {
 		case L_Ident:
 			fieldName := o.TakeIdent()
-			fieldType := o.ParseType()
-			ctor.Fields = append(ctor.Fields, NameTX{fieldName, fieldType, o.CMod})
+			o.TakePunc(":")
+			fieldX := o.ParseExpr()
+			ctor.inits = append(ctor.inits, NameAndExpr{fieldName, fieldX, o.CMod})
 		case L_EOL:
 			o.Next()
 		case L_Punc:
 			if o.Word == "," {
 				o.Next()
-				continue LOOP
-			}
-			if o.Word == "}" {
+			} else if o.Word == "}" {
 				break LOOP
+			} else {
+				panic(F("Expected identifier or `}` but got %q", o.Word))
 			}
-			panic(F("Expected identifier or `}` but got %q", o.Word))
 		default:
-			panic(F("Expected identifier or `}` but got %q", o.Word))
+			panic(F("Expected identifier or `,` or `}` but got %q", o.Word))
 		}
 	}
 	o.TakePunc("}")

@@ -670,9 +670,14 @@ func (o *BinOpX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitBinOp(o)
 }
 
+type NameAndExpr struct {
+	name string
+	expr Expr
+	cmod *CMod
+}
 type ConstructorX struct {
-	typeX  Expr
-	Fields []NameTX
+	typeX Expr
+	inits []NameAndExpr
 }
 
 func (o *ConstructorX) String() string {
@@ -1278,7 +1283,13 @@ func (cm *CMod) defineOnce(g *GDef) {
 	}
 	cm.Members[g.name] = g
 	g.Package = cm.Package
-	g.CName = CName(g.Package, g.name)
+	if g.name == "init" {
+		ser := Serial("init")
+		g.CName = CName(g.Package, ser)
+		cm.CGen.initFuncs = append(cm.CGen.initFuncs, g.CName)
+	} else {
+		g.CName = CName(g.Package, g.name)
+	}
 }
 
 func (cm *CMod) FirstSlotGlobals(p *Parser, pr printer) {
@@ -1591,6 +1602,14 @@ func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 			pr("// Cannot print method without body -- it must be extern.")
 		}
 	}
+
+	if cm.Package == "main" {
+		pr("void init() {")
+		for _, initName := range cm.CGen.initFuncs {
+			pr("%s();", initName)
+		}
+		pr("}")
+	}
 	pr("#endif // JUST_DEFS")
 }
 
@@ -1660,6 +1679,7 @@ type CGen struct {
 
 	classes   []string
 	classNums map[string]int
+	initFuncs []string
 }
 
 func NewCMod(name string, cg *CGen) *CMod {
@@ -1956,19 +1976,30 @@ func (co *Compiler) VisitConstructor(ctorX *ConstructorX) Value {
 	tv := ctorX.typeX.VisitExpr(co)
 	g, ok := tv.(*GDef)
 	if !ok {
-		panic(F("L1767: Constructor must be for struct name: %s", tv))
+		panic(F("L1767: Constructor must be for address of struct name: %s", tv))
 	}
 
 	if g.istype == nil {
-		panic(F("L1760: Constructor must be for struct: %s", g.CName))
+		panic(F("L1760: Constructor must be for address of struct: %s", g.CName))
 	}
-	t, ok := g.istype.(*StructTV)
+	structTV, ok := g.istype.(*StructTV)
 	if !ok {
-		panic(F("L1764: Constructor must be for struct: %s", g.CName))
+		panic(F("L1764: Constructor must be for address of struct: %s", g.CName))
 	}
+	pointerTV := &PointerTV{structTV}
+	ser := Serial("ctor")
+	creation := F("(struct %s*) oalloc(sizeof(struct %s), CLASS_%s)", g.CName, g.CName, g.CName)
+	inst := co.DefineLocalTemp(ser, pointerTV, creation)
+
+	for i, e := range ctorX.inits {
+		val := e.expr.VisitExpr(co)
+		co.P("  %s->f_%s = %s; //#%d L2001", inst.CName, e.name, val.ToC(), i)
+	}
+
+	return inst
 	return &CVal{
-		c: Format("(struct %s*) oalloc(sizeof(struct %s), CLASS_%s)", g.CName, g.CName, g.CName),
-		t: &PointerTV{t},
+		c: inst.CName,
+		t: pointerTV,
 	}
 }
 func (co *Compiler) VisitFunction(funcX *FunctionX) Value {

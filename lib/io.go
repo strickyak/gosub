@@ -1,11 +1,15 @@
 package io
 
-type Error struct{}
+type Error struct {
+	message string
+}
 
 var EOF *Error
 
 func init() {
-	EOF = &Error{}
+	EOF = &Error{
+		message: "*EOF*",
+	}
 }
 
 type Reader interface {

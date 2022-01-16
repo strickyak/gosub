@@ -5,9 +5,13 @@
 #undef JUST_DEFS
 
 extern void main__main();
+extern void init();
 
 int main(int argc, const char* argv[]) {
   oinit(0, 0, 0);  // noop
+  fprintf(stderr, "## Init.\n");
+  init();
+  fprintf(stderr, "## Main.\n");
   main__main();
   fprintf(stderr, "## Exit.\n");
   return 0;
@@ -148,11 +152,40 @@ void builtin__println(Slice args) {
 
 void os__File__Read(struct os__File *in_f, Slice_(P_byte) in_p, P_int *out_n,
                     Interface_(error) * out_err) {
-  fprintf(stderr, "TODO: os__File__Read\n");
+  fprintf(stderr, "os__File__Read <== fd=%d. buflen=%d.\n", in_f->f_fd, in_p.len);
+
+  //< int cc = fread((char*)(in_p.base) + in_p.offset, in_p.len, 1, fdopen(in_f->f_fd, "r"));
+  int cc = read(in_f->f_fd, (char*)(in_p.base) + in_p.offset, in_p.len);
+  *out_n = cc;
+
+  int e = errno;
+  if (e) {
+    struct io__Error* io_error = (struct io__Error*) oalloc(sizeof(struct io__Error), CLASS_io__Error);
+
+    char* c_str = strerror(e);
+    char* o_str = (char*) oalloc(strlen(c_str)+1, C_Bytes);
+    strcpy(o_str, c_str);
+    String go_str = {(word)o_str, 0, strlen(c_str)};
+    io_error->f_message = go_str;
+
+
+    *(struct error**) out_err = (struct error*) io_error;
+    return;
+    perror("Failure in os__File__Read");
+    exit(23);
+  }
+  if (cc==0) {
+    *(struct error**) out_err = (struct error*) io__EOF;
+  } else {
+    *(struct error**) out_err = (struct error*) 0;
+  }
+
+  fprintf(stderr, "os__File__Read ==> %d (%lx)\n", *out_n, (unsigned long)*out_err);
 }
 
 void log__Fatalf(P_string in_format, Slice_(P__any_) in_args) {
   fprintf(stderr, "TODO: log__Fatalf\n");
+  exit(13);
 }
 
 // END

@@ -5,10 +5,12 @@
 #ifdef unix
 
 #include <assert.h>
+#include <errno.h>
 #include <memory.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 typedef unsigned char bool;
 typedef unsigned char byte;
 typedef unsigned long word;
