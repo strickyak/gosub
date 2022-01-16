@@ -1897,7 +1897,7 @@ func (co *Compiler) VisitMake(args []Expr) Value {
 	case *SliceTV:
 		return &CVal{
 			c: F("MakeSlice(%q, %s, %s, sizeof(%s))", t.E.TypeCode(), theLen, theCap, t.E.CType()),
-			t: &SliceTV{tv},
+			t: tv,
 		}
 	}
 	panic(F("cannot `make` a %v", tv))
@@ -2005,15 +2005,12 @@ func (co *Compiler) VisitCall(callx *CallX) Value {
 
 	if funcRec.HasDotDotDot {
 		sliceName := CName(ser, "in", "vec")
-		//< sliceVar := co.DefineLocalTemp(sliceName, extraSliceType, "MakeSlice()")
-		sliceVar := co.DefineLocalTemp(sliceName, extraSliceType, "{0}/*MakeSlice L1949*/")
+		sliceVar := co.DefineLocalTemp(sliceName, extraSliceType, "NilSlice /*MakeSlice L1949*/")
 
 		for i := 0; i < numExtras; i++ {
 			y := co.ReifyAs(argVals[numNormal+i], extraSliceType.E).ToC()
 
 			co.P("%s = SliceAppend(%q, %s, &%s, sizeof(%s)); // L1954: For extra input #%d", extraSliceType.E.TypeCode(), sliceVar.CName, sliceVar.CName, y, y, i)
-
-			//< co.P("%s = AppendSliceInt(%s, %s); // For extra input #%d", sliceVar.CName, sliceVar.CName, argVals[numNormal+i].ToC(), i)
 		}
 
 		fins = append(fins, NameTV{sliceVar.CName, extraSliceType})
@@ -2115,8 +2112,8 @@ func (co *Compiler) VisitVar(v *VarStmt) {
 	debug := co.DefineLocal("v", v.name, co.CMod.VisitTypeExpr(v.tx))
 	L("debug VisitVar: %#v ==> %#v", *v, *debug)
 }
-func (co *Compiler) AssignSingle(right Value, left Value) {
-	switch t := right.(type) {
+func (co *Compiler) AssignSingle(left Value, right Value) {
+	switch t := left.(type) {
 	case *SubVal:
 		switch t.container.Type().(type) {
 		case *SliceTV:
@@ -2125,11 +2122,11 @@ func (co *Compiler) AssignSingle(right Value, left Value) {
 			if !ok {
 				panic(F("slice subscript must be integer; got %v", t.subscript))
 			}
-			rleft := co.ReifyAs(left, UintTO)
+			rleft := co.ReifyAs(right, UintTO)
 
 			co.P(" SlicePut(%s, sizoef(%s), %s, &%s); L2071",
 				t.container.ToC(),
-				left.Type().CType(),
+				right.Type().CType(),
 				nth,
 				rleft.ToC())
 			return
@@ -2139,10 +2136,7 @@ func (co *Compiler) AssignSingle(right Value, left Value) {
 		}
 		panic(F("todo SubVal L1835: %v", t))
 	default:
-		if false && strings.HasPrefix(left.ToC(), "(builtin__make(") {
-			panic(F("make returns _any_; how to assign to %#v", right))
-		}
-		co.P("%s = %s; // L1837", right.ToC(), left.ToC())
+		co.P("%s = %s; // L1837", left.ToC(), right.ToC())
 		return
 	}
 	panic("L2093")

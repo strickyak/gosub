@@ -14,6 +14,8 @@ void panic_s(const char* why) {
   assert(0);
 }
 
+Slice NilSlice = {0};
+
 String MakeStringFromC(const char* s) {
   int n = strlen(s);
   if(n >= INF-1) panic_s("MakeStringFromC: too long");

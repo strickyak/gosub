@@ -64,6 +64,7 @@ typedef struct _slice {
     P_uint offset;
     P_uint len;
 } Slice;
+extern Slice NilSlice;
 
 typedef struct _interface {
     // TODO // word handle;  // for structs
