@@ -1807,20 +1807,20 @@ func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 			switch tb := b.Type().(type) {
 			case *InterfaceTV:
 				return &CVal{
-					c: Format("((%s.pointer) %s (%s.pointer))", a.ToC(), op, b.ToC()),
+					c: Format("(/*L1810*/(%s) %s (%s))", a.ToC(), op, b.ToC()),
 					t: BoolTO,
 				}
 
 			case *PointerTV:
 				return &CVal{
-					c: Format("((%s.pointer) %s (%s))", a.ToC(), op, b.ToC()),
+					c: Format("(/*L1816*/(%s) %s (%s))", a.ToC(), op, b.ToC()),
 					t: BoolTO,
 				}
 			case *PrimTV:
 				switch tb.typecode {
 				case "n": // nil
 					return &CVal{
-						c: Format("((%s.pointer) %s (void*)0)", a.ToC(), op),
+						c: Format("(/*L1823*/(%s) %s (void*)0)", a.ToC(), op),
 						t: BoolTO,
 					}
 
@@ -1830,7 +1830,7 @@ func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 			switch b.Type().(type) {
 			case *InterfaceTV:
 				return &CVal{
-					c: Format("((%s) %s (%s.pointer))", a.ToC(), op, b.ToC()),
+					c: Format("(/*L1833*/(%s) %s (%s))", a.ToC(), op, b.ToC()),
 					t: BoolTO,
 				}
 			}
@@ -1841,12 +1841,12 @@ func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 				switch b.Type().(type) {
 				case *InterfaceTV:
 					return &CVal{
-						c: Format("((void*)0 %s (%s.pointer))", op, b.ToC()),
+						c: Format("(/*L1844*/(void*)0 %s (%s))", op, b.ToC()),
 						t: BoolTO,
 					}
 				case *PointerTV:
 					return &CVal{
-						c: Format("((void*)0 %s (%s))", op, b.ToC()),
+						c: Format("(/*L1849*/(void*)0 %s (%s))", op, b.ToC()),
 						t: BoolTO,
 					}
 				}
@@ -1917,7 +1917,7 @@ func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 				resultType = BoolTO
 			}
 			return &CVal{
-				c: Format("(%s)((%s) %s (%s))", resultType.CType(), a.ToC(), op, b.ToC()),
+				c: Format("(%s)(/*L1920*/(%s) %s (%s))", resultType.CType(), a.ToC(), op, b.ToC()),
 				t: resultType,
 			}
 		}

@@ -31,7 +31,7 @@ typedef void omarker();  // TODO: GC
 
 #define Slice_(T) Slice
 #define Map_(K,V) Map
-#define Interface_(NAME) Interface
+#define Interface_(NAME) VoidStar
 #define Struct_(NAME) word
 #define Pointer_(NAME) VoidStar
 
@@ -52,27 +52,25 @@ enum ClsNum {
     C_Map = 5,
 };
 
-typedef struct _string {
+typedef struct {
     word base;
     P_uint offset;
     P_uint len;
 } String;
 typedef String P_string;
 
-typedef struct _slice {
+typedef struct {
     word base;
     P_uint offset;
     P_uint len;
 } Slice;
-extern Slice NilSlice;
 
-typedef struct _interface {
-    // TODO // word handle;  // for structs
+typedef struct {
     void* pointer;  // for everything else
     const char* typecode;
-} Interface; 
-typedef Interface P__any_;
+} P__any_;
 
+extern Slice NilSlice;
 extern void F_BUILTIN_println(int i);
 
 extern void panic_s(const char*);
