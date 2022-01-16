@@ -9,6 +9,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -129,10 +130,10 @@ func (r *FuncRecX) String() string {
 }
 
 func (r *StructRec) String() string {
-	return Format("struct %s", r.cname)
+	return Format("struct<%s>", r.cname)
 }
 func (r *InterfaceRec) String() string {
-	return Format("interface %s", r.name)
+	return Format("interface<%s>", r.name)
 }
 func (r *FuncRec) String() string {
 	s := "func("
@@ -221,7 +222,9 @@ func (o *StructTX) VisitExpr(v ExprVisitor) Value {
 func (o *InterfaceTX) VisitExpr(v ExprVisitor) Value {
 	p := o.InterfaceRecX
 	if p == nil {
-		// nil means this is _any_ "interface empty"
+		// nil in InterfaceRecX means this is _any_ "interface empty"
+		// We will not use nil in InterfaceRec for that.
+		// Instead we use a synthetic Prim AnyTO.
 		return &TypeVal{AnyTO}
 	}
 
@@ -1710,23 +1713,27 @@ func NewCGenAndMainCMod(opt *Options, w io.Writer) (*CGen, *CMod) {
 			Used:   false,
 		}
 	}
-	cg.Prims.Members["nil"] = &GDef{
-		name:   "nil",
-		CName:  "P_nil",
-		typeof: NilTO,
-	}
-	cg.Prims.Members["true"] = &GDef{
-		name:   "true",
-		CName:  "P_true",
-		typeof: BoolTO,
-	}
-	cg.Prims.Members["false"] = &GDef{
-		name:   "false",
-		CName:  "P_false",
-		typeof: BoolTO,
-	}
+	cg.Prims.Members["nil"] = NIL
+	cg.Prims.Members["true"] = TRUE
+	cg.Prims.Members["false"] = FALSE
 
 	return cg, mainMod
+}
+
+var NIL = &GDef{
+	name:   "nil",
+	CName:  "P_nil",
+	typeof: NilTO,
+}
+var TRUE = &GDef{
+	name:   "true",
+	CName:  "P_true",
+	typeof: BoolTO,
+}
+var FALSE = &GDef{
+	name:   "false",
+	CName:  "P_false",
+	typeof: BoolTO,
 }
 
 func (cm *CMod) VisitTypeExpr(x Expr) TypeValue {
@@ -1799,16 +1806,167 @@ func (co *Compiler) VisitIdent(x *IdentX) Value {
 }
 func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 	a := x.A.VisitExpr(co)
+	op := x.Op
 	b := x.B.VisitExpr(co)
+	var resultType TypeValue
+
 	L("BinOp: a = %#v", a)
 	L("BinOp: b = %#v", b)
-	L("BinOp: a.ToC = %s", a.ToC())
-	L("BinOp: b.ToC = %s", b.ToC())
-	return &CVal{
-		c: Format("(%s) %s (%s)", a.ToC(), x.Op, b.ToC()),
-		t: IntTO,
+	L("BinOp: a.ToC = %s :: %s", a.ToC(), a.Type())
+	L("BinOp: b.ToC = %s :: %s", b.ToC(), b.Type())
+
+	switch op {
+	case "==", "!=", "<", "<=", ">", ">=":
+		switch ta := a.Type().(type) {
+		case *InterfaceTV:
+			switch tb := b.Type().(type) {
+			case *InterfaceTV:
+				return &CVal{
+					c: Format("((%s.pointer) %s (%s.pointer))", a.ToC(), op, b.ToC()),
+					t: BoolTO,
+				}
+
+			case *PointerTV:
+				return &CVal{
+					c: Format("((%s.pointer) %s (%s))", a.ToC(), op, b.ToC()),
+					t: BoolTO,
+				}
+			case *PrimTV:
+				switch tb.typecode {
+				case "n": // nil
+					return &CVal{
+						c: Format("((%s.pointer) %s (void*)0)", a.ToC(), op),
+						t: BoolTO,
+					}
+
+				}
+			}
+		case *PointerTV:
+			switch b.Type().(type) {
+			case *InterfaceTV:
+				return &CVal{
+					c: Format("((%s) %s (%s.pointer))", a.ToC(), op, b.ToC()),
+					t: BoolTO,
+				}
+			}
+
+		case *PrimTV:
+			switch ta.typecode {
+			case "n": // nil
+				switch b.Type().(type) {
+				case *InterfaceTV:
+					return &CVal{
+						c: Format("((void*)0 %s (%s.pointer))", op, b.ToC()),
+						t: BoolTO,
+					}
+				case *PointerTV:
+					return &CVal{
+						c: Format("((void*)0 %s (%s))", op, b.ToC()),
+						t: BoolTO,
+					}
+				}
+
+			}
+		}
+	}
+
+	if a.Type().TypeCode() == "k" {
+		switch b.Type().TypeCode() {
+		case "b", "i", "u":
+			a = &CVal{a.ToC(), b.Type()}
+		case "k":
+			// Both a and b are ConstInt: return a computed ConstInt.
+			switch op {
+			case "+":
+				return KVal(EvalK(a) + EvalK(b))
+			case "-":
+				return KVal(EvalK(a) - EvalK(b))
+			case "*":
+				return KVal(EvalK(a) * EvalK(b))
+			case "/":
+				return KVal(EvalK(a) / EvalK(b))
+			case "%":
+				return KVal(EvalK(a) % EvalK(b))
+			case "&":
+				return KVal(EvalK(a) & EvalK(b))
+			case "|":
+				return KVal(EvalK(a) | EvalK(b))
+			case "^":
+				return KVal(EvalK(a) ^ EvalK(b))
+
+			case "<<":
+				return KVal(EvalK(a) << EvalK(b))
+			case ">>":
+				return KVal(EvalK(a) >> EvalK(b)) // TODO: signed vs unsigned
+
+			case "==":
+				return BVal(EvalK(a) == EvalK(b))
+			case "!=":
+				return BVal(EvalK(a) != EvalK(b))
+			case "<":
+				return BVal(EvalK(a) < EvalK(b))
+			case ">":
+				return BVal(EvalK(a) > EvalK(b))
+			case "<=":
+				return BVal(EvalK(a) <= EvalK(b))
+			case ">=":
+				return BVal(EvalK(a) >= EvalK(b))
+			}
+		}
+	}
+
+	if b.Type().TypeCode() == "k" {
+		switch a.Type().TypeCode() {
+		case "b", "i", "u":
+			b = &CVal{b.ToC(), a.Type()}
+		}
+	}
+
+	if a.Type().Equals(b.Type()) {
+		switch a.Type().TypeCode() {
+		case "z", "b", "i", "u":
+			switch op {
+			case "+", "-", "*", "/", "%":
+				resultType = a.Type()
+			case "==", "!=", "<", "<=", ">", ">=":
+				resultType = BoolTO
+			}
+			return &CVal{
+				c: Format("(%s)((%s) %s (%s))", resultType.CType(), a.ToC(), op, b.ToC()),
+				t: resultType,
+			}
+		}
+	}
+	panic(1824)
+}
+
+func EvalK(a Value) int64 {
+	s := a.ToC()
+	base := 10
+	if strings.HasPrefix(s, "0") {
+		base = 8
+	}
+	if strings.HasPrefix(s, "0x") {
+		base = 16
+		s = s[2:]
+	}
+	z, err := strconv.ParseInt(s, base, 64)
+	if err != nil {
+		panic(F("EvalK cannot parse %q: %v", s, err))
+	}
+	return z
+}
+func KVal(x int64) Value {
+	return &CVal{F("%d", x&0xFFFF), ConstIntTO}
+}
+func BVal(b bool) Value {
+	if b {
+		return TRUE
+	} else {
+		return FALSE
 	}
 }
+
 func (co *Compiler) VisitConstructor(ctorX *ConstructorX) Value {
 	tv := ctorX.typeX.VisitExpr(co)
 	g, ok := tv.(*GDef)

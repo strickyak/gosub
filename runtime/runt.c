@@ -141,3 +141,14 @@ void builtin__println(Slice args) {
 
   printf("\n");
 }
+
+void os__File__Read(struct os__File *in_f, Slice_(P_byte) in_p, P_int *out_n,
+                    Interface_(error) * out_err) {
+  fprintf(stderr, "TODO: os__File__Read\n");
+}
+
+void log__Fatalf(P_string in_format, Slice_(P__any_) in_args) {
+  fprintf(stderr, "TODO: log__Fatalf\n");
+}
+
+// END
