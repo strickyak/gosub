@@ -715,12 +715,12 @@ func (o *DotX) VisitExpr(v ExprVisitor) Value {
 }
 
 type SubX struct {
-	X         Expr
+	Container Expr
 	Subscript Expr
 }
 
 func (o *SubX) String() string {
-	return fmt.Sprintf("Sub(%s; %s)", o.X, o.Subscript)
+	return fmt.Sprintf("Sub(%s; %s)", o.Container, o.Subscript)
 }
 func (o *SubX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitSub(o)
@@ -918,7 +918,7 @@ func (r *FuncRec) SignatureStr(daFunc string) string {
 	}
 	if len(r.Outs) != 1 {
 		for i, nat := range r.Outs {
-			if i > 0 {
+			if i > 0 || len(r.Ins) > 0 {
 				b.WriteByte(',')
 			}
 			L("out [%d]: %s", i, nat.TV.CType())
@@ -997,11 +997,11 @@ func (b *Block) VisitStmt(v StmtVisitor) {
 }
 
 /*
-const XX_BoolType = "a"
+const XX_BoolType = "z"
 const XX_ByteType = "b"
 const XX_UintType = "u"
 const XX_IntType = "i"
-const XX_ConstIntType = "c"
+const XX_ConstIntType = "k"
 const XX_StringType = "s"
 const XX_TypeType = "t"
 const XX_ImportType = "@"
@@ -1127,7 +1127,7 @@ type CVal struct {
 
 type SubVal struct {
 	container Value
-	sub       Value
+	subscript Value
 }
 
 type TypeVal struct {
@@ -1147,7 +1147,7 @@ func (val *TypeVal) String() string {
 	return Format("(%s:TypeVal)", val.tv)
 }
 func (val *SubVal) String() string {
-	return Format("(%s[%s])", val.container, val.sub)
+	return Format("(%s[%s])", val.container, val.subscript)
 }
 func (val *BoundMethodVal) String() string {
 	return Format("BM(%v ; %s)", val.receiver, val.cmeth)
@@ -1160,11 +1160,16 @@ func (val *TypeVal) Type() TypeValue {
 	return TypeTO
 }
 func (val *SubVal) Type() TypeValue {
-	return &PrimTV{name: Format("(tv:TODO:Sub:%s:%s)", val.container, val.sub)}
+	switch t := val.container.Type().(type) {
+	case *SliceTV:
+		return t.E
+	case *MapTV:
+		return t.K
+	}
+	panic(F("L1169: cannot index into %v", val.container))
 }
 func (val *BoundMethodVal) Type() TypeValue {
 	return val.mtype
-	return &PrimTV{name: Format("(tv:TODO:BoundMethodVal)")}
 }
 
 func (val *CVal) ToC() string {
@@ -1174,8 +1179,25 @@ func (val *TypeVal) ToC() string {
 	return F("%q", val.tv.TypeCode())
 }
 func (val *SubVal) ToC() string {
-	panic(1240)
-	// TODO: case string, slice, map.
+	ser := Serial("sub")
+	switch t := val.container.Type().(type) {
+	case *SliceTV:
+		nth, ok := ResolveAsInt(val.subscript)
+		if !ok {
+			panic(F("slice subscript must be integer; got %v", val.subscript))
+		}
+		tmp := coHack.DefineLocalTemp(ser, t.E, "")
+		// void SliceGet(Slice a, int size, int nth, void* value);
+		coHack.P("SliceGet(%s, sizeof(%s), %s, &%s); //L1187",
+			val.container.ToC(),
+			t.E.CType(),
+			nth,
+			tmp.ToC())
+		return F("(%s /*L1196*/)", tmp.ToC())
+	case *MapTV:
+		panic(1198)
+	}
+	panic(F("L1188: cannot index into %v", val.container))
 }
 func (val *BoundMethodVal) ToC() string {
 	panic(1169) // It's not that simple.
@@ -1451,8 +1473,25 @@ func (cm *CMod) FourthInitGlobals(p *Parser, pr printer) {
 		pr("} // INIT()")
 	}
 
+	for _, g := range p.Funcs {
+		Say("Fourth Func: " + g.Package + " " + g.name)
+		co := cm.QuickCompiler(g)
+		coHack = co
+		co.P("// Start Fourth Func: " + g.Package + " " + g.name)
+		co.EmitFunc(g, true /*justDeclare*/)
+		pr("\n%s\n", co.Buf.String())
+		co.P("// Finish Fourth Func: " + g.Package + " " + g.name)
+	}
+
 	for _, g := range p.Meths {
-		_ = g
+		Say("Fourth Meth: " + g.Package + " " + g.name)
+		co := cm.QuickCompiler(g)
+		coHack = co
+		co.P("// Start Fourth Meth: " + g.Package + " " + g.name)
+		co.EmitFunc(g, true /*justDeclare*/)
+		pr("\n%s\n", co.Buf.String())
+		co.P("// Finish Fourth Meth: " + g.Package + " " + g.name)
+
 		/* SOON
 		// Attach methods to their Struct.
 		methRec := g.initx.(*FunctionX).FuncRec
@@ -1480,7 +1519,14 @@ func (cm *CMod) FourthInitGlobals(p *Parser, pr printer) {
 		*/
 	}
 }
+
+var cmHack *CMod
+var coHack *Compiler
+var prHack printer
+
 func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
+	cmHack = cm
+	prHack = pr
 	for _, g := range p.Vars {
 		Say(g.Package, g.name, "5V")
 		if g.initx != nil {
@@ -1502,7 +1548,8 @@ func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 		pr("// Fifth FUNC: %T %s %q;", "#", "#", g.CName)
 		if g.initx != nil {
 			co := cm.QuickCompiler(g)
-			co.EmitFunc(g)
+			coHack = co
+			co.EmitFunc(g, false /*justDeclare*/)
 			pr("\n%s\n", co.Buf.String())
 		} else {
 			pr("// Cannot print function without body -- it must be extern.")
@@ -1510,7 +1557,17 @@ func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 	}
 
 	for _, g := range p.Meths {
-		_ = g
+		Say("Fifth " + g.Package + " " + g.name)
+		pr("// Fifth METH: %T %s %q;", "#", "#", g.CName)
+		if g.initx != nil {
+			co := cm.QuickCompiler(g)
+			coHack = co
+			co.EmitFunc(g, false /*justDeclare*/)
+			pr("\n%s\n", co.Buf.String())
+		} else {
+			pr("// Cannot print method without body -- it must be extern.")
+		}
+
 		/* SOON
 		methRec := g.initx.(*FunctionX).FuncRec
 		rcvr := *methRec.Receiver
@@ -1781,6 +1838,9 @@ func (co *Compiler) VisitFunction(funcX *FunctionX) Value {
 
 var IDENTIFIER = regexp.MustCompile("^[A-Za-z0-9_]+$")
 
+func (co *Compiler) Reify(x Value) Value {
+	return co.ReifyAs(x, x.Type()) // as its own type
+}
 func (co *Compiler) ReifyAs(x Value, as TypeValue) Value {
 	L("ccc x %v", x)
 	L("ccc x.Type %v", x.Type())
@@ -1798,7 +1858,7 @@ func (co *Compiler) ReifyAs(x Value, as TypeValue) Value {
 
 	// CASE: types are different.
 	// First, reify as the input type.
-	reifiedX := co.ReifyAs(x, x.Type())
+	reifiedX := co.Reify(x)
 
 	// Then convert.
 	ser := Serial("reify_as")
@@ -1836,7 +1896,7 @@ func (co *Compiler) VisitMake(args []Expr) Value {
 	switch t := tv.(type) {
 	case *SliceTV:
 		return &CVal{
-			c: F("MakeSlice(%q, %s, %s)", t.E.TypeCode(), theLen, theCap),
+			c: F("MakeSlice(%q, %s, %s, sizeof(%s))", t.E.TypeCode(), theLen, theCap, t.E.CType()),
 			t: &SliceTV{tv},
 		}
 	}
@@ -1945,12 +2005,13 @@ func (co *Compiler) VisitCall(callx *CallX) Value {
 
 	if funcRec.HasDotDotDot {
 		sliceName := CName(ser, "in", "vec")
-		sliceVar := co.DefineLocalTemp(sliceName, extraSliceType, "MakeSlice()")
+		//< sliceVar := co.DefineLocalTemp(sliceName, extraSliceType, "MakeSlice()")
+		sliceVar := co.DefineLocalTemp(sliceName, extraSliceType, "{0}/*MakeSlice L1949*/")
 
 		for i := 0; i < numExtras; i++ {
 			y := co.ReifyAs(argVals[numNormal+i], extraSliceType.E).ToC()
 
-			co.P("%s = SliceAppend(%s, &%s, sizeof(%s)); // For extra input #%d", sliceVar.CName, sliceVar.CName, y, y, i)
+			co.P("%s = SliceAppend(%q, %s, &%s, sizeof(%s)); // L1954: For extra input #%d", extraSliceType.E.TypeCode(), sliceVar.CName, sliceVar.CName, y, y, i)
 
 			//< co.P("%s = AppendSliceInt(%s, %s); // For extra input #%d", sliceVar.CName, sliceVar.CName, argVals[numNormal+i].ToC(), i)
 		}
@@ -1986,9 +2047,12 @@ func (co *Compiler) FormatCall(funcVal Value, argc []string, bm *BoundMethodVal)
 }
 
 func (co *Compiler) VisitSub(subx *SubX) Value {
-	return &CVal{
-		c: Format("SubXXX(%v)", subx),
-		t: IntTO,
+	con := subx.Container.VisitExpr(co)
+	sub := subx.Subscript.VisitExpr(co)
+
+	return &SubVal{
+		container: con,
+		subscript: sub,
 	}
 }
 
@@ -2054,13 +2118,34 @@ func (co *Compiler) VisitVar(v *VarStmt) {
 func (co *Compiler) AssignSingle(right Value, left Value) {
 	switch t := right.(type) {
 	case *SubVal:
+		switch t.container.Type().(type) {
+		case *SliceTV:
+			// slice, size, nth, value
+			nth, ok := ResolveAsInt(t.subscript)
+			if !ok {
+				panic(F("slice subscript must be integer; got %v", t.subscript))
+			}
+			rleft := co.ReifyAs(left, UintTO)
+
+			co.P(" SlicePut(%s, sizoef(%s), %s, &%s); L2071",
+				t.container.ToC(),
+				left.Type().CType(),
+				nth,
+				rleft.ToC())
+			return
+
+		case *MapTV:
+			panic("TODO L2070")
+		}
 		panic(F("todo SubVal L1835: %v", t))
 	default:
 		if false && strings.HasPrefix(left.ToC(), "(builtin__make(") {
 			panic(F("make returns _any_; how to assign to %#v", right))
 		}
 		co.P("%s = %s; // L1837", right.ToC(), left.ToC())
+		return
 	}
+	panic("L2093")
 }
 func (co *Compiler) VisitAssign(ass *AssignS) {
 	L("//## assign..... %v   %v   %v", ass.A, ass.Op, ass.B)
@@ -2077,7 +2162,7 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 	// Create local vars, if := is used.
 	var newLocals []*GDef
 	if ass.Op == ":=" {
-		for _, a := range ass.A {
+		for i, a := range ass.A {
 			if id, ok := a.(*IdentX); ok {
 				var name string
 				if id.X != "" && id.X != "_" {
@@ -2085,7 +2170,19 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 				} else {
 					name = Serial("tmp")
 				}
-				gd := co.DefineLocal("v", name, IntTO)
+				var lclType TypeValue
+				if len(rvalues) == 1 {
+					if t0, ok := rvalues[0].Type().(*MultiTV); ok {
+						if len(ass.A) == len(t0.Multi) {
+							lclType = t0.Multi[i].TV
+						}
+					} else {
+						lclType = rvalues[0].Type()
+					}
+				} else {
+					lclType = rvalues[i].Type()
+				}
+				gd := co.DefineLocal("v", name, lclType)
 				newLocals = append(newLocals, gd)
 			} else {
 				log.Panicf("Expected an identifier in LHS of `:=` but got %v", a)
@@ -2327,10 +2424,15 @@ func (co *Compiler) StartScope() {
 	}
 	co.CurrentBlock = block
 }
-func (co *Compiler) EmitFunc(gd *GDef) {
+func (co *Compiler) EmitFunc(gd *GDef, justDeclare bool) {
 	co.StartScope()
 	rec := gd.typeof.(*FunctionTV).FuncRec
 	co.P(rec.SignatureStr(gd.CName))
+	if justDeclare {
+		co.FinishScope()
+		co.P("; //L2432: justDeclare")
+		return
+	}
 
 	// Figure out the names of Func inputs, and create locals for them.
 	for i, in := range rec.Ins {
@@ -2359,7 +2461,7 @@ func (co *Compiler) EmitFunc(gd *GDef) {
 
 	if rec.FuncRecX.Body == nil {
 		// Function has no body, so it should be natively-defined.
-		co.P("; //EmitFunc: NATIVE\n")
+		co.P("; //EmitFunc L2438: NATIVE\n")
 		return
 	}
 
@@ -2385,7 +2487,7 @@ func (co *Compiler) EmitFunc(gd *GDef) {
 			continue
 		}
 		co.P("// LOCAL %q IS %v", name, e)
-		co.P("auto %v %v = {0}; // DEF LOCAL 2145", e.typeof.CType(), e.CName)
+		co.P("auto %v %v = {0}; // DEF LOCAL L2145 Type=%#v", e.typeof.CType(), e.CName, e.typeof)
 	}
 	co.P("// Added LOCALS to Func.")
 	L("CBODY IS %q", cBody)

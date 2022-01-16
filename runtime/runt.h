@@ -76,9 +76,9 @@ extern void F_BUILTIN_println(int i);
 
 extern void panic_s(const char*);
 extern String MakeStringFromC(const char* s);
-extern Slice MakeSlice();
+extern Slice MakeSlice(const char* typecode, int len, int cap, int size);
 extern Slice AppendSliceInt(Slice a, P_int x);
-extern Slice SliceAppend(Slice a, void* addr, int size);
+extern Slice SliceAppend(const char* typecode, Slice a, void* new_elem_ptr, int new_elem_size);
 extern void SliceGet(Slice a, int size, int nth, void* value);
 extern void SlicePut(Slice a, int size, int nth, void* value);
 extern int SliceLen(Slice a, int size);

@@ -24,8 +24,18 @@ String MakeStringFromC(const char* s) {
   return z;
 }
 
-Slice MakeSlice() {
-  Slice z = {0, 0, 0};
+Slice MakeSlice(const char* typecode, int len, int cap, int size) {
+  // cap is ignored.
+  if (!len) {
+    Slice z0 = {0, 0, 0};
+    return z0;
+  }
+  // TODO: use typecode to alloc correct kind.
+  byte cls = C_Bytes;
+  word p = oalloc(len*size, cls);
+  assert(p);
+
+  Slice z = {p, 0, len*size};
   return z;
 }
 
@@ -56,7 +66,7 @@ Slice AppendSliceInt(Slice a, P_int x) {
   return a;
 }
 
-Slice SliceAppend(Slice a, void* addr, int size) {
+Slice SliceAppend(const char* typecode, Slice a, void* new_elem_ptr, int new_elem_size) {
   if (!a.base) {
     // Initial allocation.
     word p = oalloc(INITIAL_CAP, 1);
@@ -66,7 +76,7 @@ Slice SliceAppend(Slice a, void* addr, int size) {
     a.len = 0;
   }
   byte cap = ocap(a.base);
-  if (a.offset + a.len + size > cap) {
+  if (a.offset + a.len + new_elem_size > cap) {
     assert (cap < MAX_CAP);
 
     word p = oalloc(MAX_CAP, 1);
@@ -74,9 +84,9 @@ Slice SliceAppend(Slice a, void* addr, int size) {
     omemcpy(p, a.base, cap);
     a.base = p;
   }
-  assert(a.offset + a.len + size <= cap);
-  memcpy((char*)a.base + a.offset + a.len, addr, size);
-  a.len += size;
+  assert(a.offset + a.len + new_elem_size <= cap);
+  memcpy((char*)a.base + a.offset + a.len, new_elem_ptr, new_elem_size);
+  a.len += new_elem_size;
   return a;
 }
 void SliceGet(Slice a, int size, int nth, void* value) {
