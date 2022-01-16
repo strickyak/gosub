@@ -2010,7 +2010,7 @@ func (co *Compiler) VisitCall(callx *CallX) Value {
 		for i := 0; i < numExtras; i++ {
 			y := co.ReifyAs(argVals[numNormal+i], extraSliceType.E).ToC()
 
-			co.P("%s = SliceAppend(%q, %s, &%s, sizeof(%s)); // L1954: For extra input #%d", extraSliceType.E.TypeCode(), sliceVar.CName, sliceVar.CName, y, y, i)
+			co.P("%s = SliceAppend(%q, %s, &%s, sizeof(%s)); // L1954: For extra input #%d", sliceVar.CName, extraSliceType.E.TypeCode(), sliceVar.CName, y, y, i)
 		}
 
 		fins = append(fins, NameTV{sliceVar.CName, extraSliceType})
