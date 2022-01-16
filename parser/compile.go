@@ -448,7 +448,7 @@ func (o *PointerTV) TypeOfHandle() (z string, ok bool) {
 func (o *PrimTV) CType() string      { return "P_" + o.name }
 func (o *SliceTV) CType() string     { return F("Slice_(%s)", o.E.CType()) }
 func (o *MapTV) CType() string       { return F("Map_(%s,%s)", o.K.CType(), o.V.CType()) }
-func (o *StructTV) CType() string    { return F("struct %s ", o.StructRec.cname) }
+func (o *StructTV) CType() string    { return F("struct %s", o.StructRec.cname) }
 func (o *PointerTV) CType() string   { return F("%s*", o.E.CType()) }
 func (o *InterfaceTV) CType() string { return F("Interface_(%s)", o.InterfaceRec.name) }
 func (o *TypeTV) CType() string      { return "Type" }
@@ -1330,7 +1330,8 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 			num := len(cg.classes)
 			cg.classNums[cname] = num
 			cg.classes = append(cg.classes, cname)
-			pr("#define C_%s %d", cname, num)
+			pr("#define CLASS_%s %d", cname, num)
+			pr("struct %s; // L1334", cname, cname)
 		case *InterfaceTV:
 			t.InterfaceRec.cname = CName(cm.Package, t.InterfaceRec.name)
 		}
@@ -1403,12 +1404,26 @@ func (cm *CMod) ThirdDefineGlobals(p *Parser, pr printer) {
 		//< pr("typedef %s %s;", g.istype.CType(), g.CName)
 		if st, ok := g.istype.(*StructTV); ok {
 			L("omg struct! %v :: %d fields %d meths", st, len(st.StructRec.Fields), len(st.StructRec.Meths))
-			pr("typedef struct %s {", g.CName)
+
+			pr("#ifndef DEFINED_%s", g.CName)
+			pr("struct %s {", g.CName)
 			for _, field := range st.StructRec.Fields {
 				L("omg field %q :: %v", field.name, field.TV)
 				pr("  %s f_%s;", field.TV.CType(), field.name)
 			}
-			pr("} %s; // struct L1366", g.CName)
+			pr("}; // struct L1366")
+			pr("#define DEFINED_%s 1", g.CName)
+			pr("#endif")
+
+			/*
+				pr("typedef struct %s {", g.CName)
+				for _, field := range st.StructRec.Fields {
+					L("omg field %q :: %v", field.name, field.TV)
+					pr("  %s f_%s;", field.TV.CType(), field.name)
+				}
+				pr("} %s; // struct L1366", g.CName)
+			*/
+
 			for _, meth := range st.StructRec.Meths {
 				L("omg meth %q :: %v", meth.name, meth.TV)
 				// too soon:
@@ -1422,7 +1437,11 @@ func (cm *CMod) ThirdDefineGlobals(p *Parser, pr printer) {
 		Say("CName", g.CName)
 		Say("typeof", g.typeof)
 		Say("CType", g.typeof.CType())
-		pr("%s %s; //1390", g.typeof.CType(), g.CName)
+		pr("#ifdef JUST_DEFS")
+		pr("extern %s %s; //1441", g.typeof.CType(), g.CName)
+		pr("#else")
+		pr("%s %s; //1443", g.typeof.CType(), g.CName)
+		pr("#endif")
 	}
 	for _, g := range p.Funcs {
 		Say("Third Funcs: " + g.Package + " " + g.name)
@@ -1528,6 +1547,7 @@ var coHack *Compiler
 var prHack printer
 
 func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
+	pr("#ifndef JUST_DEFS")
 	cmHack = cm
 	prHack = pr
 	for _, g := range p.Vars {
@@ -1570,43 +1590,8 @@ func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 		} else {
 			pr("// Cannot print method without body -- it must be extern.")
 		}
-
-		/* SOON
-		methRec := g.initx.(*FunctionX).FuncRec
-		rcvr := *methRec.Receiver
-		Say("Fifth(Meth) " + g.Package + " " + g.name + " @ " + rcvr.String())
-
-		// Type must be a pointer.
-		pointedType, ok := rcvr.TV.(*PointerTV)
-		if !ok {
-			Panicf("To generate method for *STRUCT, expected pointer, got %v", rcvr.TV)
-		}
-
-		structType, ok := pointedType.E.(*StructTV)
-		if !ok {
-			Panicf("To generate method for *STRUCT, expected struct, got %v", pointedType.E)
-		}
-
-		Say("Fifth " + g.Package + " #" + structType.ToC() + "# " + g.name)
-		pr("// Fifth METH: #T #s %q;" /#g.Value.Type(), g.Value.Type().CType(),#/, g.name)
-		co := cm.QuickCompiler(g)
-		co.EmitFunc(g)
-		pr(co.Buf.String())
-
-		/#
-			if structType, ok := pointedType.E.(*StructTV); ok |
-				rec := structType.StructRec
-				methNat := X_NameAndType{
-					g.name,
-					nil,
-					&FunctionTV{BaseTV{}, methRec},
-					g.Package,
-				}
-				// methNat = X_FillTV(qc, methNat, g.initx)
-				rec.Meths = append(rec.Meths, methNat)
-		#/
-		*/
 	}
+	pr("#endif // JUST_DEFS")
 }
 
 func (cm *CMod) VisitGlobals(p *Parser, pr printer) {
@@ -1982,7 +1967,7 @@ func (co *Compiler) VisitConstructor(ctorX *ConstructorX) Value {
 		panic(F("L1764: Constructor must be for struct: %s", g.CName))
 	}
 	return &CVal{
-		c: Format("(%s*) oalloc(sizeof(%s), C_%s)", g.CName, g.CName, g.CName),
+		c: Format("(struct %s*) oalloc(sizeof(struct %s), CLASS_%s)", g.CName, g.CName, g.CName),
 		t: &PointerTV{t},
 	}
 }

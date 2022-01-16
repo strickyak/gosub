@@ -1,5 +1,9 @@
 #include "runt.h"
 
+#define JUST_DEFS
+#include "defs.h"
+#undef JUST_DEFS
+
 extern void main__main();
 
 int main(int argc, const char* argv[]) {

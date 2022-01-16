@@ -1,12 +1,15 @@
 T=demo/wc.go
 
-all:
+all: defs
 	go run gosub.go  < $T   > $T.c
 	clang-format -i --style=Google $T.c
 	cat -n $T.c >&2
 	cat $T.c | sed 's;//.*;;' | sed '/^ *$$/d' >&2
 	cc -g -Iruntime $T.c runtime/runt.c runtime/bigmem.c
 	./a.out
+
+defs:
+	go run gosub.go < runtime/defs.go > runtime/defs.h
 
 test: _FORCE_
 	set -x; for x in test/t*.go ; do ./gu test $$x ; done
