@@ -13,7 +13,7 @@ function compile() {
   (
     rm -f ___.*
     go run gosub.go < $1 > ___.defs.h 2>___.err || { cat ___.err ; exit 1 ; }
-    clang-format -i --style=Google $T.c || true
+    clang-format -i --style=Google ___.*.c || true
     (
       echo '#include "___.defs.h"'
       echo 'void initvars() {'

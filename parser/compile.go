@@ -1598,7 +1598,7 @@ func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 		pr("void initmods() {")
 
 		for _, mod := range cm.CGen.ModsInOrder {
-			pr("extern void module_init_%s();", mod)
+			pr("extern void initmod_%s();", mod)
 			pr("initmod_%s();", mod)
 		}
 		pr("extern void initmod_main();")
