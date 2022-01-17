@@ -11,6 +11,12 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+
+// open(), creat()
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
 typedef unsigned char bool;
 typedef unsigned char byte;
 typedef unsigned long word;
@@ -75,6 +81,8 @@ typedef struct {
 
 extern Slice NilSlice;
 extern void F_BUILTIN_println(int i);
+
+#define STRING_START(strptr) ((char*)(strptr)->base + (strptr)->offset)
 
 extern void panic_s(const char*);
 extern String MakeStringFromC(const char* s);

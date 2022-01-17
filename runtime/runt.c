@@ -186,4 +186,27 @@ void log__Fatalf(P_string in_format, Slice_(P__any_) in_args) {
 }
 #endif
 
+#ifdef USING_MODULE_unix
+void unix__Open(P_string filename, P_uint flags, P_uint mode,
+                P_int* fd_out, P_int* errno_out) {
+  const char* s = STRING_START(&filename);
+  int fd = open(s, flags, mode);
+  *fd_out = fd;
+  *errno_out = 0;
+  if (fd<0) {
+    *errno_out = errno;
+  }
+}
+void unix__Creat(P_string filename, P_uint mode,
+                P_int* fd_out, P_int* errno_out) {
+  const char* s = STRING_START(&filename);
+  int fd = creat(s, mode);
+  *fd_out = fd;
+  *errno_out = 0;
+  if (fd<0) {
+    *errno_out = errno;
+  }
+}
+#endif
+
 // END

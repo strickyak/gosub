@@ -1,5 +1,7 @@
 package io
 
+import "unix"
+
 type Error struct {
 	message string
 }
