@@ -7,7 +7,7 @@ all:
 	./wc.bin < demo/wc.go
 
 test: _FORCE_
-	set -x; for x in test/t*.go ; do ./gu test $$x ; done
+	set -x; for x in test/t*.go ; do ./gu test $$x || { echo BROKEN: $$x; exit 63; } ; done
 	echo ALL TESTS GOOD.
 
 ci:
