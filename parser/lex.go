@@ -188,16 +188,44 @@ func (o *Lex) _Next_() {
 		for c != '\'' {
 			if c == '\\' {
 				c = o.ReadChar()
-				if c == 'n' {
+
+				switch c {
+				case 'a':
+					c = '\a'
+				case 'b':
+					c = '\b'
+				case 'f':
+					c = '\f'
+				case 'n':
 					c = '\n'
-				} else if '0' <= c && c <= '7' {
+				case 'r':
+					c = '\r'
+				case 't':
+					c = '\t'
+				case 'v':
+					c = '\v'
+				case '\\':
+					c = '\\'
+				case '\'':
+					c = '\''
+				case '"':
+					c = '"'
+				case 'x':
 					c2 := o.ReadChar()
 					c3 := o.ReadChar()
-					if !('0' <= c2 && c2 <= '7') || !('0' <= c3 && c3 <= '7') {
-						panic("bad octal in char literal")
+					c = (hexval(c2) << 4) | hexval(c3)
+
+				default:
+					if '0' <= c && c <= '7' {
+						c2 := o.ReadChar()
+						c3 := o.ReadChar()
+						if !('0' <= c2 && c2 <= '7') || !('0' <= c3 && c3 <= '7') {
+							panic("bad octal in char literal")
+						}
+						c = (octval(c) << 6) | (octval(c2) << 3) | octval(c3)
 					}
-					c = byte(64*int(c-'0') + 8*int(c2-'0') + int(c3-'0'))
 				}
+
 			}
 			s = append(s, c)
 			c = o.ReadChar()
@@ -221,4 +249,22 @@ func (o *Lex) _Next_() {
 
 	o.Kind, o.Word = L_Punc, string(c)
 	return
+}
+
+func octval(x byte) byte {
+	if '0' <= x && x <= '7' {
+		return x - '0'
+	}
+	panic(F("Not an octal char: %q", []byte{x}))
+}
+
+func hexval(x byte) byte {
+	if '0' <= x && x <= '9' {
+		return x - '0'
+	} else if 'a' <= x && x <= 'f' {
+		return x - 'a' + 10
+	} else if 'A' <= x && x <= 'F' {
+		return x - 'A' + 10
+	}
+	panic(F("Not a hex char: %q", []byte{x}))
 }
