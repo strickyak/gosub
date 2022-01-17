@@ -1,4 +1,4 @@
-#!/bin/sh -ex
+#!/bin/sh -eu
 #
 # "gu": run "g"osub on "u"nix.
 #
@@ -24,7 +24,7 @@ function compile() {
     do
       cc -g -c -Iruntime $x
     done
-    ar qvcs ___.a ___.*.o
+    ar qcs ___.a ___.*.o
     cc -g -I. -Iruntime -o $T runtime/runt.c runtime/bigmem.c  ___.a
     ls -l $T
 
