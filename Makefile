@@ -1,27 +1,22 @@
 T=demo/wc.go
 
-all: defs
-	go run gosub.go  < $T   > $T.c
-	clang-format -i --style=Google $T.c
-	cat -n $T.c >&2
-	cat $T.c | sed 's;//.*;;' | sed '/^ *$$/d' >&2
-	cc -g -Iruntime $T.c runtime/runt.c runtime/bigmem.c
-	./a.out
-
-defs:
-	go run gosub.go < runtime/defs.go > runtime/defs.h
+all:
+	sh ./gu build $T
+	wc < demo/wc.go
+	go run demo/wc.go < demo/wc.go
+	./wc.bin < demo/wc.go
 
 test: _FORCE_
 	set -x; for x in test/t*.go ; do ./gu test $$x ; done
 	echo ALL TESTS GOOD.
 
 ci:
-	set -x; ci-l runtime/*.c runtime/*.h Makefile *.go */*.go
+	set -x; ci-l runtime/*.c runtime/*.h Makefile *.go */*.go *.sh Makefile
 
 fmt:
 	gofmt -w *.go */*.go
 
 clean:
-	set -x ; rm -f *.s *.o a.out */*.go.c */*.want */*.got _ __ _[0-9]*
+	set -x ; rm -f *.s *.o *.bin a.out */*.go.c */*.want */*.got _ __ ___*
 
 _FORCE_:

@@ -3,19 +3,73 @@
 # "gu": run "g"osub on "u"nix.
 #
 # Usage:
-#   alias gu=./gu 
+#   alias gu=./gu
 #   gu test test/t1.go
+#   gu build demo/wc.go
+#   gu run demo/wc.go < Makefile
 
-D=$(dirname $0)
+function compile() {
+  T=$(basename $1 .go).bin
+  (
+    rm -f ___.*
+    go run gosub.go < $1 > ___.defs.h 2>___.err || { cat ___.err ; exit 1 ; }
+    clang-format -i --style=Google $T.c || true
+    (
+      echo '#include "___.defs.h"'
+      echo 'void initvars() {'
+      echo '}'
+    ) > ___.initvars.c
+
+    for x in ___.*.c
+    do
+      cc -g -c -Iruntime $x
+    done
+    ar qvcs ___.a ___.*.o
+    cc -g -I. -Iruntime -o $T runtime/runt.c runtime/bigmem.c  ___.a
+    ls -l $T
+
+    (
+      echo '#include "___.defs.h"'
+      echo 'void initvars() {'
+      for x in $(nm $T  | awk '/__initvar_[1-9][0-9]*$/ {print $NF}')
+      do
+        echo "extern void $x();"
+        echo "$x();"
+      done
+      echo '}'
+    ) > ___.initvars.c
+
+    cc -g -c -Iruntime ___.initvars.c
+    ar rvcs ___.a ___.initvars.o
+    cc -g -I. -Iruntime -o $T runtime/runt.c runtime/bigmem.c  ___.a
+    ls -l $T
+  ) >&2
+  echo $T
+}
+
+case $2 in
+  *.go ) : good ;;
+  * )
+    echo "Usage:  $0 build filename.go" >&2
+    echo "Usage:  $0 test filename.go" >&2
+    echo "Usage:  $0 run filename.go args..." >&2
+    exit 13
+esac
 
 case $1 in
+  build )
+    compile $2
+    ;;
+  run )
+    BIN=$(compile $2)
+    shift
+    shift
+    $(dirname $BIN)/$(basename $BIN) "$@"
+    ;;
   test )
-    go run "$D/gosub.go" --libdir $D/lib/   < $2   > $2.c
-    clang-format -i --style=Google $2.c || : optional
-    cat -n $2.c >&2
-    cat $2.c | sed 's;//.*;;' | sed '/^ *$/d' | sed 's/^/| /' >&2
-    cc -g -I"$D/runtime" $2.c $D/runtime/runt.c $D/runtime/bigmem.c
-    ./a.out > $2.got
+    compile $2
+
+    ./$(basename $2 .go).bin > $2.got
     grep '^// expect:' <$2 | sed 's;// expect:;;' > $2.want
     if diff -w $2.want $2.got
     then
@@ -26,6 +80,9 @@ case $1 in
     fi
     ;;
   * )
-    echo "$0: Unknown command: $1" >&2
+    echo "Usage:  $0 build filename.go" >&2
+    echo "Usage:  $0 test filename.go" >&2
+    echo "Usage:  $0 run filename.go args..." >&2
     exit 13
+    ;;
 esac

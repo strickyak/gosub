@@ -1285,15 +1285,16 @@ func (cm *CMod) defineOnce(g *GDef) {
 	cm.Members[g.name] = g
 	g.Package = cm.Package
 	if g.name == "init" {
-		ser := Serial("init")
+		ser := Serial("initmod")
 		g.CName = CName(g.Package, ser)
-		cm.CGen.initFuncs = append(cm.CGen.initFuncs, g.CName)
+		cm.initFuncs = append(cm.initFuncs, g.CName)
 	} else {
 		g.CName = CName(g.Package, g.name)
 	}
 }
 
 func (cm *CMod) FirstSlotGlobals(p *Parser, pr printer) {
+	pr("#define USING_MODULE_%s", cm.Package)
 	// first visit: Slot the globals.
 	for _, g := range p.Imports {
 		cm.defineOnce(g)
@@ -1362,17 +1363,6 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 		}
 		g.typeof = tv
 		g.istype = nil // to be sure
-		if g.initx != nil {
-			// Move this from Second to Fifth?
-			panic("initx L1259")
-			// We are writing the global init() function.
-			initS := &AssignS{
-				A:  []Expr{&IdentX{g.name, cm}},
-				Op: "=",
-				B:  []Expr{g.initx},
-			}
-			initS.VisitStmt(cm.QuickCompiler(g))
-		}
 		pr("extern %s %s; // L1320", g.typeof.CType(), g.CName)
 	}
 }
@@ -1426,34 +1416,11 @@ func (cm *CMod) ThirdDefineGlobals(p *Parser, pr printer) {
 			pr("}; // struct L1366")
 			pr("#define DEFINED_%s 1", g.CName)
 			pr("#endif")
-
-			/*
-				pr("typedef struct %s {", g.CName)
-				for _, field := range st.StructRec.Fields {
-					L("omg field %q :: %v", field.name, field.TV)
-					pr("  %s f_%s;", field.TV.CType(), field.name)
-				}
-				pr("} %s; // struct L1366", g.CName)
-			*/
-
-			for _, meth := range st.StructRec.Meths {
-				L("omg meth %q :: %v", meth.name, meth.TV)
-				// too soon:
-				//::: pr("extern  %s %s; L1370", meth.TV.CType(), CName(g.CName, meth.name))
-			}
 		}
 	}
 	for _, g := range p.Vars {
 		Say("Third Vars: " + g.Package + " " + g.name)
-		Say("var", g)
-		Say("CName", g.CName)
-		Say("typeof", g.typeof)
-		Say("CType", g.typeof.CType())
-		pr("#ifdef JUST_DEFS")
 		pr("extern %s %s; //1441", g.typeof.CType(), g.CName)
-		pr("#else")
-		pr("%s %s; //1443", g.typeof.CType(), g.CName)
-		pr("#endif")
 	}
 	for _, g := range p.Funcs {
 		Say("Third Funcs: " + g.Package + " " + g.name)
@@ -1482,31 +1449,6 @@ func (cm *CMod) ThirdDefineGlobals(p *Parser, pr printer) {
 }
 
 func (cm *CMod) FourthInitGlobals(p *Parser, pr printer) {
-	// Fourth: Initialize the global vars.
-	if false {
-		pr("void INIT() {")
-		say := func(how string, g *GDef) {
-			pr("// Fourth == %s %s ==", how, g.CName)
-		}
-		for _, g := range p.Vars {
-			Say("Fourth(Var) " + g.Package + " " + g.name)
-			say("var", g)
-			if g.initx != nil {
-				initS := &AssignS{
-					A:  []Expr{&IdentX{g.name, cm}},
-					Op: "=",
-					B:  []Expr{g.initx},
-				}
-				// Emit initialization of var into init() function.
-				initS.VisitStmt(cm.QuickCompiler(g))
-			}
-		}
-		for _, g := range p.Funcs {
-			Say("// Fourth(Func) TODO: Inline init functions:", g)
-		}
-		pr("} // INIT()")
-	}
-
 	for _, g := range p.Funcs {
 		Say("Fourth Func: " + g.Package + " " + g.name)
 		co := cm.QuickCompiler(g)
@@ -1525,32 +1467,6 @@ func (cm *CMod) FourthInitGlobals(p *Parser, pr printer) {
 		co.EmitFunc(g, true /*justDeclare*/)
 		pr("\n%s\n", co.Buf.String())
 		co.P("// Finish Fourth Meth: " + g.Package + " " + g.name)
-
-		/* SOON
-		// Attach methods to their Struct.
-		methRec := g.initx.(*FunctionX).FuncRec
-		rcvr := *methRec.Receiver
-
-		Say("Fourth(Meth)1 " + g.Package + " " + g.name + " @ " + rcvr.String())
-		qc := cm.CGen.Mods[rcvr.Package].QuickCompiler(g)
-		rcvr = CompileTX(qc, rcvr, rcvr.Expr)
-		g.initx.(*FunctionX).FuncRec.Receiver = &rcvr
-		Say("Fourth(Meth)2 " + g.Package + " " + g.name + " @ " + rcvr.String())
-
-		// Type must be a pointer.
-		if pointedType, ok := rcvr.TV.(*PointerTV); ok {
-			if structType, ok := pointedType.E.(*StructTV); ok {
-				rec := structType.StructRec
-				meth := NameTV{ g.name, &FunctionTV{BaseTV{}, methRec} }
-				rec.Meths = append(rec.Meths, meth)
-
-			} else {
-				log.Panicf("expected *STRUCT receiver, got (not a struct) %v", rcvr)
-			}
-		} else {
-			log.Panicf("expected *STRUCT receiver, got (not a pointer) %v", rcvr)
-		}
-		*/
 	}
 }
 
@@ -1558,15 +1474,43 @@ var cmHack *CMod
 var coHack *Compiler
 var prHack printer
 
+type FilePrinter struct {
+	w *os.File
+}
+
+func NewFilePrinter(filename string) *FilePrinter {
+	w, err := os.Create(filename)
+	if err != nil {
+		panic(F("cannot open %q: %v", filename, err))
+	}
+	return &FilePrinter{w}
+}
+
+func (fp *FilePrinter) GetPrinter() func(string, ...interface{}) {
+	pr := func(format string, args ...interface{}) {
+		fmt.Fprintf(fp.w, format+"\n", args...)
+	}
+	return pr
+}
+func (fp *FilePrinter) Close() {
+	fp.w.Close()
+}
+
 func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
-	pr("#ifndef JUST_DEFS")
 	cmHack = cm
 	prHack = pr
+
 	for _, g := range p.Vars {
-		Say(g.Package, g.name, "5V")
+		Say("Fifth Var " + g.Package + " " + g.name)
+		fp := NewFilePrinter(F("___.var.%s.c", g.CName))
+		pr := fp.GetPrinter()
+		pr("// Fifth FUNC: %T %s %q;", "#", "#", g.CName)
+		pr(`#include "___.defs.h"`)
+		pr("%s %s; //1443", g.typeof.CType(), g.CName)
 		if g.initx != nil {
-			ser := Serial("init")
-			pr("void %s() { // L1530", ser)
+			ser := Serial("initvar")
+			cname := CName(g.CName, ser)
+			//pr("void %s__%s() { // L1530", g.CName, ser)
 
 			// We are writing the global init() function.
 			initS := &AssignS{
@@ -1574,13 +1518,36 @@ func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 				Op: "=",
 				B:  []Expr{g.initx},
 			}
-			initS.VisitStmt(cm.QuickCompiler(g))
-			pr("}")
+			funcX := &FunctionX{
+				&FuncRecX{
+					Body: &Block{
+						locals: make(map[string]*GDef),
+						stmts:  []Stmt{initS},
+					},
+				},
+			}
+			co := cm.QuickCompiler(g)
+			gdef := &GDef{
+				name:   "initvar",
+				CName:  cname,
+				initx:  funcX,
+				typex:  funcX,
+				typeof: &FunctionTV{funcX.FuncRecX.VisitFuncRecX(co)},
+			}
+
+			coHack = co
+			co.EmitFunc(gdef, false /*justDeclare*/)
+			pr("\n%s\n", co.Buf.String())
+			//pr("}")
 		}
 	}
+
 	for _, g := range p.Funcs {
-		Say("Fifth " + g.Package + " " + g.name)
+		Say("Fifth Func " + g.Package + " " + g.name)
+		fp := NewFilePrinter(F("___.func.%s.c", g.CName))
+		pr := fp.GetPrinter()
 		pr("// Fifth FUNC: %T %s %q;", "#", "#", g.CName)
+		pr(`#include "___.defs.h"`)
 		if g.initx != nil {
 			co := cm.QuickCompiler(g)
 			coHack = co
@@ -1589,11 +1556,15 @@ func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 		} else {
 			pr("// Cannot print function without body -- it must be extern.")
 		}
+		fp.Close()
 	}
 
 	for _, g := range p.Meths {
-		Say("Fifth " + g.Package + " " + g.name)
+		Say("Fifth Meth " + g.Package + " " + g.name)
+		fp := NewFilePrinter(F("___.meth.%s.c", g.CName))
+		pr := fp.GetPrinter()
 		pr("// Fifth METH: %T %s %q;", "#", "#", g.CName)
+		pr(`#include "___.defs.h"`)
 		if g.initx != nil {
 			co := cm.QuickCompiler(g)
 			coHack = co
@@ -1602,16 +1573,40 @@ func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 		} else {
 			pr("// Cannot print method without body -- it must be extern.")
 		}
+		fp.Close()
+	}
+
+	{
+		fp := NewFilePrinter(F("___.initmod.%s.c", cm.Package))
+		pr := fp.GetPrinter()
+		pr(`#include "___.defs.h"`)
+		pr("void initmod_%s() {", cm.Package)
+
+		for _, funcName := range cm.initFuncs {
+			pr("extern void %s();", funcName)
+			pr("%s();", funcName)
+		}
+
+		pr("}")
+		fp.Close()
 	}
 
 	if cm.Package == "main" {
-		pr("void init() {")
-		for _, initName := range cm.CGen.initFuncs {
-			pr("%s();", initName)
+		fp := NewFilePrinter("___.initmods.c")
+		pr := fp.GetPrinter()
+		pr(`#include "___.defs.h"`)
+		pr("void initmods() {")
+
+		for _, mod := range cm.CGen.ModsInOrder {
+			pr("extern void module_init_%s();", mod)
+			pr("initmod_%s();", mod)
 		}
+		pr("extern void initmod_main();")
+		pr("initmod_main();")
+
 		pr("}")
+		fp.Close()
 	}
-	pr("#endif // JUST_DEFS")
 }
 
 func (cm *CMod) VisitGlobals(p *Parser, pr printer) {
@@ -1642,9 +1637,10 @@ type Scope interface {
 }
 
 type CMod struct { // isa Scope
-	Package string
-	CGen    *CGen
-	Members map[string]*GDef
+	Package   string
+	CGen      *CGen
+	Members   map[string]*GDef
+	initFuncs []string
 }
 
 func (cm *CMod) Find(s string) *GDef {
@@ -1674,13 +1670,12 @@ type CGen struct {
 	Mods        map[string]*CMod // by module name
 	BuiltinMod  *CMod
 	Prims       *CMod
-	ModsInOrder []string // reverse definition order
+	ModsInOrder []string
 	Options     *Options
 	W           *bufio.Writer
 
 	classes   []string
 	classNums map[string]int
-	initFuncs []string
 }
 
 func NewCMod(name string, cg *CGen) *CMod {
@@ -2557,9 +2552,6 @@ func (co *Compiler) FindName(name string) *GDef {
 }
 func (co *Compiler) DefineLocalTemp(tempName string, tempType TypeValue, initC string) *GDef {
 	gd := co.DefineLocal("tmp", tempName, tempType)
-	//if strings.HasSuffix(gd.CName, "_109") {
-	//panic(109)
-	//}
 	if initC != "" {
 		co.P("%s = %s; // L1632", gd.CName, initC)
 	}

@@ -1,16 +1,17 @@
 #include "runt.h"
 
-#define JUST_DEFS
-#include "defs.h"
-#undef JUST_DEFS
+#include "___.defs.h"
 
 extern void main__main();
-extern void init();
+extern void initmods();
+extern void initvars();
 
 int main(int argc, const char* argv[]) {
   oinit(0, 0, 0);  // noop
-  fprintf(stderr, "## Init.\n");
-  init();
+  fprintf(stderr, "## Init Vars.\n");
+  initvars();
+  fprintf(stderr, "## Init Mods.\n");
+  initmods();
   fprintf(stderr, "## Main.\n");
   main__main();
   fprintf(stderr, "## Exit.\n");
@@ -146,6 +147,7 @@ void builtin__println(Slice args) {
   printf("\n");
 }
 
+#ifdef USING_MODULE_os
 void os__File__Read(struct os__File *in_f, Slice_(P_byte) in_p, P_int *out_n,
                     Interface_(error) * out_err) {
   //- fprintf(stderr, "os__File__Read <== fd=%d. buflen=%d.\n", in_f->f_fd, in_p.len);
@@ -175,10 +177,13 @@ void os__File__Read(struct os__File *in_f, Slice_(P_byte) in_p, P_int *out_n,
 
   //- fprintf(stderr, "os__File__Read ==> %d (%lx)\n", *out_n, (unsigned long)*out_err);
 }
+#endif
 
+#ifdef USING_MODULE_log
 void log__Fatalf(P_string in_format, Slice_(P__any_) in_args) {
   fprintf(stderr, "TODO: log__Fatalf\n");
   exit(13);
 }
+#endif
 
 // END

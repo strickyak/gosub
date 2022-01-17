@@ -2,10 +2,10 @@ OLD*/
 RCS/
 *,v
 *.swp
+*.bin
 a.out
 *.s
 *.o
-*.g.c
 *.go.c
 *.got
 *.want
@@ -14,4 +14,4 @@ a.out
 ,*
 _
 __
-_[0-9]*
+___*

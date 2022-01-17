@@ -4,7 +4,7 @@ type File struct {
 	fd int
 }
 
-var Stdin *File
+var Stdin *File = &File{fd: 0}
 var Stdout *File
 var Stderr *File
 
