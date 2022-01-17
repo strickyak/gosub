@@ -1986,6 +1986,7 @@ func (co *Compiler) VisitConstructor(ctorX *ConstructorX) Value {
 	if !ok {
 		panic(F("L1764: Constructor must be for address of struct: %s", g.CName))
 	}
+
 	pointerTV := &PointerTV{structTV}
 	ser := Serial("ctor")
 	creation := F("(struct %s*) oalloc(sizeof(struct %s), CLASS_%s)", g.CName, g.CName, g.CName)
@@ -1997,16 +1998,13 @@ func (co *Compiler) VisitConstructor(ctorX *ConstructorX) Value {
 	}
 
 	return inst
-	return &CVal{
-		c: inst.CName,
-		t: pointerTV,
-	}
 }
 func (co *Compiler) VisitFunction(funcX *FunctionX) Value {
 	L("VisitFunction: FuncRecX = %#v", funcX.FuncRecX)
 	funcRec := funcX.FuncRecX.VisitFuncRecX(co)
 	L("VisitFunction: FuncRec = %#v", funcRec)
 	t := &FunctionTV{funcRec}
+	panic(2007)
 	return &CVal{c: "?1702?", t: t}
 }
 
@@ -2414,7 +2412,7 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 		} else {
 			target = ass.A[0].VisitExpr(co)
 		}
-		co.AssignSingle(target, ass.B[0].VisitExpr(co))
+		co.AssignSingle(target, rvalues[0])
 
 	default:
 		// CASE: more than 1: same: (right) == len(left)
@@ -2555,6 +2553,9 @@ func (co *Compiler) FindName(name string) *GDef {
 }
 func (co *Compiler) DefineLocalTemp(tempName string, tempType TypeValue, initC string) *GDef {
 	gd := co.DefineLocal("tmp", tempName, tempType)
+	//if strings.HasSuffix(gd.CName, "_109") {
+	//panic(109)
+	//}
 	if initC != "" {
 		co.P("%s = %s; // L1632", gd.CName, initC)
 	}
