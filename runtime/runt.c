@@ -115,46 +115,41 @@ int SliceLen(Slice a, int size) {
 }
 
 void builtin__println(Slice args) {
-  if (!args.base) return;
-
-  fprintf(stderr, "## println: args{$%lx, $%x, $%x}\n", (long)args.base, args.offset, args.len);
-
-  if (true) {
-
+  if (args.base) {
     for (int i=0; i*sizeof(P__any_)<args.len; i++) {
+      if (i>0) putchar(' ');
+
       P__any_* p= (P__any_*)(args.base + args.offset);
-      fprintf(stderr, "typecode: %s\n", p[i].typecode);
-      if (!strcmp(p[i].typecode, "s")) {
-        printf("%s ", *(char**)(p[i].pointer));
-      } else {
-        printf("%d ", *(int*)(p[i].pointer));
+      switch (p[i].typecode[0]) {
+        case 's':
+          printf("%s", *(char**)(p[i].pointer));
+          break;
+        case 'z':
+          printf("%s", *(P_bool*)(p[i].pointer) ? "true" : "false");
+          break;
+        case 'b':
+          printf("%d", *(P_byte*)(p[i].pointer));
+          break;
+        case 'i':
+          printf("%d", *(P_int*)(p[i].pointer));
+          break;
+        case 'u':
+          printf("%u", *(P_uint*)(p[i].pointer));
+          break;
+        default:
+          fprintf(stderr, "(typecode `%s` not implemented)", p[i].typecode);
+          exit(13);
+          break;
       }
     }
-
-  } else if (true) {
-
-    for (int i=0; i*sizeof(P_int)<args.len; i++) {
-      P_int* p= (P_int*)(args.base + args.offset);
-      printf("%d ", p[i]);
-    }
-
-  } else {
-
-    for (int i=0; i<args.len; i++) {
-      byte* p= (byte*)(args.base + args.offset);
-      printf("$%02x ", p[i]);
-    }
-
   }
-
   printf("\n");
 }
 
 void os__File__Read(struct os__File *in_f, Slice_(P_byte) in_p, P_int *out_n,
                     Interface_(error) * out_err) {
-  fprintf(stderr, "os__File__Read <== fd=%d. buflen=%d.\n", in_f->f_fd, in_p.len);
+  //- fprintf(stderr, "os__File__Read <== fd=%d. buflen=%d.\n", in_f->f_fd, in_p.len);
 
-  //< int cc = fread((char*)(in_p.base) + in_p.offset, in_p.len, 1, fdopen(in_f->f_fd, "r"));
   int cc = read(in_f->f_fd, (char*)(in_p.base) + in_p.offset, in_p.len);
   *out_n = cc;
 
@@ -171,8 +166,6 @@ void os__File__Read(struct os__File *in_f, Slice_(P_byte) in_p, P_int *out_n,
 
     *(struct error**) out_err = (struct error*) io_error;
     return;
-    perror("Failure in os__File__Read");
-    exit(23);
   }
   if (cc==0) {
     *(struct error**) out_err = (struct error*) io__EOF;
@@ -180,7 +173,7 @@ void os__File__Read(struct os__File *in_f, Slice_(P_byte) in_p, P_int *out_n,
     *(struct error**) out_err = (struct error*) 0;
   }
 
-  fprintf(stderr, "os__File__Read ==> %d (%lx)\n", *out_n, (unsigned long)*out_err);
+  //- fprintf(stderr, "os__File__Read ==> %d (%lx)\n", *out_n, (unsigned long)*out_err);
 }
 
 void log__Fatalf(P_string in_format, Slice_(P__any_) in_args) {
