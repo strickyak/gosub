@@ -1270,6 +1270,7 @@ func CompileToC(r io.Reader, sourceName string, w io.Writer, opt *Options) {
 	pr(``)
 	if !opt.SkipBuiltin {
 		cg.LoadModule("builtin", pr)
+		cg.LoadModule("io", pr) // TODO: archive os__File__Read
 	}
 	p := NewParser(r, sourceName)
 	p.ParseModule(cm, cg)
@@ -2347,6 +2348,9 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 					}
 				} else {
 					lclType = rvalues[i].Type()
+				}
+				if lclType == ConstIntTO {
+					lclType = IntTO
 				}
 				gd := co.DefineLocal("v", name, lclType)
 				newLocals = append(newLocals, gd)
