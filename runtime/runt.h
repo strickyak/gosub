@@ -41,6 +41,7 @@ typedef const char* P__type_;
 typedef int P_int;
 typedef int P__const_int_;
 typedef unsigned int P_uint;
+typedef unsigned long P_uintptr;
 typedef unsigned char P_byte;
 typedef unsigned char P_bool;
 typedef void* VoidStar;

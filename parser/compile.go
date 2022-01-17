@@ -479,7 +479,13 @@ func (co *Compiler) ConvertTo(from Value, to Value) {
 
 	// Case of assigning to interface{}.
 	if to.Type() == AnyTO {
-		// TODO: handle a Handle.
+
+		if from.Type() == ConstIntTO {
+			// Cannot take address of integer literal, so create a tmp var for ConstInt case.
+			ser := Serial("constint")
+			from = co.DefineLocalTemp(ser, IntTO, from.ToC())
+		}
+
 		dest := to.ToC()
 		co.P("%s.pointer = &%s; // L458", dest, from.ToC())
 		co.P("%s.typecode = %q; // L459", dest, from.Type().TypeCode())
@@ -1062,6 +1068,7 @@ var ByteTO = &PrimTV{name: "byte", typecode: "b"}
 var ConstIntTO = &PrimTV{name: "_const_int_", typecode: "k"}
 var IntTO = &PrimTV{name: "int", typecode: "i"}
 var UintTO = &PrimTV{name: "uint", typecode: "u"}
+var UintptrTO = &PrimTV{name: "uintptr", typecode: "p"}
 var StringTO = &PrimTV{name: "string", typecode: "s"}
 var TypeTO = &PrimTV{name: "_type_", typecode: "t"}
 var ListTO = &PrimTV{name: "_list_", typecode: "?"} // i.e. Multi-Value with `,`
@@ -1070,13 +1077,14 @@ var ImportTO = &PrimTV{name: "_import_", typecode: "?"}
 var AnyTO = &PrimTV{name: "_any_", typecode: "a"} // i.e. `interface{}`
 var NilTO = &PrimTV{name: "_nil_", typecode: "n"}
 
-// Mapping primative Go type names to Type Objects.
+// A list of Type Objects to be installed.
 var PrimTypeObjList = []*PrimTV{
 	BoolTO,
 	ByteTO,
 	ConstIntTO,
 	IntTO,
 	UintTO,
+	UintptrTO,
 	StringTO,
 	TypeTO,
 	ListTO,
@@ -1093,19 +1101,14 @@ type Value interface {
 	ResolveAsTypeValue() (TypeValue, bool)
 }
 
-// Value in GDef may be too circular?
-func (o *GDef) TYPEOF() TypeValue {
-	return o.typeof
-}
-
 func (o *GDef) String() string {
-	return F("GDef[%s pkg=%s cn=%s t=%v]", o.name, o.Package, o.CName, o.TYPEOF())
+	return F("GDef[%s pkg=%s cn=%s t=%v]", o.name, o.Package, o.CName, o.typeof)
 }
 func (o *GDef) ToC() string {
 	return o.CName
 }
 func (o *GDef) Type() TypeValue {
-	return o.TYPEOF()
+	return o.typeof
 }
 
 func (o *GDef) ResolveAsTypeValue() (TypeValue, bool) {
@@ -1120,9 +1123,9 @@ func (o *ImportVal) ResolveAsTypeValue() (TypeValue, bool)      { return nil, fa
 func (o *BoundMethodVal) ResolveAsTypeValue() (TypeValue, bool) { return nil, false }
 func (o *TypeVal) ResolveAsTypeValue() (TypeValue, bool)        { return o.tv, true }
 
-func ResolveAsInt(v Value) (string, bool) {
+func ResolveAsIntStr(v Value) (string, bool) {
 	switch v.Type().TypeCode() {
-	case "b", "i", "u", "k":
+	case "b", "i", "u", "k", "p":
 		return v.ToC(), true
 	}
 	return "", false
@@ -1190,7 +1193,7 @@ func (val *SubVal) ToC() string {
 	ser := Serial("sub")
 	switch t := val.container.Type().(type) {
 	case *SliceTV:
-		nth, ok := ResolveAsInt(val.subscript)
+		nth, ok := ResolveAsIntStr(val.subscript)
 		if !ok {
 			panic(F("slice subscript must be integer; got %v", val.subscript))
 		}
@@ -1873,7 +1876,7 @@ func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 
 	if a.Type().TypeCode() == "k" {
 		switch b.Type().TypeCode() {
-		case "b", "i", "u":
+		case "b", "i", "u", "p":
 			a = &CVal{a.ToC(), b.Type()}
 		case "k":
 			// Both a and b are ConstInt: return a computed ConstInt.
@@ -1918,14 +1921,14 @@ func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 
 	if b.Type().TypeCode() == "k" {
 		switch a.Type().TypeCode() {
-		case "b", "i", "u":
+		case "b", "i", "u", "p":
 			b = &CVal{b.ToC(), a.Type()}
 		}
 	}
 
 	if a.Type().Equals(b.Type()) {
 		switch a.Type().TypeCode() {
-		case "z", "b", "i", "u":
+		case "z", "b", "i", "u", "p":
 			switch op {
 			case "+", "-", "*", "/", "%":
 				resultType = a.Type()
@@ -2044,7 +2047,7 @@ func (co *Compiler) VisitMake(args []Expr) Value {
 	var ok bool
 	if len(args) >= 2 {
 		a1 := args[1].VisitExpr(co)
-		theLen, ok = ResolveAsInt(args[1].VisitExpr(co))
+		theLen, ok = ResolveAsIntStr(args[1].VisitExpr(co))
 		if !ok {
 			panic(F("expected integer for arg 1 of make; got %v", a1))
 		}
@@ -2052,7 +2055,7 @@ func (co *Compiler) VisitMake(args []Expr) Value {
 	theCap := "0"
 	if len(args) >= 3 {
 		a2 := args[2].VisitExpr(co)
-		theCap, ok = ResolveAsInt(args[2].VisitExpr(co))
+		theCap, ok = ResolveAsIntStr(args[2].VisitExpr(co))
 		if !ok {
 			panic(F("expected integer for arg 2 of make; got %v", a2))
 		}
@@ -2286,7 +2289,7 @@ func (co *Compiler) AssignSingle(left Value, right Value) {
 		switch t.container.Type().(type) {
 		case *SliceTV:
 			// slice, size, nth, value
-			nth, ok := ResolveAsInt(t.subscript)
+			nth, ok := ResolveAsIntStr(t.subscript)
 			if !ok {
 				panic(F("slice subscript must be integer; got %v", t.subscript))
 			}
