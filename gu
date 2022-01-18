@@ -39,10 +39,13 @@ function compile() {
 
     (
       echo '#include "___.defs.h"'
-      echo 'void initvars() {'
       for x in $(nm $T  | awk '/__initvar_[1-9][0-9]*$/ {print $NF}')
       do
         echo "extern void $x();"
+      done
+      echo 'void initvars() {'
+      for x in $(nm $T  | awk '/__initvar_[1-9][0-9]*$/ {print $NF}')
+      do
         echo "$x();"
       done
       echo '}'
