@@ -1,7 +1,7 @@
 T=demo/wc.go
 
 all:
-	sh ./gu build $T
+	bash ./gu build $T
 	wc < demo/wc.go
 	go run demo/wc.go < demo/wc.go
 	./wc.bin < demo/wc.go
