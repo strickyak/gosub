@@ -12,12 +12,12 @@
 #define GUARD_THREE 0xCC
 
 typedef struct BigHeader {
-    byte guard0;
-    byte guard1;
-    byte cap;
-    byte guard2;
-    byte cls;
-    byte guard3;
+  byte guard0;
+  byte guard1;
+  byte cap;
+  byte guard2;
+  byte cls;
+  byte guard3;
 } BigHeader;
 
 void oinit(word begin, word end, omarker fn);
