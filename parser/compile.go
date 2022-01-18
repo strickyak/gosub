@@ -457,41 +457,58 @@ func (o *MultiTV) CType() string     { return "Multi" }
 func (o *FunctionTV) CType() string { return o.FuncRec.PtrTypedef }
 
 func (co *Compiler) ConvertTo(from Value, to Value) {
-	if from.Type().Equals(to.Type()) {
+	co.ConvertToCNameType(from, to.ToC(), to.Type())
+}
+func (co *Compiler) ConvertToCNameType(from Value, toCName string, toType TypeValue) {
+	if from.Type().Equals(toType) {
 		// Same type, just assign.
-		co.P("&%s = %s; // L451", to.ToC(), from.ToC())
+		co.P("%s = %s; // L451", toCName, from.ToC())
 		return
 	}
 
 	if from.Type() == ConstIntTO {
-		switch to.Type() {
+		switch toType {
 		case ByteTO:
-			co.P("%s = (P_byte)(%s);", to.ToC(), from.ToC())
+			co.P("%s = (P_byte)(%s);", toCName, from.ToC())
 			return
 		case IntTO:
-			co.P("%s = (P_int)(%s);", to.ToC(), from.ToC())
+			co.P("%s = (P_int)(%s);", toCName, from.ToC())
 			return
 		case UintTO:
-			co.P("%s = (P_uint)(%s);", to.ToC(), from.ToC())
+			co.P("%s = (P_uint)(%s);", toCName, from.ToC())
 			return
 		}
 	}
 
 	// Case of assigning to interface{}.
-	if to.Type() == AnyTO {
+	if toType == AnyTO {
 
 		if from.Type() == ConstIntTO {
 			// Cannot take address of integer literal, so create a tmp var for ConstInt case.
 			ser := Serial("constint")
-			from = co.DefineLocalTemp(ser, IntTO, from.ToC())
+			from = co.DefineLocalTempC(ser, IntTO, from.ToC())
 		}
 
-		dest := to.ToC()
+		dest := toCName
 		co.P("%s.pointer = &%s; // L458", dest, from.ToC())
 		co.P("%s.typecode = %q; // L459", dest, from.Type().TypeCode())
 		return
 	}
-	panic(F("Cannot assign: %v := %v", to, from))
+
+	// Case of assigning to interface non-empty.
+	if _, ok := toType.(*InterfaceTV); ok {
+		if _, ok2 := from.Type().(*PointerTV); ok2 {
+			// TODO -- check actual compatibility.
+			co.P("%s = %s; // L501 [pointer to face]", toCName, from.ToC())
+			return
+		}
+		if from.Type() == NilTO {
+			// TODO -- check actual compatibility.
+			co.P("%s = (void*)0; // L507 [nil to face]", toCName)
+			return
+		}
+	}
+	panic(F("Cannot assign: %v := %v", toCName, from))
 }
 
 func (o *TypeTV) XXX_Assign(c string, typ TypeValue) (z string, ok bool) {
@@ -1197,7 +1214,7 @@ func (val *SubVal) ToC() string {
 		if !ok {
 			panic(F("slice subscript must be integer; got %v", val.subscript))
 		}
-		tmp := coHack.DefineLocalTemp(ser, t.E, "")
+		tmp := coHack.DefineLocalTempC(ser, t.E, "")
 		// void SliceGet(Slice a, int size, int nth, void* value);
 		coHack.P("SliceGet(%s, sizeof(%s), %s, &%s); //L1187",
 			val.container.ToC(),
@@ -1269,7 +1286,7 @@ func CompileToC(r io.Reader, sourceName string, w io.Writer, opt *Options) {
 	}
 
 	cg, cm := NewCGenAndMainCMod(opt, w)
-	pr(`#include "runt.h"`)
+	pr(`#include "runtime/runt.h"`)
 	pr(``)
 	if !opt.SkipBuiltin {
 		cg.LoadModule("builtin", pr)
@@ -1513,7 +1530,6 @@ func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 		if g.initx != nil {
 			ser := Serial("initvar")
 			cname := CName(g.CName, ser)
-			//pr("void %s__%s() { // L1530", g.CName, ser)
 
 			// We are writing the global init() function.
 			initS := &AssignS{
@@ -1546,6 +1562,9 @@ func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 	}
 
 	for _, g := range p.Funcs {
+		if g.initx == nil {
+			continue // No need to generate empty .c files.
+		}
 		Say("Fifth Func " + g.Package + " " + g.name)
 		fp := NewFilePrinter(F("___.func.%s.c", g.CName))
 		pr := fp.GetPrinter()
@@ -1563,6 +1582,9 @@ func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 	}
 
 	for _, g := range p.Meths {
+		if g.initx == nil {
+			continue // No need to generate empty .c files.
+		}
 		Say("Fifth Meth " + g.Package + " " + g.name)
 		fp := NewFilePrinter(F("___.meth.%s.c", g.CName))
 		pr := fp.GetPrinter()
@@ -1772,6 +1794,7 @@ type Compiler struct {
 	Buf          *Buf
 	slots        map[string]*GDef // not really G
 	classes      []string
+	results      []NameTV // remembers return variables, if >1
 }
 
 func NewCompiler(cm *CMod, subject *GDef) *Compiler {
@@ -1928,15 +1951,61 @@ func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 
 	if a.Type().Equals(b.Type()) {
 		switch a.Type().TypeCode() {
-		case "z", "b", "i", "u", "p":
+		case "b", "i", "u", "p":
 			switch op {
 			case "+", "-", "*", "/", "%":
 				resultType = a.Type()
 			case "==", "!=", "<", "<=", ">", ">=":
 				resultType = BoolTO
 			}
+			if resultType != nil {
+				return &CVal{
+					c: Format("(%s)(/*L1920*/(%s) %s (%s))", resultType.CType(), a.ToC(), op, b.ToC()),
+					t: resultType,
+				}
+			}
+		}
+	}
+	if a.Type() == BoolTO && b.Type() == BoolTO {
+		switch op {
+		case "==", "!=", "<", "<=", ">", ">=":
+			resultType = BoolTO
+		}
+		if resultType != nil {
 			return &CVal{
 				c: Format("(%s)(/*L1920*/(%s) %s (%s))", resultType.CType(), a.ToC(), op, b.ToC()),
+				t: resultType,
+			}
+		}
+	}
+	if a.Type() == StringTO && b.Type() == StringTO {
+		var cfunc string
+		switch op {
+		case "+":
+			resultType = StringTO
+			cfunc = "StringAdd"
+		case "==":
+			resultType = BoolTO
+			cfunc = "StringEQ"
+		case "!=":
+			resultType = BoolTO
+			cfunc = "StringNE"
+		case "<":
+			resultType = BoolTO
+			cfunc = "StringLT"
+		case "<=":
+			resultType = BoolTO
+			cfunc = "StringLE"
+		case ">":
+			resultType = BoolTO
+			cfunc = "StringGT"
+		case ">=":
+			resultType = BoolTO
+			cfunc = "StringGE"
+		}
+		if resultType != nil {
+			return &CVal{
+				c: Format("(%s)(/*L1990*/%s(%s, %s))", resultType.CType(), cfunc, a.ToC(), b.ToC()),
 				t: resultType,
 			}
 		}
@@ -1989,7 +2058,7 @@ func (co *Compiler) VisitConstructor(ctorX *ConstructorX) Value {
 	pointerTV := &PointerTV{structTV}
 	ser := Serial("ctor")
 	creation := F("(struct %s*) oalloc(sizeof(struct %s), CLASS_%s)", g.CName, g.CName, g.CName)
-	inst := co.DefineLocalTemp(ser, pointerTV, creation)
+	inst := co.DefineLocalTempC(ser, pointerTV, creation)
 
 	for i, e := range ctorX.inits {
 		val := e.expr.VisitExpr(co)
@@ -2023,7 +2092,7 @@ func (co *Compiler) ReifyAs(x Value, as TypeValue) Value {
 			return x
 		}
 		ser := Serial("reify")
-		gd := co.DefineLocalTemp(ser, x.Type(), cVal)
+		gd := co.DefineLocalTempC(ser, x.Type(), cVal)
 		return gd
 	}
 
@@ -2033,7 +2102,7 @@ func (co *Compiler) ReifyAs(x Value, as TypeValue) Value {
 
 	// Then convert.
 	ser := Serial("reify_as")
-	y := co.DefineLocalTemp(ser, as, "")
+	y := co.DefineLocalTempC(ser, as, "")
 	co.ConvertTo(reifiedX, y)
 	return y
 }
@@ -2170,13 +2239,14 @@ func (co *Compiler) VisitCall(callx *CallX) Value {
 	for i, fin := range fins {
 		temp := CName(ser, "in", D(i), fin.name)
 		L("argVals[%d] :: %T = %q", i, argVals[i], argVals[i].ToC())
-		gd := co.DefineLocalTemp(temp, fin.TV, argVals[i].ToC())
+		gd := co.DefineLocalTempV(temp, fin.TV, argVals[i])
+		// co.ConvertTo(argVals[i], gd)
 		argc = append(argc, gd.CName)
 	}
 
 	if funcRec.HasDotDotDot {
 		sliceName := CName(ser, "in", "vec")
-		sliceVar := co.DefineLocalTemp(sliceName, extraSliceType, "NilSlice /*MakeSlice L1949*/")
+		sliceVar := co.DefineLocalTempC(sliceName, extraSliceType, "NilSlice /*MakeSlice L1949*/")
 
 		for i := 0; i < numExtras; i++ {
 			y := co.ReifyAs(argVals[numNormal+i], extraSliceType.E).ToC()
@@ -2194,7 +2264,7 @@ func (co *Compiler) VisitCall(callx *CallX) Value {
 			rj := Format("_multi_%s_%d", ser, j)
 			vj := NameTV{rj, out.TV}
 			multi = append(multi, vj)
-			gd := co.DefineLocalTemp(rj, out.TV, "")
+			gd := co.DefineLocalTempC(rj, out.TV, "")
 			argc = append(argc, F("&%s", gd.CName))
 		}
 		c := co.FormatCall(funcVal, argc, bm)
@@ -2255,7 +2325,7 @@ func (co *Compiler) VisitDot(dotx *DotX) Value {
 			Say("rec", F("%#v", rec))
 			if ftype, ok := FindTypeByName(rec.Fields, dotx.Member); ok {
 				z := &CVal{
-					c: Format("(%s).%s", val.ToC(), dotx.Member),
+					c: Format("(%s)->f_%s", val.ToC(), dotx.Member),
 					t: ftype,
 				}
 				L("VisitDot returns Field: %#v", z)
@@ -2449,15 +2519,35 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 }
 func (co *Compiler) VisitReturn(ret *ReturnS) {
 	log.Printf("return..... %v", ret.X)
+	log.Printf("co.Subject = %v", co.Subject)
+	rec := co.Subject.Type().(*FunctionTV).FuncRec
+	log.Printf("rec = %v", rec)
+	outs := rec.Outs
+	log.Printf("outs = %v", outs)
+	log.Printf("co.results = %v", co.results)
+
 	switch len(ret.X) {
 	case 0:
 		co.P("  return;")
 	case 1:
+		if len(outs) != 1 {
+			panic(F("L2516: Got 1 return value, but needs %d", len(outs)))
+		}
 		val := ret.X[0].VisitExpr(co)
 		log.Printf("return..... val=%v", val)
 		co.P("  return %s;", val.ToC())
 	default:
-		Panicf("multi-return not imp: %v", ret)
+		if len(outs) != len(ret.X) {
+			panic(F("L2523: Got %d return values, but needs %d", len(ret.X), len(outs)))
+		}
+		for i, rx := range ret.X {
+			// TODO convert
+			vx := rx.VisitExpr(co)
+			//< co.P("  *%s = %s; // L2527: return multi #%d", co.results[i].name, vx.ToC(), i)
+			r := co.results[i]
+			co.ConvertToCNameType(vx, "*"+r.name, r.TV)
+		}
+		co.P("  return; // L2529: multi")
 	}
 }
 func (co *Compiler) VisitWhile(wh *WhileS) {
@@ -2553,11 +2643,19 @@ func (co *Compiler) FindName(name string) *GDef {
 	L("nando y: %q [cmod @%q]", name, co.CMod.Package)
 	return co.CMod.Find(name)
 }
-func (co *Compiler) DefineLocalTemp(tempName string, tempType TypeValue, initC string) *GDef {
+
+func (co *Compiler) DefineLocalTempC(tempName string, tempType TypeValue, initC string) *GDef {
 	gd := co.DefineLocal("tmp", tempName, tempType)
-	if initC != "" {
-		co.P("%s = %s; // L1632", gd.CName, initC)
+	if initC == "" {
+		// TODO: zero it?
+	} else {
+		co.P("%s = %s; // L2653", gd.CName, initC)
 	}
+	return gd
+}
+func (co *Compiler) DefineLocalTempV(tempName string, tempType TypeValue, from Value) *GDef {
+	gd := co.DefineLocal("tmp", tempName, tempType)
+	co.ConvertToCNameType(from, gd.CName, gd.typeof)
 	return gd
 }
 
@@ -2623,7 +2721,8 @@ func (co *Compiler) EmitFunc(gd *GDef, justDeclare bool) {
 			} else {
 				name = Format("__%d", i)
 			}
-			co.DefineLocal("out", name, out.TV)
+			out := co.DefineLocal("out", name, out.TV)
+			co.results = append(co.results, NameTV{out.CName, out.typeof})
 		}
 	}
 

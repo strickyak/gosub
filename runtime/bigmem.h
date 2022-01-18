@@ -1,7 +1,7 @@
 #ifndef GOSUB_BIGMEM_H_
 #define GOSUB_BIGMEM_H_
 
-#include "runt.h"
+#include "runtime/runt.h"
 
 #ifndef GUARD
 #define GUARD 1 /* must be 0 or 1 */

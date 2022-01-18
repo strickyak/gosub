@@ -7,12 +7,17 @@
 #   gu test test/t1.go
 #   gu build demo/wc.go
 #   gu run demo/wc.go < Makefile
+set -eu
+
+function cc() {
+  gcc -Werror -g -I. "$@"
+}
 
 function compile() {
   T=$(basename $1 .go).bin
   (
     rm -f ___.*
-    go run gosub.go < $1 > ___.defs.h 2>___.err || { cat ___.err ; exit 1 ; }
+    go run gosub.go < $1 > ___.defs.h 2>___.err || { E=$? ; cat ___.err ; exit $E ; }
     clang-format -i --style=Google ___.*.c || true
     (
       echo '#include "___.defs.h"'
@@ -22,10 +27,14 @@ function compile() {
 
     for x in ___.*.c
     do
-      cc -g -c -Iruntime $x
+      cc -c $x
+    done
+    for x in runtime/*.c
+    do
+      cc -c -o ___.runtime.$(basename $x .c).o $x
     done
     ar qcs ___.a ___.*.o
-    cc -g -I. -Iruntime -o $T runtime/runt.c runtime/bigmem.c  ___.a
+    cc -o $T runtime/runt.c runtime/bigmem.c  ___.a
     ls -l $T
 
     (
@@ -39,9 +48,9 @@ function compile() {
       echo '}'
     ) > ___.initvars.c
 
-    cc -g -c -Iruntime ___.initvars.c
+    cc -c ___.initvars.c
     ar rvcs ___.a ___.initvars.o
-    cc -g -I. -Iruntime -o $T runtime/runt.c runtime/bigmem.c  ___.a
+    cc -o $T runtime/runt.c runtime/bigmem.c  ___.a
     ls -l $T
   ) >&2
   echo $T

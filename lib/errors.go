@@ -5,9 +5,12 @@ type Error struct {
 }
 
 func New(message string) error {
-	return &Error{message}
+	return &Error{message: message}
 }
 
 func (e *Error) Error() string {
-	return "ERROR: " + message
+	return "ERROR: " + e.message
+}
+func (e *Error) String() string {
+	return e.Error()
 }

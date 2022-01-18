@@ -28,7 +28,7 @@ typedef void omarker();  // TODO: GC
 #define P_false 0
 #define INF 255       // sometimes this is INFinity, if type is byte
 #define NIL ((word)0)
-#include "bigmem.h"
+#include "runtime/bigmem.h"
 
 #else /* if not unix */
 
@@ -85,7 +85,12 @@ extern void F_BUILTIN_println(int i);
 #define STRING_START(strptr) ((char*)(strptr)->base + (strptr)->offset)
 
 extern void panic_s(const char*);
+
+// Strings
 extern String MakeStringFromC(const char* s);
+extern String StringAdd(String a, String b);
+
+// Slices
 extern Slice MakeSlice(const char* typecode, int len, int cap, int size);
 extern Slice AppendSliceInt(Slice a, P_int x);
 extern Slice SliceAppend(const char* typecode, Slice a, void* new_elem_ptr, int new_elem_size);

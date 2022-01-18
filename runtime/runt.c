@@ -1,5 +1,4 @@
-#include "runt.h"
-
+#include "runtime/runt.h"
 #include "___.defs.h"
 
 extern void main__main();
@@ -148,7 +147,7 @@ void builtin__println(Slice args) {
 }
 
 #ifdef USING_MODULE_os
-void os__File__Read(struct os__File *in_f, Slice_(P_byte) in_p, P_int *out_n,
+void XXX_os__File__Read(struct os__File *in_f, Slice_(P_byte) in_p, P_int *out_n,
                     Interface_(error) * out_err) {
   //- fprintf(stderr, "os__File__Read <== fd=%d. buflen=%d.\n", in_f->f_fd, in_p.len);
 
@@ -186,7 +185,7 @@ void log__Fatalf(P_string in_format, Slice_(P__any_) in_args) {
 }
 #endif
 
-#ifdef USING_MODULE_unix
+#ifdef XXX_USING_MODULE_unix
 void unix__Open(P_string filename, P_uint flags, P_uint mode,
                 P_int* fd_out, P_int* errno_out) {
   const char* s = STRING_START(&filename);
@@ -207,6 +206,20 @@ void unix__Creat(P_string filename, P_uint mode,
     *errno_out = errno;
   }
 }
-#endif
+P_int unix__Close(P_int fd) {
+  return close(fd);
+}
 
-// END
+void unix__Read(P_int fd, P_uintptr buf, P_int size,
+                P_int* count_out, P_int* errno_out) {
+  int cc = read(fd, (char*)buf, size);
+  *count_out = cc;
+  *errno_out = errno;
+}
+void unix__Write(P_int fd, P_uintptr buf, P_int size,
+                P_int* count_out, P_int* errno_out) {
+  int cc = write(fd, (char*)buf, size);
+  *count_out = cc;
+  *errno_out = errno;
+}
+#endif
