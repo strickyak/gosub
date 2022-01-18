@@ -2032,7 +2032,7 @@ func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 		}
 		if resultType != nil {
 			return &CVal{
-				c: Format("(%s)(/*L1990*/%s(%s, %s))", resultType.CType(), cfunc, a.ToC(), b.ToC()),
+				c: Format("(/*L1990*/%s(%s, %s))", cfunc, a.ToC(), b.ToC()),
 				t: resultType,
 			}
 		}
