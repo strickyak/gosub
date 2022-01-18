@@ -33,7 +33,7 @@ typedef void omarker();  // TODO: GC
 
 #include <cmoc.h>
 
-#include "../pythonine/octet.h"
+#include "../pythonine/v0.1/octet.h"
 
 #endif /* unix */
 
@@ -82,12 +82,13 @@ typedef struct {
 extern Slice NilSlice;
 extern void F_BUILTIN_println(int i);
 
-#define STRING_START(strptr) ((char*)(strptr)->base + (strptr)->offset)
+#define STRING_START(S) ((char*)(S).base + (S).offset)
 
 extern void panic_s(const char*);
 
 // Strings
 extern String MakeStringFromC(const char* s);
+extern char* MakeCStrFromString(String s);
 extern String StringAdd(String a, String b);
 
 // Slices

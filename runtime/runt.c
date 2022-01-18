@@ -1,5 +1,3 @@
-#include "runtime/runt.h"
-
 #include "___.defs.h"
 
 extern void main__main();
@@ -33,6 +31,14 @@ String MakeStringFromC(const char* s) {
   strcpy((char*)p, s);
   String z = {p, 0, n};
   return z;
+}
+char* MakeCStrFromString(String s) {
+  int n = s.len;
+  assert(n < 254);
+  char* p = (char*) oalloc(n+1, C_Bytes);
+  assert(p);
+  memcpy(p, STRING_START(s), n);
+  return p;
 }
 
 Slice MakeSlice(const char* typecode, int len, int cap, int size) {
@@ -138,8 +144,11 @@ void builtin__println(Slice args) {
         case 'u':
           printf("%u", *(P_uint*)(p[i].pointer));
           break;
+        case 'p':
+          printf("%lu", (unsigned long)*(P_uintptr*)(p[i].pointer));
+          break;
         default:
-          fprintf(stderr, "(typecode `%s` not implemented)", p[i].typecode);
+          fprintf(stderr, "builtin__println: typecode `%s` not implemented.\n", p[i].typecode);
           exit(13);
           break;
       }
@@ -147,81 +156,3 @@ void builtin__println(Slice args) {
   }
   printf("\n");
 }
-
-#ifdef USING_MODULE_os
-void XXX_os__File__Read(struct os__File* in_f, Slice_(P_byte) in_p,
-                        P_int* out_n, Interface_(error) * out_err) {
-  //- fprintf(stderr, "os__File__Read <== fd=%d. buflen=%d.\n", in_f->f_fd,
-  //in_p.len);
-
-  int cc = read(in_f->f_fd, (char*)(in_p.base) + in_p.offset, in_p.len);
-  *out_n = cc;
-
-  int e = errno;
-  if (e) {
-    struct io__Error* io_error =
-        (struct io__Error*)oalloc(sizeof(struct io__Error), CLASS_io__Error);
-
-    char* c_str = strerror(e);
-    char* o_str = (char*)oalloc(strlen(c_str) + 1, C_Bytes);
-    strcpy(o_str, c_str);
-    String go_str = {(word)o_str, 0, strlen(c_str)};
-    io_error->f_message = go_str;
-
-    *(struct error**)out_err = (struct error*)io_error;
-    return;
-  }
-  if (cc == 0) {
-    *(struct error**)out_err = (struct error*)io__EOF;
-  } else {
-    *(struct error**)out_err = (struct error*)0;
-  }
-
-  //- fprintf(stderr, "os__File__Read ==> %d (%lx)\n", *out_n, (unsigned
-  //long)*out_err);
-}
-#endif
-
-#ifdef USING_MODULE_log
-void log__Fatalf(P_string in_format, Slice_(P__any_) in_args) {
-  fprintf(stderr, "TODO: log__Fatalf\n");
-  exit(13);
-}
-#endif
-
-#ifdef XXX_USING_MODULE_unix
-void unix__Open(P_string filename, P_uint flags, P_uint mode, P_int* fd_out,
-                P_int* errno_out) {
-  const char* s = STRING_START(&filename);
-  int fd = open(s, flags, mode);
-  *fd_out = fd;
-  *errno_out = 0;
-  if (fd < 0) {
-    *errno_out = errno;
-  }
-}
-void unix__Creat(P_string filename, P_uint mode, P_int* fd_out,
-                 P_int* errno_out) {
-  const char* s = STRING_START(&filename);
-  int fd = creat(s, mode);
-  *fd_out = fd;
-  *errno_out = 0;
-  if (fd < 0) {
-    *errno_out = errno;
-  }
-}
-P_int unix__Close(P_int fd) { return close(fd); }
-
-void unix__Read(P_int fd, P_uintptr buf, P_int size, P_int* count_out,
-                P_int* errno_out) {
-  int cc = read(fd, (char*)buf, size);
-  *count_out = cc;
-  *errno_out = errno;
-}
-void unix__Write(P_int fd, P_uintptr buf, P_int size, P_int* count_out,
-                 P_int* errno_out) {
-  int cc = write(fd, (char*)buf, size);
-  *count_out = cc;
-  *errno_out = errno;
-}
-#endif

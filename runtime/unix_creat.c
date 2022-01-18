@@ -4,7 +4,7 @@
 #ifdef USING_MODULE_unix
 void unix__Creat(P_string filename, P_uint mode, P_int* fd_out,
                  P_int* errno_out) {
-  const char* s = STRING_START(&filename);
+  const char* s = STRING_START(filename);
   int fd = creat(s, mode);
   *fd_out = fd;
   *errno_out = 0;
