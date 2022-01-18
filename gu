@@ -10,7 +10,7 @@
 set -eu
 
 function cc() {
-  gcc -Werror -g -I. "$@"
+  gcc -pedantic -Wall -Wno-unused-label -Werror -g -I. "$@"
 }
 
 function compile() {
