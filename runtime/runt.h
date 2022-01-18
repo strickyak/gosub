@@ -16,17 +16,15 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#define true 1
+#define false 0
+#define INF 255  // sometimes this is INFinity, if type is byte
+
 typedef unsigned char bool;
 typedef unsigned char byte;
 typedef unsigned long word;
 
 typedef void omarker();  // TODO: GC
-#define true 1
-#define false 0
-#define P_true 1
-#define P_false 0
-#define INF 255  // sometimes this is INFinity, if type is byte
-#define NIL ((word)0)
 #include "runtime/bigmem.h"
 
 #else /* if not unix */
@@ -36,6 +34,10 @@ typedef void omarker();  // TODO: GC
 #include "../pythonine/v0.1/octet.h"
 
 #endif /* unix */
+
+#define P_true 1
+#define P_false 0
+#define NIL ((word)0)
 
 #define Slice_(T) Slice
 #define Map_(K, V) Map

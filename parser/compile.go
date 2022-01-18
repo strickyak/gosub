@@ -267,11 +267,8 @@ func (x *FuncRecX) VisitFuncRecX(v ExprVisitor) *FuncRec {
 
 type TypeValue interface {
 	String() string
-	// Value
-	// Intlike() bool // only on PrimTV
 	CType() string
-	// TypeOfHandle() (z string, ok bool)
-	//< Assign(c string, typ TypeValue) (z string, ok bool)
+	Zero() string
 	Cast(c string, typ TypeValue) (z string, ok bool)
 	Equals(typ TypeValue) bool
 	TypeCode() string
@@ -444,6 +441,31 @@ func (o *PointerTV) TypeOfHandle() (z string, ok bool) {
 	}
 	return "", false
 }
+
+func (o *PrimTV) Zero() string {
+	switch o.typecode[0] {
+	case 'z', 'b', 'k', 'i', 'u', 'p':
+		return "0"
+	case 's':
+		return "{0, 0, 0}"
+	case 'a':
+		return "{0, 0}"
+	}
+	panic("Zero " + o.name)
+}
+
+// Zero
+
+func (o *SliceTV) Zero() string     { return "{0, 0, 0}" }
+func (o *MapTV) Zero() string       { return "(void*)0" }
+func (o *StructTV) Zero() string    { panic("Zero Struct") }
+func (o *PointerTV) Zero() string   { return "(void*)0" }
+func (o *InterfaceTV) Zero() string { return "(void*)0" }
+func (o *TypeTV) Zero() string      { panic("Zero Type") }
+func (o *MultiTV) Zero() string     { panic("Zero Multi") }
+func (o *FunctionTV) Zero() string  { return "(void*)0" }
+
+// CType
 
 func (o *PrimTV) CType() string      { return "P_" + o.name }
 func (o *SliceTV) CType() string     { return F("Slice_(%s)", o.E.CType()) }
@@ -1605,10 +1627,12 @@ func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 		fp := NewFilePrinter(F("___.initmod.%s.c", cm.Package))
 		pr := fp.GetPrinter()
 		pr(`#include "___.defs.h"`)
+		for _, funcName := range cm.initFuncs {
+			pr("extern void %s();", funcName)
+		}
 		pr("void initmod_%s() {", cm.Package)
 
 		for _, funcName := range cm.initFuncs {
-			pr("extern void %s();", funcName)
 			pr("%s();", funcName)
 		}
 
@@ -1620,13 +1644,16 @@ func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 		fp := NewFilePrinter("___.initmods.c")
 		pr := fp.GetPrinter()
 		pr(`#include "___.defs.h"`)
+		for _, mod := range cm.CGen.ModsInOrder {
+			pr("extern void initmod_%s();", mod)
+		}
+		pr("extern void initmod_main();")
+
 		pr("void initmods() {")
 
 		for _, mod := range cm.CGen.ModsInOrder {
-			pr("extern void initmod_%s();", mod)
 			pr("initmod_%s();", mod)
 		}
-		pr("extern void initmod_main();")
 		pr("initmod_main();")
 
 		pr("}")
@@ -2670,10 +2697,8 @@ func (co *Compiler) DefineLocal(prefix string, name string, tv TypeValue) *GDef 
 		panic(F("// Local var Already defined: %s", name))
 	} else {
 		co.CurrentBlock.locals[name] = local
-		L("bilbo %q 111 Current Block Locals: %v", name, co.CurrentBlock.locals)
 	}
 	co.slots[local.CName] = local
-	L("bilbo %q 222 Compiler slots: %v", name, co.slots)
 	return local
 }
 func (co *Compiler) FinishScope() {
@@ -2754,7 +2779,7 @@ func (co *Compiler) EmitFunc(gd *GDef, justDeclare bool) {
 			continue
 		}
 		co.P("// LOCAL %q IS %v", name, e)
-		co.P("auto %v %v = {0}; // DEF LOCAL L2145 Type=%#v", e.typeof.CType(), e.CName, e.typeof)
+		co.P("auto %v %v = %s; // DEF LOCAL L2145 Type=%#v", e.typeof.CType(), e.CName, e.typeof.Zero(), e.typeof)
 	}
 	co.P("// Added LOCALS to Func.")
 	L("CBODY IS %q", cBody)
