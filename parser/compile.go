@@ -269,7 +269,7 @@ type TypeValue interface {
 	String() string
 	CType() string
 	Zero() string
-	Cast(c string, typ TypeValue) (z string, ok bool)
+	XXX_Cast(c string, typ TypeValue) (z string, ok bool)
 	Equals(typ TypeValue) bool
 	TypeCode() string
 }
@@ -478,6 +478,19 @@ func (o *MultiTV) CType() string     { return "Multi" }
 
 func (o *FunctionTV) CType() string { return o.FuncRec.PtrTypedef }
 
+func (co *Compiler) CastToType(from Value, toType TypeValue) Value {
+	z := co.DefineLocalTempC("cast", toType, "")
+	// Quick and Dirty int casts
+	switch from.Type().TypeCode()[0] {
+	case 'b', 'i', 'u', 'k', 'p':
+		switch toType.TypeCode()[0] {
+		case 'b', 'i', 'u', 'k', 'p':
+			co.P("%s = (%s)(%s); // L488 CastTo", z.CName, toType.CType(), from.ToC())
+			return z
+		}
+	}
+	panic(F("cannot Cast (yet?): %v TO TYPE %v", from, toType))
+}
 func (co *Compiler) ConvertTo(from Value, to Value) {
 	co.ConvertToCNameType(from, to.ToC(), to.Type())
 }
@@ -533,35 +546,35 @@ func (co *Compiler) ConvertToCNameType(from Value, toCName string, toType TypeVa
 	panic(F("Cannot assign: (%v :: %v) = %v", toCName, toType, from))
 }
 
-func (o *SliceTV) Cast(c string, typ TypeValue) (z string, ok bool) {
+func (o *SliceTV) XXX_Cast(c string, typ TypeValue) (z string, ok bool) {
 	if o.Equals(typ) {
 		return c, true
 	} else {
 		return "", false
 	}
 }
-func (o *MapTV) Cast(c string, typ TypeValue) (z string, ok bool) {
+func (o *MapTV) XXX_Cast(c string, typ TypeValue) (z string, ok bool) {
 	if o.Equals(typ) {
 		return c, true
 	} else {
 		return "", false
 	}
 }
-func (o *StructTV) Cast(c string, typ TypeValue) (z string, ok bool) {
+func (o *StructTV) XXX_Cast(c string, typ TypeValue) (z string, ok bool) {
 	if o.Equals(typ) {
 		return c, true
 	} else {
 		return "", false
 	}
 }
-func (o *PointerTV) Cast(c string, typ TypeValue) (z string, ok bool) {
+func (o *PointerTV) XXX_Cast(c string, typ TypeValue) (z string, ok bool) {
 	if o.Equals(typ) {
 		return c, true
 	} else {
 		return "", false
 	}
 }
-func (o *InterfaceTV) Cast(c string, typ TypeValue) (z string, ok bool) {
+func (o *InterfaceTV) XXX_Cast(c string, typ TypeValue) (z string, ok bool) {
 	if o.Equals(typ) {
 		return c, true
 	} else {
@@ -569,7 +582,7 @@ func (o *InterfaceTV) Cast(c string, typ TypeValue) (z string, ok bool) {
 	}
 }
 
-func (o *PrimTV) Cast(c string, typ TypeValue) (z string, ok bool) {
+func (o *PrimTV) XXX_Cast(c string, typ TypeValue) (z string, ok bool) {
 	if o.Equals(typ) {
 		return c, true
 	}
@@ -580,14 +593,14 @@ func (o *PrimTV) Cast(c string, typ TypeValue) (z string, ok bool) {
 	}
 	return "", false
 }
-func (o *TypeTV) Cast(c string, typ TypeValue) (z string, ok bool) {
-	panic("TypeTV cannot Cast")
+func (o *TypeTV) XXX_Cast(c string, typ TypeValue) (z string, ok bool) {
+	panic("TypeTV cannot XXX_Cast")
 }
-func (o *FunctionTV) Cast(c string, typ TypeValue) (z string, ok bool) {
-	panic("FunctionTV cannot Cast (yet)")
+func (o *FunctionTV) XXX_Cast(c string, typ TypeValue) (z string, ok bool) {
+	panic("FunctionTV cannot XXX_Cast (yet)")
 }
-func (o *MultiTV) Cast(c string, typ TypeValue) (z string, ok bool) {
-	panic("MultiTV cannot Cast (yet)")
+func (o *MultiTV) XXX_Cast(c string, typ TypeValue) (z string, ok bool) {
+	panic("MultiTV cannot XXX_Cast (yet)")
 }
 
 func (tv *PrimTV) String() string    { return Format("PrimTV(%q)", tv.name) }
@@ -2194,92 +2207,111 @@ func (co *Compiler) VisitCall(callx *CallX) Value {
 	L("funcVal = %v", funcVal)
 	funcValType := funcVal.Type()
 	L("funcValType = %v", funcValType)
-	funcRec := funcValType.(*FunctionTV).FuncRec
-	L("funcRec = %v", funcRec)
-	fins := funcRec.Ins
-	fouts := funcRec.Outs
-	co.P("// IsMethod = %v", funcRec.IsMethod)
-	co.P("// HasDotDotDot = %v", funcRec.HasDotDotDot)
 
-	var bm *BoundMethodVal
-
-	var argVals []Value
-	if bm, _ = funcVal.(*BoundMethodVal); bm != nil {
-		// Prepend receiver as first arg.
-		argVals = append(argVals, bm.receiver)
-	}
-	for _, e := range callx.Args {
-		argVals = append(argVals, e.VisitExpr(co))
-	}
-
-	co.P("// Func is V %#v", funcVal)
-	for i, a := range argVals {
-		co.P("// Args[%d] is V %#v", i, a)
-	}
-
-	var extraFin NameTV
-	var extraSliceType *SliceTV
-	var numNormal, numExtras int
-
-	if funcRec.HasDotDotDot {
-		if len(fins)-1 > len(argVals) {
-			panic(F("got %d args for func call, wanted at least %d args", len(argVals), len(fins)-1))
+	switch funcValType_t := funcValType.(type) {
+	case *PrimTV:
+		if funcValType_t.typecode == "t" {
+			// Casting to a type.
+			// TODO: []byte(s)
+			targetType, ok := funcVal.ResolveAsTypeValue()
+			assert(ok)
+			assert(targetType != nil)
+			assert(len(callx.Args) == 1)
+			subject := callx.Args[0].VisitExpr(co)
+			return co.CastToType(subject, targetType)
 		}
-		numNormal = len(fins) - 1
-		numExtras = len(argVals) - numNormal
+	case *FunctionTV:
+		{
 
-		extraFin = fins[numNormal]
-		fins = fins[:numNormal]
-		extraSliceType = extraFin.TV.(*SliceTV)
-	} else {
-		if len(fins) != len(argVals) {
-			panic(F("got %d args for func call, wanted %d args", len(argVals), len(fins)))
-		}
-	}
+			funcRec := funcValType_t.FuncRec
+			L("funcRec = %v", funcRec)
+			fins := funcRec.Ins
+			fouts := funcRec.Outs
+			co.P("// IsMethod = %v", funcRec.IsMethod)
+			co.P("// HasDotDotDot = %v", funcRec.HasDotDotDot)
 
-	co.P("// 1765: extraFin=%v ;; extraSliceType=%v ;; numNormal=%d ;; numExtras=%d", extraFin, extraSliceType, numNormal, numExtras)
+			var bm *BoundMethodVal
 
-	var argc []string
+			var argVals []Value
+			if bm, _ = funcVal.(*BoundMethodVal); bm != nil {
+				// Prepend receiver as first arg.
+				argVals = append(argVals, bm.receiver)
+			}
+			for _, e := range callx.Args {
+				argVals = append(argVals, e.VisitExpr(co))
+			}
 
-	// For the non-DotDotDot arguments
-	for i, fin := range fins {
-		temp := CName(ser, "in", D(i), fin.name)
-		L("argVals[%d] :: %T = %q", i, argVals[i], argVals[i].ToC())
-		gd := co.DefineLocalTempV(temp, fin.TV, argVals[i])
-		// co.ConvertTo(argVals[i], gd)
-		argc = append(argc, gd.CName)
-	}
+			co.P("// Func is V %#v", funcVal)
+			for i, a := range argVals {
+				co.P("// Args[%d] is V %#v", i, a)
+			}
 
-	if funcRec.HasDotDotDot {
-		sliceName := CName(ser, "in", "extras")
-		sliceVar := co.DefineLocalTempC(sliceName, extraSliceType, "NilSlice /*MakeSlice L1949*/")
+			var extraFin NameTV
+			var extraSliceType *SliceTV
+			var numNormal, numExtras int
 
-		for i := 0; i < numExtras; i++ {
-			y := co.ReifyAs(argVals[numNormal+i], extraSliceType.E).ToC()
+			if funcRec.HasDotDotDot {
+				if len(fins)-1 > len(argVals) {
+					panic(F("got %d args for func call, wanted at least %d args", len(argVals), len(fins)-1))
+				}
+				numNormal = len(fins) - 1
+				numExtras = len(argVals) - numNormal
 
-			co.P("%s = SliceAppend(%q, %s, &%s, sizeof(%s)); // L1954: For extra input #%d", sliceVar.CName, extraSliceType.E.TypeCode(), sliceVar.CName, y, y, i)
-		}
+				extraFin = fins[numNormal]
+				fins = fins[:numNormal]
+				extraSliceType = extraFin.TV.(*SliceTV)
+			} else {
+				if len(fins) != len(argVals) {
+					panic(F("got %d args for func call, wanted %d args", len(argVals), len(fins)))
+				}
+			}
 
-		fins = append(fins, NameTV{sliceVar.CName, extraSliceType})
-		argc = append(argc, sliceVar.CName)
-	}
+			co.P("// 1765: extraFin=%v ;; extraSliceType=%v ;; numNormal=%d ;; numExtras=%d", extraFin, extraSliceType, numNormal, numExtras)
 
-	if len(fouts) != 1 {
-		var multi []NameTV
-		for j, out := range fouts {
-			rj := Format("_multi_%s_%d", ser, j)
-			vj := NameTV{rj, out.TV}
-			multi = append(multi, vj)
-			gd := co.DefineLocalTempC(rj, out.TV, "")
-			argc = append(argc, F("&%s", gd.CName))
-		}
-		c := co.FormatCall(funcVal, argc, bm)
-		return &CVal{c: c, t: &MultiTV{multi}}
-	} else {
-		c := co.FormatCall(funcVal, argc, bm)
-		t := fouts[0].TV
-		return &CVal{c: c, t: t}
-	}
+			var argc []string
+
+			// For the non-DotDotDot arguments
+			for i, fin := range fins {
+				temp := CName(ser, "in", D(i), fin.name)
+				L("argVals[%d] :: %T = %q", i, argVals[i], argVals[i].ToC())
+				gd := co.DefineLocalTempV(temp, fin.TV, argVals[i])
+				// co.ConvertTo(argVals[i], gd)
+				argc = append(argc, gd.CName)
+			}
+
+			if funcRec.HasDotDotDot {
+				sliceName := CName(ser, "in", "extras")
+				sliceVar := co.DefineLocalTempC(sliceName, extraSliceType, "NilSlice /*MakeSlice L1949*/")
+
+				for i := 0; i < numExtras; i++ {
+					y := co.ReifyAs(argVals[numNormal+i], extraSliceType.E).ToC()
+
+					co.P("%s = SliceAppend(%q, %s, &%s, sizeof(%s)); // L1954: For extra input #%d", sliceVar.CName, extraSliceType.E.TypeCode(), sliceVar.CName, y, y, i)
+				}
+
+				fins = append(fins, NameTV{sliceVar.CName, extraSliceType})
+				argc = append(argc, sliceVar.CName)
+			}
+
+			if len(fouts) != 1 {
+				var multi []NameTV
+				for j, out := range fouts {
+					rj := Format("_multi_%s_%d", ser, j)
+					vj := NameTV{rj, out.TV}
+					multi = append(multi, vj)
+					gd := co.DefineLocalTempC(rj, out.TV, "")
+					argc = append(argc, F("&%s", gd.CName))
+				}
+				c := co.FormatCall(funcVal, argc, bm)
+				return &CVal{c: c, t: &MultiTV{multi}}
+			} else {
+				c := co.FormatCall(funcVal, argc, bm)
+				t := fouts[0].TV
+				return &CVal{c: c, t: t}
+			}
+		} // end case *FunctionTV
+	} // end switch
+	panic(F("cannot use as a function: %v", funcVal))
 }
 
 func (co *Compiler) FormatCall(funcVal Value, argc []string, bm *BoundMethodVal) string {
@@ -2562,38 +2594,42 @@ func (co *Compiler) VisitFor(fors *ForS) {
 	co.StartScope()
 
 	collV := fors.Coll.VisitExpr(co)
-	slice := co.Reify(collV)
-	index := co.DefineLocalTempC("index_"+label, IntTO, "-1")
-	limit := co.DefineLocalTempC("limit_"+label, IntTO, F("(%s).len", slice.ToC()))
-	var key *GDef
-	switch k := fors.Key.(type) {
-	case nil:
-		{
+
+	switch coll_t := collV.Type().(type) {
+	case *SliceTV:
+		slice := co.Reify(collV)
+		index := co.DefineLocalTempC("index_"+label, IntTO, "-1")
+		limit := co.DefineLocalTempC("limit_"+label, IntTO, F("((%s).len / sizeof(%s))", slice.ToC(), coll_t.E.CType()))
+		var key *GDef
+		switch k := fors.Key.(type) {
+		case nil:
+			{
+			}
+		case (*IdentX):
+			key = co.DefineLocal("v", k.X, IntTO)
 		}
-	case (*IdentX):
-		key = co.DefineLocal("v", k.X, IntTO)
-	}
 
-	var value *GDef
-	switch v := fors.Value.(type) {
-	case nil:
-		{
+		var value *GDef
+		switch v := fors.Value.(type) {
+		case nil:
+			{
+			}
+		case (*IdentX):
+			value = co.DefineLocal("v", v.X, coll_t.E)
 		}
-	case (*IdentX):
-		value = co.DefineLocal("v", v.X, ByteTO)
-	}
 
-	co.P("while(1) { Cont_%s: {}", label)
+		co.P("while(1) { Cont_%s: {}", label)
 
-	co.P("%s++; // L2629", index.CName)
-	co.P("if (%s >= %s) break; // L2630", index.CName, limit.CName)
+		co.P("%s++; // L2629", index.CName)
+		co.P("if (%s >= %s) break; // L2630", index.CName, limit.CName)
 
-	if fors.Key != nil {
-		co.P("%s = %s;", key.CName, index.CName)
-	}
-	if fors.Value != nil {
-		co.P("SliceGet(%s, 1, %s, &%s); //L2645", slice.ToC(), index.CName, value.CName)
-	}
+		if fors.Key != nil {
+			co.P("%s = %s;", key.CName, index.CName)
+		}
+		if fors.Value != nil {
+			co.P("SliceGet(%s, sizeof(%s), %s, &%s); //L2645", slice.ToC(), coll_t.E.CType(), index.CName, value.CName)
+		}
+	} // end case *SliceTV
 
 	savedB, savedC := co.BreakTo, co.ContinueTo
 	co.BreakTo, co.ContinueTo = "Break_"+label, "Cont_"+label

@@ -26,13 +26,13 @@ func main() {
 		println(i, e)
 	}
 
-	// ii := make([]int, n)
-	// for j := range ii {
-	// ii[j] = s[j] * 100
-	// }
-	// for i, e := range ii {
-	// println(i, e)
-	// }
+	ii := make([]int, n)
+	for j := range ii {
+		ii[j] = int(s[j]) * 100
+	}
+	for i, e := range ii {
+		println(i, e)
+	}
 }
 
 // expect: len 5
@@ -49,3 +49,8 @@ func main() {
 // expect: 2 48
 // expect: 3 48
 // expect: 4 92
+// expect: 0 10400
+// expect: 1 10100
+// expect: 2 10800
+// expect: 3 10800
+// expect: 4 11100
