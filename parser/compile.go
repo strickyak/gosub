@@ -510,7 +510,7 @@ func (co *Compiler) ConvertToCNameType(from Value, toCName string, toType TypeVa
 			from = co.DefineLocalTempC(ser, IntTO, from.ToC())
 		}
 
-        rfrom := co.Reify(from)
+		rfrom := co.Reify(from)
 		dest := toCName
 		co.P("%s.pointer = &%s; // L458", dest, rfrom.ToC())
 		co.P("%s.typecode = %q; // L459", dest, rfrom.Type().TypeCode())
@@ -742,10 +742,10 @@ type Stmt interface {
 }
 
 type AssignS struct {
-	A  []Expr
-	Op string
-	B  []Expr
-    IsRange bool
+	A       []Expr
+	Op      string
+	B       []Expr
+	IsRange bool
 }
 
 func (o *AssignS) String() string {
@@ -821,12 +821,11 @@ func (o *SwitchS) VisitStmt(v StmtVisitor) {
 	v.VisitSwitch(o)
 }
 
-
 type WhileS struct {
 	First Stmt
-	Pred Expr
-	Next Stmt
-	Body *Block
+	Pred  Expr
+	Next  Stmt
+	Body  *Block
 }
 
 func (o *WhileS) String() string {
@@ -837,12 +836,11 @@ func (o *WhileS) VisitStmt(v StmtVisitor) {
 	v.VisitWhile(o)
 }
 
-
 type ForS struct {
-	Key Expr
+	Key   Expr
 	Value Expr
-	Coll Expr
-	Body *Block
+	Coll  Expr
+	Body  *Block
 }
 
 func (o *ForS) String() string {
@@ -852,7 +850,6 @@ func (o *ForS) String() string {
 func (o *ForS) VisitStmt(v StmtVisitor) {
 	v.VisitFor(o)
 }
-
 
 type IfS struct {
 	Pred Expr
@@ -1180,10 +1177,10 @@ func (val *SubVal) Type() TypeValue {
 	case *MapTV:
 		return t.K
 	}
-    switch val.container.Type().TypeCode()[0] {
-    case 's':
-        return ByteTO
-    }
+	switch val.container.Type().TypeCode()[0] {
+	case 's':
+		return ByteTO
+	}
 	panic(F("L1169: cannot index into %v", val.container))
 }
 func (val *BoundMethodVal) Type() TypeValue {
@@ -1215,8 +1212,8 @@ func (val *SubVal) ToC() string {
 	case *MapTV:
 		panic(1198)
 	}
-    switch val.container.Type().TypeCode()[0] {
-    case 's':
+	switch val.container.Type().TypeCode()[0] {
+	case 's':
 		nth, ok := ResolveAsIntStr(val.subscript)
 		if !ok {
 			panic(F("slice subscript must be integer; got %v", val.subscript))
@@ -1228,7 +1225,7 @@ func (val *SubVal) ToC() string {
 			nth,
 			tmp.ToC())
 		return F("(%s /*L1267*/)", tmp.ToC())
-    }
+	}
 	panic(F("L1188: cannot index into %v", val.container))
 }
 func (val *BoundMethodVal) ToC() string {
@@ -2254,7 +2251,7 @@ func (co *Compiler) VisitCall(callx *CallX) Value {
 	}
 
 	if funcRec.HasDotDotDot {
-		sliceName := CName(ser, "in", "vec")
+		sliceName := CName(ser, "in", "extras")
 		sliceVar := co.DefineLocalTempC(sliceName, extraSliceType, "NilSlice /*MakeSlice L1949*/")
 
 		for i := 0; i < numExtras; i++ {
@@ -2560,41 +2557,43 @@ func (co *Compiler) VisitReturn(ret *ReturnS) {
 	}
 }
 func (co *Compiler) VisitFor(fors *ForS) {
-    // FOR NOW, assume slice of byte.  TODO: string, map.
+	// FOR NOW, assume slice of byte.  TODO: string, map.
 	label := Serial("for")
-    _ = co.StartScope()
+	co.StartScope()
 
-    collV := fors.Coll.VisitExpr(co)
-    slice := co.Reify(collV)
-    index := co.DefineLocalTempC("index_"+label, IntTO, "-1")
-    limit := co.DefineLocalTempC("limit_"+label, IntTO, F("(%s).len", slice.ToC()))
-    var key *GDef
-    switch k := fors.Key.(type) {
-    case nil:
-        {}
-    case (*IdentX):
-        key = co.DefineLocal("v", k.X, IntTO)
-    }
+	collV := fors.Coll.VisitExpr(co)
+	slice := co.Reify(collV)
+	index := co.DefineLocalTempC("index_"+label, IntTO, "-1")
+	limit := co.DefineLocalTempC("limit_"+label, IntTO, F("(%s).len", slice.ToC()))
+	var key *GDef
+	switch k := fors.Key.(type) {
+	case nil:
+		{
+		}
+	case (*IdentX):
+		key = co.DefineLocal("v", k.X, IntTO)
+	}
 
-    var value *GDef
-    switch v := fors.Value.(type) {
-    case nil:
-        {}
-    case (*IdentX):
-        value = co.DefineLocal("v", v.X, ByteTO)
-    }
+	var value *GDef
+	switch v := fors.Value.(type) {
+	case nil:
+		{
+		}
+	case (*IdentX):
+		value = co.DefineLocal("v", v.X, ByteTO)
+	}
 
 	co.P("while(1) { Cont_%s: {}", label)
 
-    co.P("%s++; // L2629", index.CName)
-    co.P("if (%s >= %s) break; // L2630", index.CName, limit.CName)
+	co.P("%s++; // L2629", index.CName)
+	co.P("if (%s >= %s) break; // L2630", index.CName, limit.CName)
 
-    if fors.Key != nil {
-        co.P("%s = %s;", key.CName, index.CName)
-    }
-    if fors.Value != nil {
-        co.P("SliceGet(%s, 1, %s, &%s); //L2645", slice.ToC(), index.CName, value.CName)
-    }
+	if fors.Key != nil {
+		co.P("%s = %s;", key.CName, index.CName)
+	}
+	if fors.Value != nil {
+		co.P("SliceGet(%s, 1, %s, &%s); //L2645", slice.ToC(), index.CName, value.CName)
+	}
 
 	savedB, savedC := co.BreakTo, co.ContinueTo
 	co.BreakTo, co.ContinueTo = "Break_"+label, "Cont_"+label
@@ -2602,11 +2601,12 @@ func (co *Compiler) VisitFor(fors *ForS) {
 	co.P("  }")
 	co.P("Break_%s: {}", label)
 	co.BreakTo, co.ContinueTo = savedB, savedC
-    co.FinishScope()
+	co.FinishScope()
 }
 
 func (co *Compiler) VisitWhile(wh *WhileS) {
 	label := Serial("while")
+	co.StartScope()
 	co.P("while(1) { Cont_%s: {}", label)
 	if wh.Pred != nil {
 		co.P("    bool _while_ = (bool)(%s);", wh.Pred.VisitExpr(co).ToC())
@@ -2618,6 +2618,7 @@ func (co *Compiler) VisitWhile(wh *WhileS) {
 	co.P("  }")
 	co.P("Break_%s: {}", label)
 	co.BreakTo, co.ContinueTo = savedB, savedC
+	co.FinishScope()
 }
 func (co *Compiler) VisitBreak(sws *BreakS) {
 	if co.BreakTo == "" {
@@ -2632,6 +2633,7 @@ func (co *Compiler) VisitContinue(sws *ContinueS) {
 	co.P("goto %s;", co.ContinueTo)
 }
 func (co *Compiler) VisitIf(ifs *IfS) {
+	co.StartScope()
 	co.P("  { bool _if_ = %s;", ifs.Pred.VisitExpr(co).ToC())
 	co.P("  if( _if_ ) {")
 	ifs.Yes.VisitStmt(co)
@@ -2640,10 +2642,13 @@ func (co *Compiler) VisitIf(ifs *IfS) {
 		ifs.No.VisitStmt(co)
 	}
 	co.P("  }}")
+	co.FinishScope()
 }
 func (co *Compiler) VisitSwitch(sws *SwitchS) {
+	co.StartScope()
 	co.P("  { int _switch_ = %s;", sws.Switch.VisitExpr(co).ToC())
 	for _, c := range sws.Cases {
+		co.StartScope()
 		co.P("  if (")
 		for _, m := range c.Matches {
 			co.P("_switch_ == %s ||", m.VisitExpr(co).ToC())
@@ -2651,6 +2656,7 @@ func (co *Compiler) VisitSwitch(sws *SwitchS) {
 		co.P("      0 ) {")
 		c.Body.VisitStmt(co)
 		co.P("  } else ")
+		co.FinishScope()
 	}
 	co.P("  {")
 	if sws.Default != nil {
@@ -2658,8 +2664,10 @@ func (co *Compiler) VisitSwitch(sws *SwitchS) {
 	}
 	co.P("  }")
 	co.P("  }")
+	co.FinishScope()
 }
 func (co *Compiler) VisitBlock(a *Block) {
+	co.StartScope()
 	if a == nil {
 		panic("L2058")
 	}
@@ -2669,6 +2677,7 @@ func (co *Compiler) VisitBlock(a *Block) {
 		e.VisitStmt(co)
 		log.Printf("VisitBlock[%d] ==>\n<<<\n%s\n>>>", i, co.Buf.String())
 	}
+	co.FinishScope()
 }
 
 type Buf struct {
@@ -2730,11 +2739,12 @@ func (co *Compiler) DefineLocal(prefix string, name string, tv TypeValue) *GDef 
 	return local
 }
 func (co *Compiler) FinishScope() {
+	co.P("// Finishing Scope: }}}")
 	co.CurrentBlock = co.CurrentBlock.parent
 }
 func (co *Compiler) StartScope() *Block {
 	ser := Serial("scope")
-	co.P("// Starting Scope: %q", ser)
+	co.P("// Starting Scope: %q {{{", ser)
 	block := &Block{
 		debugName: ser,
 		locals:    make(map[string]*GDef),
@@ -2742,7 +2752,7 @@ func (co *Compiler) StartScope() *Block {
 		compiler:  co,
 	}
 	co.CurrentBlock = block
-    return block
+	return block
 }
 func (co *Compiler) EmitFunc(gd *GDef, justDeclare bool) {
 	co.StartScope()

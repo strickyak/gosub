@@ -377,37 +377,37 @@ func (o *Parser) ParseStmt(b *Block) Stmt {
 		var two Expr
 		var three Stmt
 		if o.Word != "{" {
-            o.TakePunc(";")
+			o.TakePunc(";")
 			two = o.ParseExpr()
-            o.TakePunc(";")
+			o.TakePunc(";")
 			three = o.ParseStmt(forscope)
 		}
 		body := o.ParseBlock()
 
-        if two == nil {
-            switch t := one.(type) {
-            case nil:
-		        return &WhileS{nil, nil, nil, body} // for ever
-            case (*AssignS):
+		if two == nil {
+			switch t := one.(type) {
+			case nil:
+				return &WhileS{nil, nil, nil, body} // for ever
+			case (*AssignS):
 
-                if t.IsRange {
-                    if len(t.A)==1 && len(t.B)==1 {
-                        return &ForS{t.A[0], nil, t.B[0], body}
-                    } else if len(t.A)==2 && len(t.B)==1 {
-                        return &ForS{t.A[0], t.A[1], t.B[0], body}
-                    } else {
-                        panic(F("bad range assignment after `for`; got %v", one))
-                    }
-                } else {
-                    if len(t.A)==0 && len(t.B)==1 {
-                        pred := t.B[0]
-                        return &WhileS{nil, pred, nil, body}
-                    } else {
-                        panic(F("expected predicate expr after `for`; got %v", one))
-                    }
-                }
-            }
-        }
+				if t.IsRange {
+					if len(t.A) == 1 && len(t.B) == 1 {
+						return &ForS{t.A[0], nil, t.B[0], body}
+					} else if len(t.A) == 2 && len(t.B) == 1 {
+						return &ForS{t.A[0], t.A[1], t.B[0], body}
+					} else {
+						panic(F("bad range assignment after `for`; got %v", one))
+					}
+				} else {
+					if len(t.A) == 0 && len(t.B) == 1 {
+						pred := t.B[0]
+						return &WhileS{nil, pred, nil, body}
+					} else {
+						panic(F("expected predicate expr after `for`; got %v", one))
+					}
+				}
+			}
+		}
 		return &WhileS{one, two, three, body}
 
 	case "switch":

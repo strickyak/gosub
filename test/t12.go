@@ -1,28 +1,28 @@
 package main
 
 func divides(p int, q int) bool {
-    return p % q == 0
+	return p%q == 0
 }
 func prime(p int) bool {
-  i := 1
-  divisions := 0
-  for i <= p {
-    if divides(p, i) {
-      divisions++
-    }
-    i++
-  }
-  return divisions == 2
+	i := 1
+	divisions := 0
+	for i <= p {
+		if divides(p, i) {
+			divisions++
+		}
+		i++
+	}
+	return divisions == 2
 }
 
 func main() {
 	i := 2
 	for i <= 100 {
-        if prime(i) {
-            println(i, "prime")
-        } else {
-            println(i, "composite")
-        }
+		if prime(i) {
+			println(i, "prime")
+		} else {
+			println(i, "composite")
+		}
 		i = i + 1
 	}
 }
