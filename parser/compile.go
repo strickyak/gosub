@@ -504,16 +504,16 @@ func (co *Compiler) ConvertToCNameType(from Value, toCName string, toType TypeVa
 
 	// Case of assigning to interface{}.
 	if toType == AnyTO {
-
 		if from.Type() == ConstIntTO {
 			// Cannot take address of integer literal, so create a tmp var for ConstInt case.
 			ser := Serial("constint")
 			from = co.DefineLocalTempC(ser, IntTO, from.ToC())
 		}
 
+        rfrom := co.Reify(from)
 		dest := toCName
-		co.P("%s.pointer = &%s; // L458", dest, from.ToC())
-		co.P("%s.typecode = %q; // L459", dest, from.Type().TypeCode())
+		co.P("%s.pointer = &%s; // L458", dest, rfrom.ToC())
+		co.P("%s.typecode = %q; // L459", dest, rfrom.Type().TypeCode())
 		return
 	}
 
