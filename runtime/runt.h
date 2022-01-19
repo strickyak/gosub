@@ -63,23 +63,24 @@ enum ClsNum {
   C_Map = 5,
 };
 
-typedef struct {
+typedef struct String {
   word base;
   P_uint offset;
   P_uint len;
 } String;
 typedef String P_string;
 
-typedef struct {
+typedef struct Slice {
   word base;
   P_uint offset;
   P_uint len;
 } Slice;
 
-typedef struct {
+typedef struct Any {
   void* pointer;  // for everything else
   const char* typecode;
-} P__any_;
+} Any;
+typedef struct Any P__any_;
 
 extern Slice NilSlice;
 extern void F_BUILTIN_println(int i);
@@ -92,6 +93,7 @@ extern void panic_s(const char*);
 extern String MakeStringFromC(const char* s);
 extern char* MakeCStrFromString(String s);
 extern String StringAdd(String a, String b);
+extern void StringGet(String a, int nth, P_byte* out);
 
 // Slices
 extern Slice MakeSlice(const char* typecode, int len, int cap, int size);

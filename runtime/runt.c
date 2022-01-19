@@ -41,6 +41,24 @@ char* MakeCStrFromString(String s) {
   return p;
 }
 
+void StringGet(String a, int nth, P_byte* out) {
+  if (!a.base) panic_s("Get on empty string");
+  if (nth < 0) panic_s("string index negative");
+  if (nth >= a.len) panic_s("string index OOB");
+  *out =  *((char*)a.base + a.offset + nth);
+}
+
+String StringAdd(String a, String b) {
+  int n = a.len + b.len;
+  if (n >= INF - 1) panic_s("MakeStringFromC: too long");
+  word p = oalloc(n + 1, 1);
+  assert(p);
+  strcpy((char*)p, STRING_START(a));
+  strcpy((char*)p+a.len, STRING_START(b));
+  String z = {p, 0, n};
+  return z;
+}
+
 Slice MakeSlice(const char* typecode, int len, int cap, int size) {
   // cap is ignored.
   if (!len) {
@@ -109,12 +127,14 @@ Slice SliceAppend(const char* typecode, Slice a, void* new_elem_ptr,
 }
 void SliceGet(Slice a, int size, int nth, void* value) {
   if (!a.base) panic_s("Get on nil slice");
-  if (nth * size >= a.len) panic_s("Get slice index OOB");
+  if (nth < 0) panic_s("slice index negative");
+  if (nth * size >= a.len) panic_s("slice index OOB");
   memcpy(value, (char*)a.base + a.offset + nth * size, size);
 }
 void SlicePut(Slice a, int size, int nth, void* value) {
   if (!a.base) panic_s("Put on nil slice");
-  if (nth * size >= a.len) panic_s("Put slice index OOB");
+  if (nth < 0) panic_s("slice index negative");
+  if (nth * size >= a.len) panic_s("slice index OOB");
   memcpy((char*)a.base + a.offset + nth * size, value, size);
 }
 int SliceLen(Slice a, int size) {

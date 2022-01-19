@@ -1216,6 +1216,10 @@ func (val *SubVal) Type() TypeValue {
 	case *MapTV:
 		return t.K
 	}
+    switch val.container.Type().TypeCode()[0] {
+    case 's':
+        return ByteTO
+    }
 	panic(F("L1169: cannot index into %v", val.container))
 }
 func (val *BoundMethodVal) Type() TypeValue {
@@ -1247,6 +1251,20 @@ func (val *SubVal) ToC() string {
 	case *MapTV:
 		panic(1198)
 	}
+    switch val.container.Type().TypeCode()[0] {
+    case 's':
+		nth, ok := ResolveAsIntStr(val.subscript)
+		if !ok {
+			panic(F("slice subscript must be integer; got %v", val.subscript))
+		}
+		tmp := coHack.DefineLocalTempC(ser, ByteTO, "")
+		// void StringGet(String a, int nth, byte* value);
+		coHack.P("StringGet(%s, %s, &%s); //L1262",
+			val.container.ToC(),
+			nth,
+			tmp.ToC())
+		return F("(%s /*L1267*/)", tmp.ToC())
+    }
 	panic(F("L1188: cannot index into %v", val.container))
 }
 func (val *BoundMethodVal) ToC() string {
@@ -2392,7 +2410,7 @@ func (co *Compiler) AssignSingle(left Value, right Value) {
 			}
 			rleft := co.ReifyAs(right, UintTO)
 
-			co.P(" SlicePut(%s, sizoef(%s), %s, &%s); L2071",
+			co.P(" SlicePut(%s, sizeof(%s), %s, &%s); // L2071",
 				t.container.ToC(),
 				right.Type().CType(),
 				nth,
