@@ -73,7 +73,8 @@ case $1 in
     compile $2
     ;;
   run )
-    BIN=$(compile $2)
+    compile $2
+    BIN=$(basename $2 .go).bin
     shift
     shift
     $(dirname $BIN)/$(basename $BIN) "$@"

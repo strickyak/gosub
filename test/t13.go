@@ -11,12 +11,20 @@ func main() {
     bb[0] = 'H'
     println(bb[0])
 
-    // for i, e := range bb {
-        // println(i, e)
-    // }
+    for j := range bb {
+        bb[j] = s[j] + 1
+    }
+    for i, e := range bb {
+        println(i, e)
+    }
 }
 
 // expect: len 5
 // expect: 104 101 108 108 111
 // expect: hello world!
 // expect: 72
+// 0 105
+// 1 102
+// 2 109
+// 3 109
+// 4 112

@@ -530,7 +530,7 @@ func (co *Compiler) ConvertToCNameType(from Value, toCName string, toType TypeVa
 			return
 		}
 	}
-	panic(F("Cannot assign: %v := %v", toCName, from))
+	panic(F("Cannot assign: (%v :: %v) = %v", toCName, toType, from))
 }
 
 func (o *TypeTV) XXX_Assign(c string, typ TypeValue) (z string, ok bool) {
@@ -785,6 +785,7 @@ type StmtVisitor interface {
 	VisitAssign(*AssignS)
 	VisitVar(*VarStmt)
 	VisitWhile(*WhileS)
+	VisitFor(*ForS)
 	VisitSwitch(*SwitchS)
 	VisitIf(*IfS)
 	VisitReturn(*ReturnS)
@@ -802,6 +803,7 @@ type AssignS struct {
 	A  []Expr
 	Op string
 	B  []Expr
+    IsRange bool
 }
 
 func (o *AssignS) String() string {
@@ -877,18 +879,38 @@ func (o *SwitchS) VisitStmt(v StmtVisitor) {
 	v.VisitSwitch(o)
 }
 
+
 type WhileS struct {
+	First Stmt
 	Pred Expr
+	Next Stmt
 	Body *Block
 }
 
 func (o *WhileS) String() string {
-	return fmt.Sprintf("\nWhile(%v)\n", o.Pred)
+	return fmt.Sprintf("\nWhile(%#v)\n", o)
 }
 
 func (o *WhileS) VisitStmt(v StmtVisitor) {
 	v.VisitWhile(o)
 }
+
+
+type ForS struct {
+	Key Expr
+	Value Expr
+	Coll Expr
+	Body *Block
+}
+
+func (o *ForS) String() string {
+	return fmt.Sprintf("\nFor(%#v)\n", o)
+}
+
+func (o *ForS) VisitStmt(v StmtVisitor) {
+	v.VisitFor(o)
+}
+
 
 type IfS struct {
 	Pred Expr
@@ -2399,33 +2421,33 @@ func (co *Compiler) VisitVar(v *VarStmt) {
 	L("debug VisitVar: %#v ==> %#v", *v, *debug)
 }
 func (co *Compiler) AssignSingle(left Value, right Value) {
-	switch t := left.(type) {
+	switch lt := left.(type) {
 	case *SubVal:
-		switch t.container.Type().(type) {
+		switch lt.container.Type().(type) {
 		case *SliceTV:
 			// slice, size, nth, value
-			nth, ok := ResolveAsIntStr(t.subscript)
+			nth, ok := ResolveAsIntStr(lt.subscript)
 			if !ok {
-				panic(F("slice subscript must be integer; got %v", t.subscript))
+				panic(F("slice subscript must be integer; got %v", lt.subscript))
 			}
-			rleft := co.ReifyAs(right, UintTO)
+			rright := co.ReifyAs(right, left.Type())
 
 			co.P(" SlicePut(%s, sizeof(%s), %s, &%s); // L2071",
-				t.container.ToC(),
+				lt.container.ToC(),
 				right.Type().CType(),
 				nth,
-				rleft.ToC())
+				rright.ToC())
 			return
 
 		case *MapTV:
-			panic("TODO L2070")
+			panic(F("TODO MapTV L2070 (%v :: %v) = %v", left, lt, right))
 		}
-		panic(F("todo SubVal L1835: %v", t))
+		panic(F("todo SubVal L1835: (%v :: %v) = %v", left, lt, right))
 	default:
-		co.P("%s = %s; // L1837", left.ToC(), right.ToC())
+		co.P("%s = %s; // L2447", left.ToC(), right.ToC())
 		return
 	}
-	panic("L2093")
+	panic(F("L2450: cannot (%v :: %v) = %v", left, right))
 }
 func (co *Compiler) VisitAssign(ass *AssignS) {
 	L("//## assign..... %v   %v   %v", ass.A, ass.Op, ass.B)
@@ -2595,6 +2617,50 @@ func (co *Compiler) VisitReturn(ret *ReturnS) {
 		co.P("  return; // L2529: multi")
 	}
 }
+func (co *Compiler) VisitFor(fors *ForS) {
+    // FOR NOW, assume slice of byte.  TODO: string, map.
+	label := Serial("for")
+
+    collV := fors.Coll.VisitExpr(co)
+    slice := co.Reify(collV)
+    index := co.DefineLocalTempC("index_"+label, IntTO, "-1")
+    limit := co.DefineLocalTempC("limit_"+label, IntTO, F("(%s).len", slice.ToC()))
+    var key *GDef
+    switch k := fors.Key.(type) {
+    case nil:
+        {}
+    case (*IdentX):
+        key = co.DefineLocal("v", k.X, IntTO)
+    }
+
+    var value *GDef
+    switch v := fors.Value.(type) {
+    case nil:
+        {}
+    case (*IdentX):
+        value = co.DefineLocal("v", v.X, ByteTO)
+    }
+
+	co.P("while(1) { Cont_%s: {}", label)
+
+    co.P("%s++; // L2629", index.CName)
+    co.P("if (%s >= %s) break; // L2630", index.CName, limit.CName)
+
+    if fors.Key != nil {
+        co.P("%s = %s;", key.CName, index.CName)
+    }
+    if fors.Value != nil {
+        co.P("SliceGet(%s, 1, %s, &%s); //L2645", slice.ToC(), index.CName, value.CName)
+    }
+
+	savedB, savedC := co.BreakTo, co.ContinueTo
+	co.BreakTo, co.ContinueTo = "Break_"+label, "Cont_"+label
+	fors.Body.VisitStmt(co)
+	co.P("  }")
+	co.P("Break_%s: {}", label)
+	co.BreakTo, co.ContinueTo = savedB, savedC
+}
+
 func (co *Compiler) VisitWhile(wh *WhileS) {
 	label := Serial("while")
 	co.P("while(1) { Cont_%s: {}", label)
@@ -2860,6 +2926,8 @@ func (o *Nando) VisitAssign(ass *AssignS) {
 func (o *Nando) VisitReturn(ret *ReturnS) {
 }
 func (o *Nando) VisitWhile(wh *WhileS) {
+}
+func (o *Nando) VisitFor(fors *ForS) {
 }
 func (o *Nando) VisitBreak(sws *BreakS) {
 }

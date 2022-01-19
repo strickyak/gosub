@@ -1,16 +1,8 @@
 package parser
 
 import (
-	//"bufio"
-	//"bytes"
-	//"fmt"
 	"io"
 	"log"
-	//"os"
-	//"path/filepath"
-	//"reflect"
-	//"runtime/debug"
-	//"strings"
 )
 
 type Parser struct {
@@ -292,21 +284,26 @@ func (o *Parser) ParseList() []Expr {
 }
 
 func (o *Parser) ParseAssignment() Stmt {
+	isRange := true
 	a := o.ParseList()
 	op := o.Word
 	if op == "=" || len(op) == 2 && op[1] == '=' {
 		o.Next()
+		if o.Word == "range" {
+			o.Next()
+			isRange = true
+		}
 		b := o.ParseList()
-		return &AssignS{a, op, b}
+		return &AssignS{a, op, b, isRange}
 	} else if op == "++" {
 		o.Next()
-		return &AssignS{a, op, nil}
+		return &AssignS{a, op, nil, isRange}
 	} else if op == "--" {
 		o.Next()
-		return &AssignS{a, op, nil}
+		return &AssignS{a, op, nil, isRange}
 	} else if o.Kind == L_EOL {
 		// Result not assigned.
-		return &AssignS{nil, "", a}
+		return &AssignS{nil, "", a, isRange}
 	} else {
 		panic(F("Unexpected token after statement: %v", o.Word))
 	}
@@ -365,14 +362,54 @@ func (o *Parser) ParseStmt(b *Block) Stmt {
 		return &IfS{pred, yes, no}
 	case "for":
 		o.Next()
-		var pred Expr
-		if o.Word != "{" {
-			// TODO: For the three-part `for`, we need to parse either an expression or a statement.
-			// That means a special case, allowing an expression that is not a funtion call, as a statement.
-			pred = o.ParseExpr()
+
+		forscope := &Block{
+			debugName: "forscope",
+			locals:    make(map[string]*GDef),
+			parent:    b,
+			compiler:  b.compiler,
 		}
-		b2 := o.ParseBlock()
-		return &WhileS{pred, b2}
+
+		var one Stmt
+		if o.Word != "{" {
+			one = o.ParseStmt(forscope)
+		}
+		var two Expr
+		var three Stmt
+		if o.Word != "{" {
+            o.TakePunc(";")
+			two = o.ParseExpr()
+            o.TakePunc(";")
+			three = o.ParseStmt(forscope)
+		}
+		body := o.ParseBlock()
+
+        if two == nil {
+            switch t := one.(type) {
+            case nil:
+		        return &WhileS{nil, nil, nil, body} // for ever
+            case (*AssignS):
+
+                if t.IsRange {
+                    if len(t.A)==1 && len(t.B)==1 {
+                        return &ForS{t.A[0], nil, t.B[0], body}
+                    } else if len(t.A)==2 && len(t.B)==1 {
+                        return &ForS{t.A[0], t.A[1], t.B[0], body}
+                    } else {
+                        panic(F("bad range assignment after `for`; got %v", one))
+                    }
+                } else {
+                    if len(t.A)==0 && len(t.B)==1 {
+                        pred := t.B[0]
+                        return &WhileS{nil, pred, nil, body}
+                    } else {
+                        panic(F("expected predicate expr after `for`; got %v", one))
+                    }
+                }
+            }
+        }
+		return &WhileS{one, two, three, body}
+
 	case "switch":
 		o.Next()
 		var subject Expr
