@@ -284,10 +284,10 @@ func (o *Parser) ParseList() []Expr {
 }
 
 func (o *Parser) ParseAssignment() Stmt {
-	isRange := true
+	isRange := false
 	a := o.ParseList()
 	op := o.Word
-	if op == "=" || len(op) == 2 && op[1] == '=' {
+	if op == "=" || op == ":=" {
 		o.Next()
 		if o.Word == "range" {
 			o.Next()
@@ -301,7 +301,7 @@ func (o *Parser) ParseAssignment() Stmt {
 	} else if op == "--" {
 		o.Next()
 		return &AssignS{a, op, nil, isRange}
-	} else if o.Kind == L_EOL {
+	} else if o.Kind == L_EOL || o.Word == "{" {
 		// Result not assigned.
 		return &AssignS{nil, "", a, isRange}
 	} else {

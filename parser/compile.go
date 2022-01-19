@@ -159,7 +159,7 @@ func (r *FuncRec) String() string {
 }
 
 func (o *PointerTX) String() string { return Format("PointerTX(%v)", o.E) }
-func (o *SliceTX) String() string   { println(o.E.String()); return Format("SliceTX(%v)", o.E) }
+func (o *SliceTX) String() string   { return Format("SliceTX(%v)", o.E) }
 func (o *MapTX) String() string     { return Format("MapTX(%v=>%v)", o.K, o.V) }
 func (o *StructTX) String() string {
 	if o.StructRecX == nil {
@@ -531,64 +531,6 @@ func (co *Compiler) ConvertToCNameType(from Value, toCName string, toType TypeVa
 		}
 	}
 	panic(F("Cannot assign: (%v :: %v) = %v", toCName, toType, from))
-}
-
-func (o *TypeTV) XXX_Assign(c string, typ TypeValue) (z string, ok bool) {
-	panic("cannot XXX_Assign to _type_")
-}
-func (o *FunctionTV) XXX_Assign(c string, typ TypeValue) (z string, ok bool) {
-	panic("cannot XXX_Assign to func")
-}
-func (o *MultiTV) XXX_Assign(c string, typ TypeValue) (z string, ok bool) {
-	panic("cannot XXX_Assign to Multi")
-}
-
-func (o *PrimTV) XXX_Assign(c string, typ TypeValue) (z string, ok bool) {
-	if o.Equals(typ) {
-		return c, true
-	} else {
-		return "", false
-	}
-}
-func (o *SliceTV) XXX_Assign(c string, typ TypeValue) (z string, ok bool) {
-	if o.Equals(typ) {
-		return c, true
-	} else {
-		return "", false
-	}
-}
-func (o *MapTV) XXX_Assign(c string, typ TypeValue) (z string, ok bool) {
-	if o.Equals(typ) {
-		return c, true
-	} else {
-		return "", false
-	}
-}
-func (o *StructTV) XXX_Assign(c string, typ TypeValue) (z string, ok bool) {
-	if o.Equals(typ) {
-		return c, true
-	} else {
-		return "", false
-	}
-}
-func (o *PointerTV) XXX_Assign(c string, typ TypeValue) (z string, ok bool) {
-	if o.Equals(typ) {
-		return c, true
-	} else {
-		return "", false
-	}
-}
-func (o *InterfaceTV) XXX_Assign(c string, typ TypeValue) (z string, ok bool) {
-	if ptr, ok := typ.(*PointerTV); ok {
-		if _, ok := ptr.TypeOfHandle(); ok {
-			// TODO: check compat
-			return Format("HandleToInterface(%s)", c), true
-		}
-	}
-	if _, ok := typ.(*InterfaceTV); ok {
-		return c, true
-	}
-	return "", false
 }
 
 func (o *SliceTV) Cast(c string, typ TypeValue) (z string, ok bool) {
@@ -2620,6 +2562,7 @@ func (co *Compiler) VisitReturn(ret *ReturnS) {
 func (co *Compiler) VisitFor(fors *ForS) {
     // FOR NOW, assume slice of byte.  TODO: string, map.
 	label := Serial("for")
+    _ = co.StartScope()
 
     collV := fors.Coll.VisitExpr(co)
     slice := co.Reify(collV)
@@ -2659,6 +2602,7 @@ func (co *Compiler) VisitFor(fors *ForS) {
 	co.P("  }")
 	co.P("Break_%s: {}", label)
 	co.BreakTo, co.ContinueTo = savedB, savedC
+    co.FinishScope()
 }
 
 func (co *Compiler) VisitWhile(wh *WhileS) {
@@ -2788,7 +2732,7 @@ func (co *Compiler) DefineLocal(prefix string, name string, tv TypeValue) *GDef 
 func (co *Compiler) FinishScope() {
 	co.CurrentBlock = co.CurrentBlock.parent
 }
-func (co *Compiler) StartScope() {
+func (co *Compiler) StartScope() *Block {
 	ser := Serial("scope")
 	co.P("// Starting Scope: %q", ser)
 	block := &Block{
@@ -2798,6 +2742,7 @@ func (co *Compiler) StartScope() {
 		compiler:  co,
 	}
 	co.CurrentBlock = block
+    return block
 }
 func (co *Compiler) EmitFunc(gd *GDef, justDeclare bool) {
 	co.StartScope()

@@ -17,14 +17,35 @@ func main() {
     for i, e := range bb {
         println(i, e)
     }
+
+    // Test truncation to byte, in the slice.
+    for j := range bb {
+        bb[j] = s[j] * 100
+    }
+    for i, e := range bb {
+        println(i, e)
+    }
+
+    // ii := make([]int, n)
+    // for j := range ii {
+        // ii[j] = s[j] * 100
+    // }
+    // for i, e := range ii {
+        // println(i, e)
+    // }
 }
 
 // expect: len 5
 // expect: 104 101 108 108 111
 // expect: hello world!
 // expect: 72
-// 0 105
-// 1 102
-// 2 109
-// 3 109
-// 4 112
+// expect: 0 105
+// expect: 1 102
+// expect: 2 109
+// expect: 3 109
+// expect: 4 112
+// expect: 0 160
+// expect: 1 116
+// expect: 2 48
+// expect: 3 48
+// expect: 4 92
