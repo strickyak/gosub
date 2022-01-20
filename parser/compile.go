@@ -2168,21 +2168,46 @@ func (co *Compiler) VisitAppend(args []Expr, hasDotDotDot bool) Value {
 	}
 	a0 := args[0].VisitExpr(co)
 	a1 := args[1].VisitExpr(co)
+	ra1 := co.Reify(a1)
 
 	return &CVal{
-		c: F("AppendSlice(%s, %s)", a0.ToC(), a1.ToC()),
+		c: F("SliceAppend(%s, &%s, sizeof(%s))", a0.ToC(), ra1.ToC(), ra1.Type().CType()),
 		t: a0.Type(),
 	}
+}
+func (co *Compiler) VisitLen(args []Expr) Value {
+	assert(len(args) == 1)
+	a := args[0].VisitExpr(co)
+
+	switch a.Type().(type) {
+	case *PrimTV:
+		switch a.Type().TypeCode()[0] {
+		case 's': // string
+			return &CVal{c: F("(%s).len", a.ToC()), t: IntTO}
+		}
+
+	case *SliceTV:
+		// TODO: avoid runtime division.
+		return &CVal{c: F("((%s).len / sizeof(%s))", a.ToC(), a.Type().CType()), t: IntTO}
+
+	case *MapTV:
+		panic(2194)
+	}
+	panic(2195)
 }
 
 func (co *Compiler) VisitCall(callx *CallX) Value {
 	if identx, ok := callx.Func.(*IdentX); ok {
-		if identx.X == "make" {
+		switch identx.X {
+		case "make":
 			return co.VisitMake(callx.Args)
-		}
-		if identx.X == "append" {
+
+		case "append":
 			// TODO dotdotdot
 			return co.VisitAppend(callx.Args, false)
+
+		case "len":
+			return co.VisitLen(callx.Args)
 		}
 	}
 
@@ -2286,7 +2311,7 @@ func (co *Compiler) VisitCall(callx *CallX) Value {
 				for i := 0; i < numExtras; i++ {
 					y := co.ReifyAs(argVals[numNormal+i], extraSliceType.E).ToC()
 
-					co.P("%s = SliceAppend(%q, %s, &%s, sizeof(%s)); // L1954: For extra input #%d", sliceVar.CName, extraSliceType.E.TypeCode(), sliceVar.CName, y, y, i)
+					co.P("%s = SliceAppend(%s, &%s, sizeof(%s)); // L1954: For extra input #%d", sliceVar.CName, sliceVar.CName, y, y, i)
 				}
 
 				fins = append(fins, NameTV{sliceVar.CName, extraSliceType})

@@ -101,8 +101,7 @@ Slice AppendSliceInt(Slice a, P_int x) {
   return a;
 }
 
-Slice SliceAppend(const char* typecode, Slice a, void* new_elem_ptr,
-                  int new_elem_size) {
+Slice SliceAppend(Slice a, void* new_elem_ptr, int new_elem_size) {
   if (!a.base) {
     // Initial allocation.
     word p = oalloc(INITIAL_CAP, 1);

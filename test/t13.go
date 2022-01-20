@@ -33,6 +33,13 @@ func main() {
 	for i, e := range ii {
 		println(i, e)
 	}
+
+	var ss []string
+	ss = append(ss, "foo")
+	ss = append(ss, "baar")
+	println(len(ss))
+	println(len(ss), ss[0], ss[1])
+	println(len(ss), len(ss[0]), len(ss[1]))
 }
 
 // expect: len 5
@@ -54,3 +61,6 @@ func main() {
 // expect: 2 10800
 // expect: 3 10800
 // expect: 4 11100
+// expect: 2
+// expect: 2 foo baar
+// expect: 2 3 4
