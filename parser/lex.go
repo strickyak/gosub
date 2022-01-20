@@ -7,6 +7,9 @@ import (
 	"log"
 )
 
+const LF = 10 // man 7 ascii
+const CR = 13 // Paranoid that OS9 may change meaning of \n
+
 const (
 	L_EOF    = 0
 	L_EOL    = 1
@@ -66,7 +69,7 @@ func (o *Lex) ReadChar() byte {
 		panic(err)
 	}
 	o.PrevLine, o.PrevCol = o.Line, o.Col
-	if ch == '\n' {
+	if ch == LF || ch == CR {
 		o.Line++
 		o.Col = 1
 	} else {
@@ -88,7 +91,7 @@ func (o *Lex) _Next_() {
 	}
 	c := o.ReadChar()
 	for 0 < c && c <= 32 {
-		if c == '\n' {
+		if c == LF || c == CR {
 			o.Kind, o.Word = L_EOL, ";;"
 			return
 		}
@@ -103,7 +106,7 @@ func (o *Lex) _Next_() {
 		if c2 == '/' {
 			for {
 				z := o.ReadChar()
-				if z < 32 {
+				if z == LF || z == CR {
 					o.Kind, o.Word = L_EOL, "//EOL//"
 					return
 				}
@@ -197,7 +200,7 @@ func (o *Lex) _Next_() {
 				case 'f':
 					c = '\f'
 				case 'n':
-					c = '\n'
+					c = '\n' // We are still on UNIX for now.
 				case 'r':
 					c = '\r'
 				case 't':

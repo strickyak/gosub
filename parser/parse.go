@@ -349,11 +349,11 @@ func (o *Parser) ParseStmt(b *Block) Stmt {
 			if o.Word == "if" {
 				noStmt := o.ParseStmt(b)
 				no = &Block{
-					debugName: "elseIf",
-					locals:    make(map[string]*GDef),
-					stmts:     []Stmt{noStmt},
-					parent:    b,
-					compiler:  b.compiler,
+					why:      "Parser:elseIf", // TODO why in Parser?
+					locals:   make(map[string]*GDef),
+					stmts:    []Stmt{noStmt},
+					parent:   b,
+					compiler: b.compiler,
 				}
 			} else {
 				no = o.ParseBlock()
@@ -364,10 +364,10 @@ func (o *Parser) ParseStmt(b *Block) Stmt {
 		o.Next()
 
 		forscope := &Block{
-			debugName: "forscope",
-			locals:    make(map[string]*GDef),
-			parent:    b,
-			compiler:  b.compiler,
+			why:      "Parser:forscope", // TODO why in Parser?
+			locals:   make(map[string]*GDef),
+			parent:   b,
+			compiler: b.compiler,
 		}
 
 		var one Stmt

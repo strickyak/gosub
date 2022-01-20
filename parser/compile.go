@@ -999,11 +999,11 @@ type XXX_NameAndType struct {
 	Package string
 }
 type Block struct {
-	debugName string
-	locals    map[string]*GDef // not really G
-	stmts     []Stmt
-	parent    *Block
-	compiler  *Compiler
+	why      string           // debug name
+	locals   map[string]*GDef // not really G
+	stmts    []Stmt
+	parent   *Block
+	compiler *Compiler
 }
 
 func (b *Block) Find(name string) *GDef {
@@ -1554,6 +1554,7 @@ func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 			funcX := &FunctionX{
 				&FuncRecX{
 					Body: &Block{
+						why:    "initvar:" + g.CName,
 						locals: make(map[string]*GDef),
 						stmts:  []Stmt{initS},
 					},
@@ -2174,7 +2175,7 @@ func (co *Compiler) VisitLen(args []Expr) Value {
 	assert(len(args) == 1)
 	a := args[0].VisitExpr(co)
 
-	switch a.Type().(type) {
+	switch t := a.Type().(type) {
 	case *PrimTV:
 		switch a.Type().TypeCode()[0] {
 		case 's': // string
@@ -2183,7 +2184,7 @@ func (co *Compiler) VisitLen(args []Expr) Value {
 
 	case *SliceTV:
 		// TODO: avoid runtime division.
-		return &CVal{c: F("((%s).len / sizeof(%s))", a.ToC(), a.Type().CType()), t: IntTO}
+		return &CVal{c: F("((%s).len / sizeof(%s))", a.ToC(), t.E.CType()), t: IntTO}
 
 	case *MapTV:
 		panic(2194)
@@ -2307,7 +2308,7 @@ func (co *Compiler) VisitCall(callx *CallX) Value {
 					y := co.ReifyAs(argVals[numNormal+i], extraSliceType.E).ToC()
 
 					co.P("%s = SliceAppend(%s, &%s, sizeof(%s), 1/*TODO base_cls*/); // L1954: For extra input #%d",
-                               sliceVar.CName, sliceVar.CName, y, y, i)
+						sliceVar.CName, sliceVar.CName, y, y, i)
 				}
 
 				fins = append(fins, NameTV{sliceVar.CName, extraSliceType})
@@ -2480,6 +2481,7 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 					lclType = IntTO
 				}
 				gd := co.DefineLocal("v", name, lclType)
+				co.P("// L2484: Defined Local %v =%q= %v => %v", id, name, lclType, gd)
 				newLocals = append(newLocals, gd)
 			} else {
 				log.Panicf("Expected an identifier in LHS of `:=` but got %v", a)
@@ -2612,7 +2614,7 @@ func (co *Compiler) VisitReturn(ret *ReturnS) {
 func (co *Compiler) VisitFor(fors *ForS) {
 	// FOR NOW, assume slice of byte.  TODO: string, map.
 	label := Serial("for")
-	co.StartScope()
+	co.StartScope("VisitFor")
 
 	collV := fors.Coll.VisitExpr(co)
 
@@ -2663,16 +2665,27 @@ func (co *Compiler) VisitFor(fors *ForS) {
 
 func (co *Compiler) VisitWhile(wh *WhileS) {
 	label := Serial("while")
-	co.StartScope()
-	co.P("while(1) { Cont_%s: {}", label)
+	co.StartScope("VisitWhile")
+	if wh.First != nil {
+		co.P("// First: %q", V(wh.First))
+		wh.First.VisitStmt(co)
+		co.P("// L2672: End First")
+	}
+	co.P("while(1) { // L2674: %s", label)
 	if wh.Pred != nil {
-		co.P("    bool _while_ = (bool)(%s);", wh.Pred.VisitExpr(co).ToC())
-		co.P("    if (!_while_) break;")
+		pred := wh.Pred.VisitExpr(co)
+		assert(pred.Type() == BoolTO)
+		co.P("    int _while_ = %s;", pred.ToC())
+		co.P("    if (!_while_) break; // L2679")
 	}
 	savedB, savedC := co.BreakTo, co.ContinueTo
 	co.BreakTo, co.ContinueTo = "Break_"+label, "Cont_"+label
 	wh.Body.VisitStmt(co)
-	co.P("  }")
+	co.P("Cont_%s: {}", label)
+	if wh.Next != nil {
+		wh.Next.VisitStmt(co)
+	}
+	co.P("  } // L2688")
 	co.P("Break_%s: {}", label)
 	co.BreakTo, co.ContinueTo = savedB, savedC
 	co.FinishScope()
@@ -2690,7 +2703,7 @@ func (co *Compiler) VisitContinue(sws *ContinueS) {
 	co.P("goto %s;", co.ContinueTo)
 }
 func (co *Compiler) VisitIf(ifs *IfS) {
-	co.StartScope()
+	co.StartScope("VisitIf")
 	co.P("  { bool _if_ = %s;", ifs.Pred.VisitExpr(co).ToC())
 	co.P("  if( _if_ ) {")
 	ifs.Yes.VisitStmt(co)
@@ -2702,10 +2715,10 @@ func (co *Compiler) VisitIf(ifs *IfS) {
 	co.FinishScope()
 }
 func (co *Compiler) VisitSwitch(sws *SwitchS) {
-	co.StartScope()
+	co.StartScope("VisitSwitch")
 	co.P("  { int _switch_ = %s;", sws.Switch.VisitExpr(co).ToC())
 	for _, c := range sws.Cases {
-		co.StartScope()
+		co.StartScope("VisitCase")
 		co.P("  if (")
 		for _, m := range c.Matches {
 			co.P("_switch_ == %s ||", m.VisitExpr(co).ToC())
@@ -2724,7 +2737,7 @@ func (co *Compiler) VisitSwitch(sws *SwitchS) {
 	co.FinishScope()
 }
 func (co *Compiler) VisitBlock(a *Block) {
-	co.StartScope()
+	co.StartScope("VisitBlock")
 	if a == nil {
 		panic("L2058")
 	}
@@ -2757,11 +2770,16 @@ func (buf *Buf) String() string {
 
 func (co *Compiler) FindName(name string) *GDef {
 	L("nando x: %q", name)
-	if co.CurrentBlock != nil {
-		L("nando z: %q [block %v]", name, co.CurrentBlock.locals)
-		return co.CurrentBlock.Find(name)
+	p := co.CurrentBlock
+	for p != nil {
+		q := p
+		for q != nil {
+			L("nando q: %q [locals %v] %s", name, q.locals, q.why)
+			q = q.parent
+		}
+		return p.Find(name)
 	}
-	L("nando y: %q [cmod @%q]", name, co.CMod.Package)
+	L("nando p==nil: %q [cmod @%q]", name, co.CMod.Package)
 	return co.CMod.Find(name)
 }
 
@@ -2796,23 +2814,30 @@ func (co *Compiler) DefineLocal(prefix string, name string, tv TypeValue) *GDef 
 	return local
 }
 func (co *Compiler) FinishScope() {
-	co.P("// Finishing Scope: }}}")
-	co.CurrentBlock = co.CurrentBlock.parent
+	p := co.CurrentBlock
+	co.P("// Finishing Scope: %s }}}", p.why)
+	co.CurrentBlock = p.parent
 }
-func (co *Compiler) StartScope() *Block {
+func (co *Compiler) StartScope(why string) *Block {
+	p := co.CurrentBlock
 	ser := Serial("scope")
-	co.P("// Starting Scope: %q {{{", ser)
+	if p == nil {
+		why = F("%s (%s)", why, ser)
+	} else {
+		why = F("%s (%s) => %s", why, ser, p.why)
+	}
+	co.P("// Starting Scope: %q {{{", why)
 	block := &Block{
-		debugName: ser,
-		locals:    make(map[string]*GDef),
-		parent:    co.CurrentBlock,
-		compiler:  co,
+		why:      why,
+		locals:   make(map[string]*GDef),
+		parent:   p,
+		compiler: co,
 	}
 	co.CurrentBlock = block
 	return block
 }
 func (co *Compiler) EmitFunc(gd *GDef, justDeclare bool) {
-	co.StartScope()
+	co.StartScope("EmitFunc")
 	rec := gd.typeof.(*FunctionTV).FuncRec
 	co.P(rec.SignatureStr(gd.CName))
 	if justDeclare {
