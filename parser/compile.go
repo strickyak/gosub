@@ -1866,17 +1866,12 @@ func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 		switch ta := a.Type().(type) {
 		case *InterfaceTV:
 			switch tb := b.Type().(type) {
-			case *InterfaceTV:
+			case *InterfaceTV, *PointerTV:
 				return &CVal{
 					c: Format("(/*L1810*/(%s) %s (%s))", a.ToC(), op, b.ToC()),
 					t: BoolTO,
 				}
 
-			case *PointerTV:
-				return &CVal{
-					c: Format("(/*L1816*/(%s) %s (%s))", a.ToC(), op, b.ToC()),
-					t: BoolTO,
-				}
 			case *PrimTV:
 				switch tb.typecode {
 				case "n": // nil
@@ -1889,7 +1884,7 @@ func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 			}
 		case *PointerTV:
 			switch b.Type().(type) {
-			case *InterfaceTV:
+			case *InterfaceTV, *PointerTV:
 				return &CVal{
 					c: Format("(/*L1833*/(%s) %s (%s))", a.ToC(), op, b.ToC()),
 					t: BoolTO,
@@ -2171,7 +2166,7 @@ func (co *Compiler) VisitAppend(args []Expr, hasDotDotDot bool) Value {
 	ra1 := co.Reify(a1)
 
 	return &CVal{
-		c: F("SliceAppend(%s, &%s, sizeof(%s))", a0.ToC(), ra1.ToC(), ra1.Type().CType()),
+		c: F("SliceAppend(%s, &%s, sizeof(%s), 1 /*TODO: base_cls L2174*/)", a0.ToC(), ra1.ToC(), ra1.Type().CType()),
 		t: a0.Type(),
 	}
 }
@@ -2311,7 +2306,8 @@ func (co *Compiler) VisitCall(callx *CallX) Value {
 				for i := 0; i < numExtras; i++ {
 					y := co.ReifyAs(argVals[numNormal+i], extraSliceType.E).ToC()
 
-					co.P("%s = SliceAppend(%s, &%s, sizeof(%s)); // L1954: For extra input #%d", sliceVar.CName, sliceVar.CName, y, y, i)
+					co.P("%s = SliceAppend(%s, &%s, sizeof(%s), 1/*TODO base_cls*/); // L1954: For extra input #%d",
+                               sliceVar.CName, sliceVar.CName, y, y, i)
 				}
 
 				fins = append(fins, NameTV{sliceVar.CName, extraSliceType})

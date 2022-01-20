@@ -98,7 +98,7 @@ extern void StringGet(String a, int nth, P_byte* out);
 // Slices
 extern Slice MakeSlice(const char* typecode, int len, int cap, int size);
 extern Slice AppendSliceInt(Slice a, P_int x);
-extern Slice SliceAppend(Slice a, void* new_elem_ptr, int new_elem_size);
+extern Slice SliceAppend(Slice a, void* new_elem_ptr, int new_elem_size, byte base_cls);
 extern void SliceGet(Slice a, int size, int nth, void* value);
 extern void SlicePut(Slice a, int size, int nth, void* value);
 extern int SliceLen(Slice a, int size);

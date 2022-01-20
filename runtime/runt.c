@@ -101,10 +101,11 @@ Slice AppendSliceInt(Slice a, P_int x) {
   return a;
 }
 
-Slice SliceAppend(Slice a, void* new_elem_ptr, int new_elem_size) {
+Slice SliceAppend(Slice a, void* new_elem_ptr, int new_elem_size,
+                  byte base_cls) {
   if (!a.base) {
     // Initial allocation.
-    word p = oalloc(INITIAL_CAP, 1);
+    word p = oalloc(INITIAL_CAP, base_cls);
     assert(p);
     a.base = p;
     a.offset = 0;
