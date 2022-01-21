@@ -69,6 +69,11 @@ func (o *Parser) ParsePrim() Expr {
 		return z
 	}
 	if o.Kind == L_Punc {
+		if o.Word == "-" {
+			o.Next()
+			x := o.ParsePrim()
+			return &BinOpX{&LitIntX{0}, "-", x}
+		}
 		if o.Word == "*" {
 			o.Next()
 			elemX := o.ParseType()
@@ -140,13 +145,40 @@ LOOP:
 			a = &CallX{a, args}
 		case "[":
 			o.TakePunc("[")
-			sub := o.ParseExpr()
+			if o.Word == ":" {
+				o.Next()
+				if o.Word == "]" {
+					a = &SubSliceX{a, nil, nil}
+				} else {
+					b := o.ParseExpr()
+					a = &SubSliceX{a, nil, b}
+				}
+			} else {
+				sub := o.ParseExpr()
+				if o.Word == ":" {
+					o.Next()
+					if o.Word == "]" {
+						a = &SubSliceX{a, sub, nil}
+					} else {
+						b := o.ParseExpr()
+						a = &SubSliceX{a, sub, b}
+					}
+				} else {
+					a = &SubX{a, sub}
+				}
+			}
 			o.TakePunc("]")
-			a = &SubX{a, sub}
 		case ".":
 			o.TakePunc(".")
-			member := o.TakeIdent()
-			a = &DotX{a, member}
+			if o.Word == "(" {
+				o.TakePunc("(")
+				b := o.ParseType()
+				o.TakePunc(")")
+				return &RuntimeCastX{a, b}
+			} else {
+				member := o.TakeIdent()
+				a = &DotX{a, member}
+			}
 		default:
 			break LOOP
 		}

@@ -52,7 +52,9 @@ type ExprVisitor interface {
 	VisitBinOp(*BinOpX) Value
 	VisitCall(*CallX) Value
 	VisitSub(*SubX) Value
+	VisitSubSlice(*SubSliceX) Value
 	VisitDot(*DotX) Value
+	VisitRuntimeCast(*RuntimeCastX) Value
 	VisitConstructor(*ConstructorX) Value
 	VisitFunction(*FunctionX) Value
 }
@@ -722,16 +724,41 @@ func (o *DotX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitDot(o)
 }
 
+type RuntimeCastX struct {
+	X Expr
+	T Expr
+}
+
+func (o *RuntimeCastX) String() string {
+	return fmt.Sprintf("RuntimeCastX(%s; %s)", o.X, o.T)
+}
+func (o *RuntimeCastX) VisitExpr(v ExprVisitor) Value {
+	return v.VisitRuntimeCast(o)
+}
+
 type SubX struct {
-	Container Expr
-	Subscript Expr
+	container Expr
+	subscript Expr
 }
 
 func (o *SubX) String() string {
-	return fmt.Sprintf("Sub(%s; %s)", o.Container, o.Subscript)
+	return fmt.Sprintf("Sub(%s; %s)", o.container, o.subscript)
 }
 func (o *SubX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitSub(o)
+}
+
+type SubSliceX struct {
+	container Expr
+	a         Expr
+	b         Expr
+}
+
+func (o *SubSliceX) String() string {
+	return fmt.Sprintf("SubSlice(%s; %s; %s)", o.container, o.a, o.b)
+}
+func (o *SubSliceX) VisitExpr(v ExprVisitor) Value {
+	return v.VisitSubSlice(o)
 }
 
 /////////// Stmt
@@ -2191,6 +2218,14 @@ func (co *Compiler) VisitLen(args []Expr) Value {
 	}
 	panic(2195)
 }
+func (co *Compiler) VisitPanic(args []Expr) Value {
+	assert(len(args) == 1)
+	val := args[0].VisitExpr(co)
+	co.P(`fprintf(stderr, "\nPANIC: %q :: %q\n"); // L2197`, val, val.Type().CType())
+	co.P("builtin__printf(%s); //L2198", val.ToC())
+	co.P("exit(63); // L2199")
+	return &CVal{"VOID:L2200", VoidTO}
+}
 
 func (co *Compiler) VisitCall(callx *CallX) Value {
 	if identx, ok := callx.Func.(*IdentX); ok {
@@ -2204,6 +2239,9 @@ func (co *Compiler) VisitCall(callx *CallX) Value {
 
 		case "len":
 			return co.VisitLen(callx.Args)
+
+		case "panic":
+			return co.VisitPanic(callx.Args)
 		}
 	}
 
@@ -2345,13 +2383,97 @@ func (co *Compiler) FormatCall(funcVal Value, argc []string, bm *BoundMethodVal)
 }
 
 func (co *Compiler) VisitSub(subx *SubX) Value {
-	con := subx.Container.VisitExpr(co)
-	sub := subx.Subscript.VisitExpr(co)
+	con := subx.container.VisitExpr(co)
+	sub := subx.subscript.VisitExpr(co)
 
 	return &SubVal{
 		container: con,
 		subscript: sub,
 	}
+}
+
+func (co *Compiler) VisitSubSlice(ssx *SubSliceX) Value {
+	ser := Serial("subslice")
+	con := ssx.container.VisitExpr(co)
+	conc := con.ToC()
+	z := co.DefineLocalTempC(ser, con.Type(), "")
+	zc := z.ToC()
+
+	var a, b Value
+	var ac, bc string
+	if ssx.a != nil {
+		a = ssx.a.VisitExpr(co)
+		ac = a.ToC()
+	}
+	if ssx.b != nil {
+		b = ssx.b.VisitExpr(co)
+		bc = b.ToC()
+	}
+
+	if ssx.a == nil {
+		if ssx.b == nil {
+			co.P("(%s).base = (%s).base; // L2409", zc, conc)
+			co.P("(%s).offset = (%s).offset;", zc, conc)
+			co.P("(%s).len = (%s).len;", zc, conc)
+		} else {
+			co.P("assert((%s) >= 0);", bc)
+			co.P("assert((%s) < (%s).len);", bc, conc)
+			co.P("(%s).base = (%s).base; // L2409", zc, conc)
+			co.P("(%s).offset = (%s).offset;", zc, conc)
+			co.P("(%s).len = (%s);", zc, bc)
+		}
+	} else {
+		if ssx.b == nil {
+			co.P("assert((%s) >= 0);", ac)
+			co.P("assert((%s) < (%s).len);", ac, conc)
+			co.P("(%s).base = (%s).base; // L2409", zc, conc)
+			co.P("(%s).offset = (%s).offset + (%s);", zc, conc, ac)
+			co.P("(%s).len = (%s).len - (%s);", zc, conc, ac)
+		} else {
+			co.P("assert((%s) >= 0);", ac)
+			co.P("assert((%s) >= 0);", bc)
+			co.P("assert((%s) < (%s).len);", ac, conc)
+			co.P("assert((%s) < (%s).len);", bc, conc)
+			co.P("assert((%s) <= (%s));", ac, bc)
+			co.P("(%s).base = (%s).base; // L2409", zc, conc)
+			co.P("(%s).offset = (%s).offset + (%s);", zc, conc, ac)
+			co.P("(%s).len = (%s) - (%s);", zc, bc, ac)
+		}
+	}
+
+	return z
+}
+
+func (co *Compiler) VisitRuntimeCast(rtc *RuntimeCastX) Value {
+	x := rtc.X.VisitExpr(co)
+	tx := x.Type()
+	switch tx.(type) {
+	case *InterfaceTV, *PointerTV:
+		// ok
+	default:
+		panic(F("cannot runtime cast: %v", x))
+	}
+
+	// Don't have runtime magic yet, so be liberal,
+	// allow any
+
+	castV := rtc.T.VisitExpr(co)
+	castTV, ok := castV.ResolveAsTypeValue()
+	if !ok {
+		panic(F("must type-assert to a type, not %v", castV))
+	}
+	switch castTV.(type) {
+	case *InterfaceTV, *PointerTV:
+	// ok
+	default:
+		panic(F("cannot runtime cast to type %v", castTV))
+	}
+
+	ser := Serial("runtimeCast")
+	g := co.DefineLocalTempC(ser, castTV, "")
+
+	co.P("%s = (void*)(%s); // L2402", g.ToC(), x.ToC())
+	return g
 }
 
 func (co *Compiler) VisitDot(dotx *DotX) Value {
@@ -2620,39 +2742,80 @@ func (co *Compiler) VisitFor(fors *ForS) {
 
 	switch coll_t := collV.Type().(type) {
 	case *SliceTV:
-		slice := co.Reify(collV)
-		index := co.DefineLocalTempC("index_"+label, IntTO, "-1")
-		limit := co.DefineLocalTempC("limit_"+label, IntTO, F("((%s).len / sizeof(%s))", slice.ToC(), coll_t.E.CType()))
-		var key *GDef
-		switch k := fors.Key.(type) {
-		case nil:
-			{
+		{
+			slice := co.Reify(collV)
+			index := co.DefineLocalTempC("index_"+label, IntTO, "-1")
+			limit := co.DefineLocalTempC("limit_"+label, IntTO, F("((%s).len / sizeof(%s))", slice.ToC(), coll_t.E.CType()))
+			var key *GDef
+			switch k := fors.Key.(type) {
+			case nil:
+				{
+				}
+			case (*IdentX):
+				key = co.DefineLocal("v", k.X, IntTO)
+				L("VisitFor: SliceTV: key: %v", key)
 			}
-		case (*IdentX):
-			key = co.DefineLocal("v", k.X, IntTO)
-		}
 
-		var value *GDef
-		switch v := fors.Value.(type) {
-		case nil:
-			{
+			var value *GDef
+			switch v := fors.Value.(type) {
+			case nil:
+				{
+				}
+			case (*IdentX):
+				value = co.DefineLocal("v", v.X, coll_t.E)
+				L("VisitFor: SliceTV: value: %v", key)
 			}
-		case (*IdentX):
-			value = co.DefineLocal("v", v.X, coll_t.E)
-		}
 
-		co.P("while(1) { Cont_%s: {}", label)
+			co.P("while(1) { Cont_%s: {}", label)
 
-		co.P("%s++; // L2629", index.CName)
-		co.P("if (%s >= %s) break; // L2630", index.CName, limit.CName)
+			co.P("%s++; // L2629", index.CName)
+			co.P("if (%s >= %s) break; // L2630", index.CName, limit.CName)
 
-		if fors.Key != nil {
-			co.P("%s = %s;", key.CName, index.CName)
+			if fors.Key != nil {
+				co.P("%s = %s;", key.CName, index.CName)
+			}
+			if fors.Value != nil {
+				co.P("SliceGet(%s, sizeof(%s), %s, &%s); //L2645", slice.ToC(), coll_t.E.CType(), index.CName, value.CName)
+			}
 		}
-		if fors.Value != nil {
-			co.P("SliceGet(%s, sizeof(%s), %s, &%s); //L2645", slice.ToC(), coll_t.E.CType(), index.CName, value.CName)
+	case *PrimTV:
+		if coll_t.typecode == "s" {
+			str := co.Reify(collV)
+			index := co.DefineLocalTempC("index_"+label, IntTO, "-1")
+			limit := co.DefineLocalTempC("limit_"+label, IntTO, F("(%s).len", str.ToC()))
+			var key *GDef
+			switch k := fors.Key.(type) {
+			case nil:
+				{
+				}
+			case (*IdentX):
+				key = co.DefineLocal("v", k.X, IntTO) // string keys are ints
+				L("VisitFor: SliceTV: key: %v", key)
+			}
+
+			var value *GDef
+			switch v := fors.Value.(type) {
+			case nil:
+				{
+				}
+			case (*IdentX):
+				value = co.DefineLocal("v", v.X, ByteTO) // string values are bytes
+				L("VisitFor: SliceTV: value: %v", key)
+			}
+
+			co.P("while(1) { Cont_%s: {}", label)
+
+			co.P("%s++; // L2629", index.CName)
+			co.P("if (%s >= %s) break; // L2630", index.CName, limit.CName)
+
+			if fors.Key != nil {
+				co.P("%s = %s;", key.CName, index.CName)
+			}
+			if fors.Value != nil {
+				co.P("StringGet(%s, %s, &%s); //L2645", str.ToC(), index.CName, value.CName)
+			}
 		}
-	} // end case *SliceTV
+	} // end switch collV type
 
 	savedB, savedC := co.BreakTo, co.ContinueTo
 	co.BreakTo, co.ContinueTo = "Break_"+label, "Cont_"+label
