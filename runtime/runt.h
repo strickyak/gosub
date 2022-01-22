@@ -95,6 +95,10 @@ extern char* MakeCStrFromString(String s);
 extern String StringAdd(String a, String b);
 extern void StringGet(String a, int nth, P_byte* out);
 
+// String & Slice
+String FromBytesToString(Slice a);
+Slice FromStrinToBytes(String a);
+
 // Slices
 extern Slice MakeSlice(const char* typecode, int len, int cap, int size);
 extern Slice AppendSliceInt(Slice a, P_int x);

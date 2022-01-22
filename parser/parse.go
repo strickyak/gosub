@@ -174,7 +174,7 @@ LOOP:
 				o.TakePunc("(")
 				b := o.ParseType()
 				o.TakePunc(")")
-				return &RuntimeCastX{a, b}
+				return &TypeAssertX{a, b}
 			} else {
 				member := o.TakeIdent()
 				a = &DotX{a, member}

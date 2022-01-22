@@ -23,7 +23,10 @@ func Sprintf(format string, args ...interface{}) string {
 					}
 				}
 			case 's':
-				panic(1)
+				s := args[0].(string)
+				for _, e := range s {
+					buf = append(buf, e)
+				}
 			default:
 				panic(2)
 			}
@@ -37,5 +40,5 @@ func Sprintf(format string, args ...interface{}) string {
 			}
 		}
 	}
-	return ""
+	return string(buf)
 }

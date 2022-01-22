@@ -20,10 +20,6 @@ func FindTypeByName(list []NameTV, name string) (TypeValue, bool) {
 		switch {
 		case ntv.TV != nil:
 			stuff = ntv.TV.String()
-			/*
-				case ntv.Expr != nil:
-					stuff = ntv.Expr.String()
-			*/
 		}
 
 		log.Printf("?find %q? { %q ; %s }", name, ntv.name, stuff)
@@ -54,7 +50,7 @@ type ExprVisitor interface {
 	VisitSub(*SubX) Value
 	VisitSubSlice(*SubSliceX) Value
 	VisitDot(*DotX) Value
-	VisitRuntimeCast(*RuntimeCastX) Value
+	VisitTypeAssert(*TypeAssertX) Value
 	VisitConstructor(*ConstructorX) Value
 	VisitFunction(*FunctionX) Value
 }
@@ -481,14 +477,29 @@ func (o *MultiTV) CType() string     { return "Multi" }
 func (o *FunctionTV) CType() string { return o.FuncRec.PtrTypedef }
 
 func (co *Compiler) CastToType(from Value, toType TypeValue) Value {
-	z := co.DefineLocalTempC("cast", toType, "")
+	L("// CastToType: from %v to %v", from, toType)
 	// Quick and Dirty int casts
 	switch from.Type().TypeCode()[0] {
 	case 'b', 'i', 'u', 'k', 'p':
+		L("// CASE#A")
 		switch toType.TypeCode()[0] {
 		case 'b', 'i', 'u', 'k', 'p':
+			L("// CASE#Z")
+			z := co.DefineLocalTempC("cast", toType, "")
+			L("// CastToType: from %v to %v", from, toType)
 			co.P("%s = (%s)(%s); // L488 CastTo", z.CName, toType.CType(), from.ToC())
 			return z
+		}
+	case 'S':
+		L("// CASE#B")
+		sliceT, ok := from.Type().(*SliceTV)
+		assert(ok)
+		if sliceT.E == ByteTO && toType.TypeCode() == "s" {
+			// Convert []byte to string
+			ser := Serial("from_bytes_to_string")
+			str := co.DefineLocalTempC(ser, StringTO, "")
+			co.P("%s = FromBytesToString(%s);", str.ToC(), from.ToC())
+			return str
 		}
 	}
 	panic(F("cannot Cast (yet?): %v TO TYPE %v", from, toType))
@@ -724,16 +735,16 @@ func (o *DotX) VisitExpr(v ExprVisitor) Value {
 	return v.VisitDot(o)
 }
 
-type RuntimeCastX struct {
+type TypeAssertX struct {
 	X Expr
 	T Expr
 }
 
-func (o *RuntimeCastX) String() string {
-	return fmt.Sprintf("RuntimeCastX(%s; %s)", o.X, o.T)
+func (o *TypeAssertX) String() string {
+	return fmt.Sprintf("TypeAssertX(%s; %s)", o.X, o.T)
 }
-func (o *RuntimeCastX) VisitExpr(v ExprVisitor) Value {
-	return v.VisitRuntimeCast(o)
+func (o *TypeAssertX) VisitExpr(v ExprVisitor) Value {
+	return v.VisitTypeAssert(o)
 }
 
 type SubX struct {
@@ -2104,7 +2115,7 @@ func (co *Compiler) VisitConstructor(ctorX *ConstructorX) Value {
 
 	for i, e := range ctorX.inits {
 		val := e.expr.VisitExpr(co)
-		co.P("  %s->f_%s = %s; //#%d L2001", inst.CName, e.name, val.ToC(), i)
+		co.P("  %s->f_%s = %s; //#%d L2018", inst.CName, e.name, val.ToC(), i)
 	}
 
 	return inst
@@ -2118,7 +2129,7 @@ func (co *Compiler) VisitFunction(funcX *FunctionX) Value {
 	return &CVal{c: "?1702?", t: t}
 }
 
-var IDENTIFIER = regexp.MustCompile("^[A-Za-z0-9_]+$")
+var IDENTIFIER = regexp.MustCompile("^[A-Za-z_][A-Za-z0-9_]*$")
 
 func (co *Compiler) Reify(x Value) Value {
 	return co.ReifyAs(x, x.Type()) // as its own type
@@ -2218,13 +2229,16 @@ func (co *Compiler) VisitLen(args []Expr) Value {
 	}
 	panic(2195)
 }
-func (co *Compiler) VisitPanic(args []Expr) Value {
+func (co *Compiler) VisitPanic(args []Expr) {
 	assert(len(args) == 1)
 	val := args[0].VisitExpr(co)
-	co.P(`fprintf(stderr, "\nPANIC: %q :: %q\n"); // L2197`, val, val.Type().CType())
-	co.P("builtin__printf(%s); //L2198", val.ToC())
+	s := fmt.Sprintf("%v", val)
+	s = fmt.Sprintf("%q", s)
+	s = s[1 : len(s)-1]
+	co.P(`fprintf(stderr, "\nPANIC: %s :: %s\n"); // L2197`, s, val.Type().CType())
+	co.P(`fprintf(stderr, "PANIC at line %%d file %%s\n", __LINE__, __FILE__);`)
+	//co.P("builtin__println(%s); //L2198", val.ToC())
 	co.P("exit(63); // L2199")
-	return &CVal{"VOID:L2200", VoidTO}
 }
 
 func (co *Compiler) VisitCall(callx *CallX) Value {
@@ -2241,7 +2255,10 @@ func (co *Compiler) VisitCall(callx *CallX) Value {
 			return co.VisitLen(callx.Args)
 
 		case "panic":
-			return co.VisitPanic(callx.Args)
+			co.VisitPanic(callx.Args)
+			// TODO: how to return Void?
+			// TODO: ddt: returning a result, or a call?
+			return &CVal{"0/*panic result*/", IntTO}
 		}
 	}
 
@@ -2272,7 +2289,9 @@ func (co *Compiler) VisitCall(callx *CallX) Value {
 		if funcValType_t.typecode == "t" {
 			// Casting to a type.
 			// TODO: []byte(s)
+			co.P("//is funcVal a type? /// %v /// %v", callx.Func, funcVal)
 			targetType, ok := funcVal.ResolveAsTypeValue()
+			co.P("// target type/// %v /// %v", targetType, ok)
 			assert(ok)
 			assert(targetType != nil)
 			assert(len(callx.Args) == 1)
@@ -2444,9 +2463,30 @@ func (co *Compiler) VisitSubSlice(ssx *SubSliceX) Value {
 	return z
 }
 
-func (co *Compiler) VisitRuntimeCast(rtc *RuntimeCastX) Value {
-	x := rtc.X.VisitExpr(co)
+func (co *Compiler) VisitTypeAssert(tass *TypeAssertX) Value {
+	x := tass.X.VisitExpr(co)
 	tx := x.Type()
+	xc := x.ToC()
+	castV := tass.T.VisitExpr(co)
+	castTV, ok := castV.ResolveAsTypeValue()
+
+	// Trivial assertion.
+	if tx.Equals(castTV) {
+		return x
+	}
+
+	// Any to Concrete.
+	if tx.TypeCode() == "a" { // if x is an Any
+		co.P("assert(!strcmp(%q, (%s).typecode));",
+			castTV.TypeCode(), xc)
+
+		return &CVal{
+			c: F("(*(%s*)(%s).pointer)", castTV.CType(), xc),
+			t: castTV,
+		}
+	}
+
+	// Interfaces and Pointers.
 	switch tx.(type) {
 	case *InterfaceTV, *PointerTV:
 		// ok
@@ -2455,10 +2495,8 @@ func (co *Compiler) VisitRuntimeCast(rtc *RuntimeCastX) Value {
 	}
 
 	// Don't have runtime magic yet, so be liberal,
-	// allow any
+	// allow any pointers and interfaces.
 
-	castV := rtc.T.VisitExpr(co)
-	castTV, ok := castV.ResolveAsTypeValue()
 	if !ok {
 		panic(F("must type-assert to a type, not %v", castV))
 	}
@@ -2752,8 +2790,10 @@ func (co *Compiler) VisitFor(fors *ForS) {
 				{
 				}
 			case (*IdentX):
-				key = co.DefineLocal("v", k.X, IntTO)
-				L("VisitFor: SliceTV: key: %v", key)
+				if k.X != "_" && k.X != "" {
+					key = co.DefineLocal("v", k.X, IntTO)
+					L("VisitFor: SliceTV: key: %v", key)
+				}
 			}
 
 			var value *GDef
@@ -2762,8 +2802,10 @@ func (co *Compiler) VisitFor(fors *ForS) {
 				{
 				}
 			case (*IdentX):
-				value = co.DefineLocal("v", v.X, coll_t.E)
-				L("VisitFor: SliceTV: value: %v", key)
+				if v.X != "_" && v.X != "" {
+					value = co.DefineLocal("v", v.X, coll_t.E)
+					L("VisitFor: SliceTV: value: %v", value)
+				}
 			}
 
 			co.P("while(1) { Cont_%s: {}", label)
@@ -2771,10 +2813,10 @@ func (co *Compiler) VisitFor(fors *ForS) {
 			co.P("%s++; // L2629", index.CName)
 			co.P("if (%s >= %s) break; // L2630", index.CName, limit.CName)
 
-			if fors.Key != nil {
-				co.P("%s = %s;", key.CName, index.CName)
+			if key != nil {
+				co.P("%s = %s; // L2816:key", key.CName, index.CName)
 			}
-			if fors.Value != nil {
+			if value != nil {
 				co.P("SliceGet(%s, sizeof(%s), %s, &%s); //L2645", slice.ToC(), coll_t.E.CType(), index.CName, value.CName)
 			}
 		}
@@ -2789,8 +2831,10 @@ func (co *Compiler) VisitFor(fors *ForS) {
 				{
 				}
 			case (*IdentX):
-				key = co.DefineLocal("v", k.X, IntTO) // string keys are ints
-				L("VisitFor: SliceTV: key: %v", key)
+				if k.X != "_" && k.X != "" {
+					key = co.DefineLocal("v", k.X, IntTO) // string keys are ints
+					L("VisitFor: SliceTV: key: %v", key)
+				}
 			}
 
 			var value *GDef
@@ -2799,8 +2843,10 @@ func (co *Compiler) VisitFor(fors *ForS) {
 				{
 				}
 			case (*IdentX):
-				value = co.DefineLocal("v", v.X, ByteTO) // string values are bytes
-				L("VisitFor: SliceTV: value: %v", key)
+				if v.X != "_" && v.X != "" {
+					value = co.DefineLocal("v", v.X, ByteTO) // string values are bytes
+					L("VisitFor: SliceTV: value: %v", key)
+				}
 			}
 
 			co.P("while(1) { Cont_%s: {}", label)
@@ -2808,10 +2854,10 @@ func (co *Compiler) VisitFor(fors *ForS) {
 			co.P("%s++; // L2629", index.CName)
 			co.P("if (%s >= %s) break; // L2630", index.CName, limit.CName)
 
-			if fors.Key != nil {
+			if key != nil {
 				co.P("%s = %s;", key.CName, index.CName)
 			}
-			if fors.Value != nil {
+			if value != nil {
 				co.P("StringGet(%s, %s, &%s); //L2645", str.ToC(), index.CName, value.CName)
 			}
 		}
