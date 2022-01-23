@@ -1874,10 +1874,11 @@ func (co *Compiler) P(format string, args ...interface{}) {
 // Compiler for Expressions
 
 func (co *Compiler) VisitLitInt(x *LitIntX) Value {
-	return &CVal{
+	z := &CVal{
 		c: Format("%d", x.X),
 		t: ConstIntTO,
 	}
+	return z
 }
 func (co *Compiler) VisitLitString(x *LitStringX) Value {
 	return &CVal{
@@ -2083,7 +2084,7 @@ func EvalK(a Value) int64 {
 	return z
 }
 func KVal(x int64) Value {
-	return &CVal{F("%d", x&0xFFFF), ConstIntTO}
+	return &CVal{F("%d", x), ConstIntTO}
 }
 func BVal(b bool) Value {
 	if b {
@@ -2202,7 +2203,7 @@ func (co *Compiler) VisitAppend(args []Expr, hasDotDotDot bool) Value {
 	}
 	a0 := args[0].VisitExpr(co)
 	a1 := args[1].VisitExpr(co)
-	ra1 := co.Reify(a1)
+	ra1 := co.ReifyAs(a1, a0.Type().(*SliceTV).E)
 
 	return &CVal{
 		c: F("SliceAppend(%s, &%s, sizeof(%s), 1 /*TODO: base_cls L2174*/)", a0.ToC(), ra1.ToC(), ra1.Type().CType()),
