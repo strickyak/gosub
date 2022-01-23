@@ -307,13 +307,13 @@ type MultiTV struct {
 
 func (tv *PrimTV) TypeCode() string      { return tv.typecode }
 func (tv *TypeTV) TypeCode() string      { return "t" }
-func (tv *PointerTV) TypeCode() string   { return "P" }
-func (tv *SliceTV) TypeCode() string     { return "S" }
-func (tv *MapTV) TypeCode() string       { return "M" }
-func (tv *StructTV) TypeCode() string    { return "R" }
-func (tv *InterfaceTV) TypeCode() string { return "I" }
-func (tv *FunctionTV) TypeCode() string  { return "F" }
+func (tv *PointerTV) TypeCode() string   { return "P" + tv.E.TypeCode() }
+func (tv *SliceTV) TypeCode() string     { return "S" + tv.E.TypeCode() }
+func (tv *MapTV) TypeCode() string       { return "M" + tv.K.TypeCode() + tv.V.TypeCode() }
+func (tv *StructTV) TypeCode() string    { return "R0" }
+func (tv *InterfaceTV) TypeCode() string { return "I0" }
 func (tv *MultiTV) TypeCode() string     { return "?" }
+func (tv *FunctionTV) TypeCode() string  { return "F;;" }
 
 // Type values have type TypeTV (the metatype).
 func (tv *PrimTV) Type() TypeValue    { return &TypeTV{} }
