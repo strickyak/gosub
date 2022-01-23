@@ -2238,7 +2238,6 @@ func (co *Compiler) VisitPanic(args []Expr) {
 	s = s[1 : len(s)-1]
 	co.P(`fprintf(stderr, "\nPANIC: %s :: %s\n"); // L2197`, s, val.Type().CType())
 	co.P(`fprintf(stderr, "PANIC at line %%d file %%s\n", __LINE__, __FILE__);`)
-	//co.P("builtin__println(%s); //L2198", val.ToC())
 	co.P("exit(63); // L2199")
 }
 
@@ -2257,9 +2256,7 @@ func (co *Compiler) VisitCall(callx *CallX) Value {
 
 		case "panic":
 			co.VisitPanic(callx.Args)
-			// TODO: how to return Void?
-			// TODO: ddt: returning a result, or a call?
-			return &CVal{"0/*panic result*/", IntTO}
+			return &CVal{"/*void L2200*/", VoidTO}
 		}
 	}
 
