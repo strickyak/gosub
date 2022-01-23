@@ -16,10 +16,15 @@ func Sprintf(format string, args ...interface{}) string {
 				if d == 0 {
 					buf = append(buf, '0')
 				} else {
+					var decimal []byte
 					// haha, this is backwards
 					for d > 0 {
-						buf = append(buf, '0'+byte(d%10))
+						decimal = append(decimal, '0'+byte(d%10))
 						d = d / 10
+					}
+					// now print that backwards which is forward.
+					for i := range decimal {
+						buf := append(buf, decimal[len(decimal)-1-i])
 					}
 				}
 			case 's':

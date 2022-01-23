@@ -203,7 +203,7 @@ func (o *Parser) ParseSum() Expr {
 	op := o.Word
 	for op == "+" || op == "-" || op == "|" || op == "^" {
 		o.Next()
-		b := o.ParseSum()
+		b := o.ParseProduct()
 		a = &BinOpX{a, op, b}
 		op = o.Word
 	}
@@ -215,7 +215,7 @@ func (o *Parser) ParseRelational() Expr {
 	op := o.Word
 	for o.Word == "==" || o.Word == "!=" || o.Word == "<" || o.Word == ">" || o.Word == "<=" || o.Word == ">=" {
 		o.Next()
-		b := o.ParseRelational()
+		b := o.ParseSum()
 		a = &BinOpX{a, op, b}
 		op = o.Word
 	}
@@ -226,7 +226,7 @@ func (o *Parser) ParseAnd() Expr {
 	a := o.ParseRelational()
 	for o.Word == "&&" {
 		o.Next()
-		b := o.ParseAnd()
+		b := o.ParseRelational()
 		a = &BinOpX{a, "&&", b}
 	}
 	return a
@@ -236,7 +236,7 @@ func (o *Parser) ParseOr() Expr {
 	a := o.ParseAnd()
 	for o.Word == "||" {
 		o.Next()
-		b := o.ParseOr()
+		b := o.ParseAnd()
 		a = &BinOpX{a, "||", b}
 	}
 	return a
