@@ -4,9 +4,12 @@ import "fmt"
 import "os"
 
 func main() {
-	println(fmt.Sprintf("abc%sxyz", "lmnop"))
-	println(fmt.Sprintf("abc%dxyz", 12345))
-	println(fmt.Sprintf("abc%dxyz", -12345))
+	x := fmt.Sprintf("abc%sxyz", "lmnop")
+	y := fmt.Sprintf("abc%dxyz", 12345)
+	z := fmt.Sprintf("abc%dxyz", -12345)
+	fmt.Fprintf(os.Stdout, "%s\n", x)
+	fmt.Fprintf(os.Stdout, "%s\n", y)
+	fmt.Fprintf(os.Stdout, "%s\n", z)
 	fmt.Fprintf(os.Stdout, "abc%dxyz\n", 0)
 }
 
