@@ -141,8 +141,14 @@ LOOP:
 			if o.Word != ")" {
 				args = o.ParseList()
 			}
+			hasDotDotDot := false
+			if o.Word == ".." {
+				o.TakePunc("..")
+				o.TakePunc(".")
+				hasDotDotDot = true
+			}
 			o.TakePunc(")")
-			a = &CallX{a, args}
+			a = &CallX{a, args, hasDotDotDot}
 		case "[":
 			o.TakePunc("[")
 			if o.Word == ":" {

@@ -1,6 +1,18 @@
 package fmt
 
+import "io"
+
+func Fprintf(w io.Writer, format string, args ...interface{}) (n int, err error) {
+	buf := Bprintf(format, args...)
+	n, err := w.Write(buf)
+	return n, err
+}
+
 func Sprintf(format string, args ...interface{}) string {
+	return string(Bprintf(format, args...))
+}
+
+func Bprintf(format string, args ...interface{}) []byte {
 	var buf []byte
 	percented := false
 	for _, c := range format {
@@ -24,7 +36,7 @@ func Sprintf(format string, args ...interface{}) string {
 			}
 		}
 	}
-	return string(buf)
+	return buf
 }
 
 func format_s(a interface{}, buf []byte) []byte {
