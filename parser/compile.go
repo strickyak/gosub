@@ -1272,11 +1272,11 @@ func (val *ImportVal) Type() TypeValue {
 	return ImportTO
 }
 
-func (cg *CGen) LoadModule(name string, pr printer) *CMod {
+func (cg *CGen) LoadModule(name string, pr printer) {
 	log.Printf("LoadModule: << %q", name)
-	if already, ok := cg.Mods[name]; ok {
+	if _, ok := cg.Mods[name]; ok {
 		log.Printf("LoadModule: already loaded: %q", name)
-		return already
+		return
 	}
 
 	filename := cg.Options.LibDir + "/" + name + ".go"
@@ -1300,7 +1300,7 @@ func (cg *CGen) LoadModule(name string, pr printer) *CMod {
 		// CGen provides quick access to the builtin Mod:
 		cg.BuiltinMod = cm
 	}
-	return cm
+	return
 }
 
 type printer func(format string, args ...interface{})
@@ -1385,17 +1385,20 @@ func (cg *CGen) EmitDispatch(dspec string, recs []*FuncRec) {
 }
 
 func (cm *CMod) defineOnce(g *GDef) {
+	if g.name == "init" {
+		ser := Serial("init__mod_")
+		g.name = ser
+	}
+
 	if _, ok := cm.Members[g.name]; ok {
 		Panicf("module %s: redefined name: %s", cm.Package, g.name)
 	}
 	cm.Members[g.name] = g
 	g.Package = cm.Package
-	if g.name == "init" {
-		ser := Serial("initmod")
-		g.CName = CName(g.Package, ser)
+
+	g.CName = CName(g.Package, g.name)
+	if strings.HasPrefix(g.name, "init__mod__") {
 		cm.initFuncs = append(cm.initFuncs, g.CName)
-	} else {
-		g.CName = CName(g.Package, g.name)
 	}
 }
 
@@ -1425,7 +1428,10 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 		g.typeof = ImportTO
 		// If we care to do imports in order,
 		// this is a good place to remember it.
-		cm.CGen.ModsInOrder = append(cm.CGen.ModsInOrder, g.name)
+		if !SliceContainsString(cm.CGen.ModsInOrder, g.name) {
+			// Only add it once.
+			cm.CGen.ModsInOrder = append(cm.CGen.ModsInOrder, g.name)
+		}
 	}
 	for _, g := range p.Types {
 		Say(g.Package, g.name, "2T")
@@ -1462,6 +1468,7 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 	}
 	for _, g := range p.Vars {
 		Say(g.Package, g.name, "2V")
+		L("L1465: 2V: %#v", g)
 		val := g.typex.VisitExpr(cm.QuickCompiler(g))
 		tv, ok := val.ResolveAsTypeValue()
 		if !ok {
@@ -1973,11 +1980,20 @@ func (co *Compiler) VisitBinOp(x *BinOpX) Value {
 				}
 			}
 		case *PointerTV:
-			switch b.Type().(type) {
+			L("nando ptr to %T", b.Type())
+			switch t := b.Type().(type) {
 			case *InterfaceTV, *PointerTV:
 				return &CVal{
 					c: Format("(/*L1833*/(%s) %s (%s))", a.ToC(), op, b.ToC()),
 					t: BoolTO,
+				}
+			case *PrimTV:
+				switch t.typecode {
+				case "n":
+					return &CVal{
+						c: Format("(/*L1994*/(%s) %s (void*)0)", a.ToC(), op),
+						t: BoolTO,
+					}
 				}
 			}
 

@@ -1,6 +1,7 @@
 package fmt
 
 import "io"
+import "os"
 
 func Fprintf(w io.Writer, format string, args ...interface{}) (n int, err error) {
 	buf := Bprintf(format, args...)
@@ -10,6 +11,12 @@ func Fprintf(w io.Writer, format string, args ...interface{}) (n int, err error)
 
 func Sprintf(format string, args ...interface{}) string {
 	return string(Bprintf(format, args...))
+}
+
+func Printf(format string, args ...interface{}) (n int, err error) {
+	buf := Bprintf(format, args...)
+	n, err := os.Stdout.Write(buf)
+	return n, err
 }
 
 func Bprintf(format string, args ...interface{}) []byte {

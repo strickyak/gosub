@@ -21,3 +21,13 @@ type Reader interface {
 type Writer interface {
 	Write(p []byte) (n int, err error)
 }
+
+var alreadyCalledInit bool
+
+func init() {
+	// This has nothing to do with io, but I want to be sure this problem does not recur.
+	if alreadyCalledInit {
+		panic("io.init() ran twice")
+	}
+	alreadyCalledInit = true
+}

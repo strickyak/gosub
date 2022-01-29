@@ -102,3 +102,12 @@ func SerialIfEmpty(s string) string {
 	}
 	return Serial("empty")
 }
+
+func SliceContainsString(slice []string, a string) bool {
+	for _, e := range slice {
+		if e == a {
+			return true
+		}
+	}
+	return false
+}

@@ -40,4 +40,7 @@ func init() {
 	Stdin = &File{fd: 0}
 	Stdout = &File{fd: 1}
 	Stderr = &File{fd: 2}
+	if io.EOF == nil {
+		panic("did not init io.EOF")
+	}
 }
