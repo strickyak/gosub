@@ -25,7 +25,7 @@ typedef unsigned char byte;
 typedef unsigned long word;
 
 typedef void omarker();  // TODO: GC
-#include "runtime/bigmem.h"
+#include "runtime/unix_bigmem.h"
 
 #else /* if not unix */
 
