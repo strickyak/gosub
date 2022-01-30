@@ -1,5 +1,7 @@
 #include "runtime/runt.h"
 
+#ifdef unix
+
 void oinit(word begin, word end, omarker fn) {
   fprintf(stderr, "## oinit: noop\n");
 }
@@ -60,4 +62,4 @@ int omemcmp(word pchar1, byte len1, word pchar2, byte len2) {
   assert(0);  // memcpy((char*)d, (char*)s, n);
 }
 
-// END
+#endif // unix

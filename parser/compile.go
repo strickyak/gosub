@@ -1354,7 +1354,7 @@ func CompileToC(r io.Reader, sourceName string, w io.Writer, opt *Options) {
 }
 
 func (cg *CGen) EmitDispatch(dspec string, recs []*FuncRec) {
-	rt := F("rt_Dispatch__%s*", dspec)
+	rt := F("rt_Dispatch__%s", dspec)
 	s := F(`
 #include "___.defs.h"
 %s Dispatch__%s(void* p) {
@@ -2547,8 +2547,8 @@ func (co *Compiler) RegisterDispatchReturnCaller(bm *BoundMethodVal) (callme str
 	}
 
 	retCType := "rt_" + dispatcher
-	dd(F("typedef %s; //L2451", ftv.FuncRec.SignatureStr("rt_"+dispatcher, true /*addReceiver*/)))
-	dd(F("extern %s* %s(void* p); // L2452", retCType, dispatcher))
+	dd(F("typedef %s; //L2451", ftv.FuncRec.SignatureStr("(*rt_"+dispatcher+")", true /*addReceiver*/)))
+	dd(F("extern %s %s(void* p); // L2452", retCType, dispatcher))
 
 	return F("(%s(%s))", dispatcher, bm.receiver.ToC())
 }

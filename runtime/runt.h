@@ -31,6 +31,10 @@ typedef void omarker();  // TODO: GC
 
 #include <cmoc.h>
 
+void PrintError(const char* s, const char* filename, int lineno);
+#define fprintf(FD, S, ...) PrintError(S, __FILE__, __LINE__)
+#define stderr 2
+
 #include "../pythonine/v0.1/octet.h"
 
 #endif /* unix */

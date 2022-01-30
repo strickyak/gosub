@@ -1,16 +1,12 @@
 #!/bin/bash
 #
-# "gu": run "g"osub on "u"nix.
+# "g9": run "g"osub on os"9".
 #
-# Usage:
-#   alias gu=./gu
-#   gu test test/t1.go
-#   gu build demo/wc.go
-#   gu run demo/wc.go < Makefile
 set -eu
 
 function cc() {
-  gcc -pedantic -Wall -Wno-error=unused-value -Wno-error=unused-but-set-variable -Wno-unused-label -Werror -g -I. "$@"
+  # gcc -pedantic -Wall -Wno-error=unused-value -Wno-error=unused-but-set-variable -Wno-unused-label -Werror -g -I. "$@"
+  /opt/yak/cmoc/bin/cmoc --os9 -i -I. "$@"
 }
 
 function compile() {
@@ -29,12 +25,12 @@ function compile() {
     do
       cc -c $x
     done
-    for x in $( echo runtime/*.c | grep -v /os9_ )
+    for x in $( echo runtime/*.c | grep -v /unix_ )
     do
       cc -c -o ___.runtime.$(basename $x .c).o $x
     done
     rm -f ___.a
-    ar qcs ___.a ___.*.o
+    lwar -c -r ___.a ___.*.o
     cc -o $T runtime/runt.c ___.a
     ls -l $T
 
@@ -53,8 +49,8 @@ function compile() {
     ) > ___.initvars.c
 
     cc -c ___.initvars.c
-    ar rvs ___.a ___.initvars.o
-    cc -o $T runtime/runt.c ___.a
+    ar rvcs ___.a ___.initvars.o
+    cc -o $T runtime/runt.c runtime/bigmem.c  ___.a
     ls -l $T
   ) >&2
   echo $T

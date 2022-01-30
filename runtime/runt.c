@@ -21,12 +21,18 @@ void panic_s(const char* why) {
   assert(0);
 }
 
-Slice NilSlice = {0};
+Slice NilSlice = {0, 0, 0};
+
+byte CheckLen(int i) {
+  assert (i>=0);
+  assert (i<INF);
+  return (byte)i;
+}
 
 String MakeStringFromC(const char* s) {
   int n = strlen(s);
   if (n >= INF - 1) panic_s("MakeStringFromC: too long");
-  word p = oalloc(n + 1, 1);
+  word p = oalloc(CheckLen(n + 1), 1);
   assert(p);
   strcpy((char*)p, s);
   String z = {p, 0, n};
@@ -35,7 +41,7 @@ String MakeStringFromC(const char* s) {
 char* MakeCStrFromString(String s) {
   int n = s.len;
   assert(n < 254);
-  char* p = (char*) oalloc(n+1, C_Bytes);
+  char* p = (char*) oalloc(CheckLen(n+1), C_Bytes);
   assert(p);
   memcpy(p, STRING_START(s), n);
   return p;
@@ -51,7 +57,7 @@ void StringGet(String a, int nth, P_byte* out) {
 String StringAdd(String a, String b) {
   int n = a.len + b.len;
   if (n >= INF - 1) panic_s("MakeStringFromC: too long");
-  word p = oalloc(n + 1, 1);
+  word p = oalloc(CheckLen(n + 1), 1);
   assert(p);
   strcpy((char*)p, STRING_START(a));
   strcpy((char*)p+a.len, STRING_START(b));
@@ -67,7 +73,7 @@ Slice MakeSlice(const char* typecode, int len, int cap, int size) {
   }
   // TODO: use typecode to alloc correct kind.
   byte cls = C_Bytes;
-  word p = oalloc(len * size, cls);
+  word p = oalloc(CheckLen(len * size), cls);
   assert(p);
 
   Slice z = {p, 0, len * size};
