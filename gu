@@ -29,7 +29,7 @@ function compile() {
     do
       cc -c $x
     done
-    for x in $( echo runtime/*.c | grep -v /os9_ )
+    for x in $( ls -1 runtime/*.c | grep -v /os9_ )
     do
       cc -c -o ___.runtime.$(basename $x .c).o $x
     done
