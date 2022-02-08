@@ -17,6 +17,5 @@ func Peek2(addr uintptr) uint
 func Poke2(addr uintptr, value uint)
 
 // Find the address of a variable.
-// Be careful, it may be tricky -- the compiler might make unwanted copies of variables.
 func AddressOf(thing interface{}) uintptr
 func TypeCodeOf(thing interface{}) string

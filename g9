@@ -4,13 +4,25 @@
 #
 set -eu
 
+# 32014  [2022-02-05 17:36:41 -0800] /opt/yak/cmoc/bin/cmoc -o t9 --os9 -i -I.  --lwlink=/opt/yak/bin-os9/lwlink  runtime/runt.c runtime/os9_base.c   ___.func.builtin__len.o ___.func.builtin__make.o ___.func.builtin__panic.o ___.func.builtin__println.o ___.func.io__init__mod__109.o ___.func.io__init__mod__110.o ___.func.main__main.o ___.func.unix__Close.o ___.func.unix__Creat.o ___.func.unix__Exit.o ___.func.unix__O_RDONLY.o ___.func.unix__O_RDWR.o ___.func.unix__O_WRONLY.o ___.func.unix__Open.o ___.func.unix__Read.o ___.func.unix__Write.o ___.initmod.builtin.o ___.initmod.io.o ___.initmod.main.o ___.initmod.unix.o ___.initmods.o ___.initvars.o ___.var.io__EOF.o ___.var.io__alreadyCalledInit.o  ../pythonine/v0.1/octet.o 
+
+
+# This is kind of what we need at the end:
+#
+# /opt/yak/cmoc/bin/cmoc -o wc -I. --os9 -i --lwlink=/opt/yak/bin-os9/lwlink ___.func.builtin__len.o ___.func.builtin__make.o ___.func.builtin__panic.o ___.func.builtin__println.o ___.func.errors__New.o ___.func.io__init__mod__109.o ___.func.io__init__mod__110.o ___.func.log__Fatalf.o ___.func.main__Count.o ___.func.main__main.o ___.func.os__init__mod__142.o ___.func.unix__Close.o ___.func.unix__Creat.o ___.func.unix__Exit.o ___.func.unix__O_RDONLY.o ___.func.unix__O_RDWR.o ___.func.unix__O_WRONLY.o ___.func.unix__Open.o ___.func.unix__Read.o ___.func.unix__Write.o ___.func.unsafe__AddrOfFirstElement.o ___.func.unsafe__AddressOf.o ___.func.unsafe__Peek.o ___.func.unsafe__Peek2.o ___.func.unsafe__Poke.o ___.func.unsafe__Poke2.o ___.func.unsafe__RestoreFinalChar.o ___.func.unsafe__SetHighBitOfFinalChar.o ___.func.unsafe__TypeCodeOf.o ___.initmod.builtin.o ___.initmod.errors.o ___.initmod.io.o ___.initmod.log.o ___.initmod.main.o ___.initmod.os.o ___.initmod.unix.o ___.initmod.unsafe.o ___.initmods.o ___.initvars.o ___.meth.errors__Error__Error.o ___.meth.errors__Error__String.o ___.meth.os__File__Read.o ___.meth.os__File__Write.o ___.var.io__EOF.o ___.var.io__alreadyCalledInit.o ___.var.main__Bytes.o ___.var.main__Lines.o ___.var.main__Words.o ___.var.main__wasWhite.o ___.var.os__Stderr.o ___.var.os__Stdin.o ___.var.os__Stdout.o    ../pythonine/v0.1/octet.c  $(ls runtime/*.c | grep -v /unix )
+#
+
+
+
 function cc() {
-  # gcc -pedantic -Wall -Wno-error=unused-value -Wno-error=unused-but-set-variable -Wno-unused-label -Werror -g -I. "$@"
-  /opt/yak/cmoc/bin/cmoc --os9 -i -I. "$@"
+  NAME=$1
+  shift
+  echo "compiler number $NAME"
+  /opt/yak/cmoc/bin/cmoc --check-null --stack-space=200 --os9 -i -I. "$@"
 }
 
 function compile() {
-  T=$(basename $1 .go).bin
+  T=$(basename $1 .go)
   (
     rm -f ___.*
     go run gosub.go < $1 > ___.defs.h 2>___.err || { E=$? ; cat ___.err ; exit $E ; }
@@ -23,37 +35,70 @@ function compile() {
 
     for x in ___.*.c
     do
-      cc -c $x
+      cc One -c $x
     done
-    for x in $( echo runtime/*.c | grep -v /unix_ )
+    for x in $( ls runtime/*.c | grep -v /runt.c | grep -v /unix_ )
     do
-      cc -c -o ___.runtime.$(basename $x .c).o $x
+      cc Two -c -o ___.runtime.$(basename $x .c).o $x
     done
     rm -f ___.a
     lwar -c -r ___.a ___.*.o
-    cc -o $T runtime/runt.c ___.a
-    ls -l $T
+    cc Three -o $T runtime/runt.c ../pythonine/v0.1/octet.c ___.a
+    mv $T $T.bin
+    ls -l $T.bin
 
     (
       echo '#include "___.defs.h"'
-      for x in $(nm $T  | awk '/__initvar_[1-9][0-9]*$/ {print $NF}')
+      for x in $(cat $T.map  | awk '/^Symbol: _.*__initvar_[1-9][0-9]* / {print $2}' | tee /dev/tty | sed -e 's/^_//' )
       do
         echo "extern void $x();"
       done
       echo 'void initvars() {'
-      for x in $(nm $T  | awk '/__initvar_[1-9][0-9]*$/ {print $NF}')
+      for x in $(cat $T.map  | awk '/^Symbol: _.*__initvar_[1-9][0-9]* / {print $2}' | tee /dev/tty | sed -e 's/^_//' )
       do
         echo "$x();"
       done
       echo '}'
     ) > ___.initvars.c
 
-    cc -c ___.initvars.c
-    ar rvcs ___.a ___.initvars.o
-    cc -o $T runtime/runt.c runtime/bigmem.c  ___.a
-    ls -l $T
+    cc Four -c ___.initvars.c
+    lwar -r ___.a ___.initvars.o
+    cc Five -o $T runtime/runt.c ../pythonine/v0.1/octet.c ___.a
+    mv $T $T.bin
+    ls -l $T.bin
+
+
+    sed -e 's/.*[(]\(.*\)[)].*/\1/' $T.map | grep -v '<synthetic>' | LC_ALL=C sort -u | cat -n
+    HIT=
+    MISS=
+    set +x
+    for x in $( sed -e 's/.*[(]\(.*\)[)].*/\1/' $T.map | grep -v '<synthetic>' | LC_ALL=C sort -u )
+    do
+      C=$(basename $x .o).c
+      if test -s $C
+      then
+        HIT="$HIT $C"
+        wc $C
+      else
+        MISS="$MISS $x"
+      fi
+    done
+      echo
+      echo HIT: $HIT
+      echo
+      echo MISS: $MISS
+      echo
+    set -x
+
+    wc ../doing_os9/gomar/cmocly/cmocly.go
+    # go install ../doing_os9/gomar/cmocly/cmocly.go
+    ( cd ../doing_os9/gomar/cmocly/ && go install cmocly.go )
+    $HOME/go/bin/cmocly  -cmoc /opt/yak/cmoc/bin/cmoc -cmoc_pre='--check-null --stack-space=200 -I.'  -o $T $HIT
+
   ) >&2
-  echo $T
+  echo $T.bin
+  mv $T $T.bin
+  ls -l $T.bin
 }
 
 case $2 in
@@ -71,23 +116,28 @@ case $1 in
     ;;
   run )
     compile $2
-    BIN=$(basename $2 .go).bin
-    shift
-    shift
-    $(dirname $BIN)/$(basename $BIN) "$@"
+
+    BASE=$(basename $2 .go)
+    DISK=/tmp/emu.dsk
+    HARD=/tmp/sdc.vhd
+    G=../doing_os9/gomar
+    SRC_DISK=/home/strick/6809/hg.code.sf.net/nitros9/level2/coco3/nos96809l2v030300coco3_80d.dsk
+    SRC_HARD=$G/eouBeta610/68SDC.VHD
+
+    cp -fv $G/drive/boot2coco3.orig /tmp/boot2coco3
+    cp -fv $SRC_DISK $DISK
+    cp -fv $SRC_HARD $HARD
+    os9 copy -r $BASE.bin $DISK,cmds/$BASE
+    os9 attr -e -r -w -pe -pr $DISK,cmds/$BASE
+    echo "$BASE #128" | os9 copy -r -l /dev/stdin $DISK,startup
+    # echo "$BASE #128" | os9 copy -r -l /dev/null $DISK,startup
+    ( cd $G && go run -x --tags=level2,coco3,trace gomar.go \
+      --boot /tmp/boot2coco3 --disk $DISK --h0 $HARD \
+      --trigger_os9="(?i:fork.*file=.$BASE)" 2>/tmp/_ )
     ;;
   test )
-    compile $2
-
-    ./$(basename $2 .go).bin > $2.got
-    grep '^// expect:' <$2 | sed 's;// expect:;;' > $2.want
-    if diff -w $2.want $2.got
-    then
-      echo Good: $2 >&2
-    else
-      echo DIFFERENT: $2 >&2
-      exit 1
-    fi
+    echo Sorry, test not supported. >&2
+    exit 13
     ;;
   * )
     echo "Usage:  $0 build filename.go" >&2

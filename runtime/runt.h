@@ -16,28 +16,32 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#define true 1
-#define false 0
-#define INF 255  // sometimes this is INFinity, if type is byte
-
 typedef unsigned char bool;
 typedef unsigned char byte;
 typedef unsigned long word;
 
-typedef void omarker();  // TODO: GC
+#define true 1
+#define false 0
+#define INF 0xFF  // sometimes this is INFinity, if type is byte
+typedef void (*omarker)();  // TODO: GC
+
 #include "runtime/unix_bigmem.h"
 
 #else /* if not unix */
 
 #include <cmoc.h>
 
-void PrintError(const char* s, const char* filename, int lineno);
+#include "../pythonine/v0.1/octet.h"
+
+//typedef unsigned char bool;
+//typedef unsigned char byte;
+//typedef unsigned int word;
+
 #define fprintf(FD, S, ...) PrintError(S, __FILE__, __LINE__)
 #define stderr 2
 
-#include "../pythonine/v0.1/octet.h"
-
 #endif /* unix */
+
 
 #define P_true 1
 #define P_false 0
@@ -53,7 +57,7 @@ typedef const char* P__type_;
 typedef int P_int;
 typedef int P__const_int_;
 typedef unsigned int P_uint;
-typedef unsigned long P_uintptr;
+typedef word P_uintptr;
 typedef unsigned char P_byte;
 typedef unsigned char P_bool;
 typedef void* VoidStar;
@@ -112,4 +116,12 @@ extern void SlicePut(Slice a, int size, int nth, void* value);
 extern int SliceLen(Slice a, int size);
 extern void builtin__println(Slice args);
 
+#ifdef unix
+
+#else
+
+#include "os9_base.h"
+
 #endif
+
+#endif // _GOSUB_RUNTIME_RUNT_H_

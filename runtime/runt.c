@@ -4,8 +4,15 @@ extern void main__main();
 extern void initmods();
 extern void initvars();
 
+byte Heap[25000];
+
+void null_marker() {
+  panic_s("cannot GC yet");
+}
+
 int main(int argc, const char* argv[]) {
-  oinit(0, 0, 0);  // noop
+  oinit((word)Heap, (word)Heap + sizeof Heap, &null_marker);  // noop
+  // oinit(0x2000, 0x6000, &null_marker);  // noop
   fprintf(stderr, "## Init Vars.\n");
   initvars();
   fprintf(stderr, "## Init Mods.\n");
