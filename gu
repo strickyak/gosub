@@ -16,7 +16,7 @@ function cc() {
 function compile() {
   T=$(basename $1 .go).bin
   (
-    rm -f ___.*
+    rm -f ___.* ___.bin1 $T
     go run gosub.go < $1 > ___.defs.h 2>___.err || { E=$? ; cat ___.err ; exit $E ; }
     clang-format -i --style=Google ___.*.c || true
     (
@@ -35,17 +35,17 @@ function compile() {
     done
     rm -f ___.a
     ar qcs ___.a ___.*.o
-    cc -o $T runtime/runt.c ___.a
-    ls -l $T
+    cc -o ___.bin1 runtime/runt.c ___.a
+    ls -l ___.bin1
 
     (
       echo '#include "___.defs.h"'
-      for x in $(nm $T  | awk '/__initvar_[1-9][0-9]*$/ {print $NF}')
+      for x in $(nm ___.bin1  | awk '/__initvar_[1-9][0-9]*$/ {print $NF}')
       do
         echo "extern void $x();"
       done
       echo 'void initvars() {'
-      for x in $(nm $T  | awk '/__initvar_[1-9][0-9]*$/ {print $NF}')
+      for x in $(nm ___.bin1  | awk '/__initvar_[1-9][0-9]*$/ {print $NF}')
       do
         echo "$x();"
       done

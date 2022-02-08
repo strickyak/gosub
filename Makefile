@@ -17,6 +17,6 @@ fmt:
 	gofmt -w *.go */*.go
 
 clean:
-	set -x ; rm -f *.s *.o *.bin a.out */*.go.c */*.want */*.got _ __ ___*
+	set -x ; rm -f *.s *.o *.bin a.out *.lst *.map *.link */*.go.c */*.want */*.got _ __ ___*
 
 _FORCE_:

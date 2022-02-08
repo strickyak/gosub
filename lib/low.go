@@ -1,4 +1,4 @@
-package unix
+package low
 
 func Open(filename string, flags uint, mode uint) (fd int, errno int)
 func Creat(filename string, mode uint) (fd int, errno int)

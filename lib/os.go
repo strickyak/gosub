@@ -2,7 +2,7 @@ package os
 
 import "errors"
 import "io"
-import "unix"
+import "low"
 import "unsafe"
 
 type File struct {
@@ -10,12 +10,12 @@ type File struct {
 }
 
 var Stdin *File = &File{fd: 0}
-var Stdout *File
-var Stderr *File
+var Stdout *File = &File{fd: 1}
+var Stderr *File = &File{fd: 2}
 
 func (f *File) Read(p []byte) (n int, err error) {
 	start := unsafe.AddrOfFirstElement(p)
-	cc, errno := unix.Read(f.fd, start, len(p))
+	cc, errno := low.Read(f.fd, start, len(p))
 	if errno != 0 {
 		return cc, errors.New("cannot read")
 	}
@@ -26,20 +26,17 @@ func (f *File) Read(p []byte) (n int, err error) {
 }
 func (f *File) Write(p []byte) (n int, err error) {
 	start := unsafe.AddrOfFirstElement(p)
-	cc, errno := unix.Write(f.fd, start, len(p))
+	cc, errno := low.Write(f.fd, start, len(p))
 	if errno != 0 {
 		return cc, errors.New("cannot read")
 	}
 	if cc == 0 {
-		panic("unix.Write succeeded, but cc==0")
+		panic("low.Write succeeded, but cc==0")
 	}
 	return cc, nil
 }
 
 func init() {
-	Stdin = &File{fd: 0}
-	Stdout = &File{fd: 1}
-	Stderr = &File{fd: 2}
 	if io.EOF == nil {
 		panic("did not init io.EOF")
 	}
