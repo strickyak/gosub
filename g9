@@ -25,6 +25,9 @@ function compile() {
   T=$(basename $1 .go)
   (
     rm -f ___.*
+
+    RUNTIMES=$( ls runtime/*.c | grep -v /runt.c | grep -v /unix_)
+
     go run gosub.go < $1 > ___.defs.h 2>___.err || { E=$? ; cat ___.err ; exit $E ; }
     clang-format -i --style=Google ___.*.c || true
     (
@@ -37,7 +40,7 @@ function compile() {
     do
       cc One -c $x
     done
-    for x in $( ls runtime/*.c | grep -v /runt.c | grep -v /unix_ )
+    for x in $RUNTIMES
     do
       cc Two -c -o ___.runtime.$(basename $x .c).o $x
     done
@@ -93,7 +96,12 @@ function compile() {
     wc ../doing_os9/gomar/cmocly/cmocly.go
     # go install ../doing_os9/gomar/cmocly/cmocly.go
     ( cd ../doing_os9/gomar/cmocly/ && go install cmocly.go )
-    $HOME/go/bin/cmocly  -cmoc /opt/yak/cmoc/bin/cmoc -cmoc_pre='--check-null --stack-space=200 -I.'  -o $T $HIT
+
+    for cf in runtime/runt.c $RUNTIMES ../pythonine/v0.1/octet.c 
+    do
+      cp $cf ___.runtime.$(basename $cf)
+    done
+    $HOME/go/bin/cmocly  -cmoc /opt/yak/cmoc/bin/cmoc -cmoc_pre='--check-null --stack-space=200 -I. -I./runtime -I../pythonine/v0.1/ '  -o $T ___.runtime.*.c  ___.initvars.c ___.initmods.c ___.func.main__main.c  ___.initmod.*.c  ___.*__init__mod__*.c   # too much
 
   ) >&2
   echo $T.bin
