@@ -6,6 +6,8 @@ typedef unsigned int uint;
 #define OMIT_stkcheck
 #define OMIT_exit
 
-#include "../../doing_os9/picol/os9.c"
+// #include "../../doing_os9/picol/os9.c"
+// #include "../../doing_os9/picol/puthex.c"
 
-#include "../../doing_os9/picol/puthex.c"
+#include "picol/os9.c"
+#include "picol/puthex.c"

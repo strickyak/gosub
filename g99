@@ -1,0 +1,110 @@
+#!/bin/bash
+#
+# "g9": run "g"osub on os"9".
+#
+set -eux
+
+PYTHO=../pythonine/v0.1/
+
+function CMOC() {
+  NAME=$1
+  shift
+  echo "CMOC phase: $NAME"
+  /opt/yak/cmoc/bin/cmoc --check-null --stack-space=200 --os9 -i -I. "$@"
+}
+
+function COMPILE() {
+  T=$(basename "$1" .go)
+  D="/tmp/$T.g9"
+  rm -rf $D
+  mkdir -p $D $D/picol
+  ln -s $D $D/runtime
+
+  go run gosub.go < "$1" > $D/___.defs.h 2>$D/___.err || {
+    E=$? 
+    cat $D/___.err >&2 
+    exit $E
+  }
+  clang-format -i --style=Google ___.*.c || true
+  mv ___.*.c $D/
+
+  cp runtime/*.h $D/
+  cp $PYTHO/*.h $D/
+  cp $PYTHO/octet.c $D/
+  cp ../doing_os9/picol/os9.c $D/picol/
+  cp ../doing_os9/picol/puthex.c $D/picol/
+  for x in $(ls runtime/*.c | grep -v /unix_)
+  do
+    cp $x $D/runtime.$(basename $x)
+  done
+
+  # First (empty) version of initvars
+  (
+      echo '#include "___.defs.h"'
+      echo 'void initvars() {}'
+  ) > $D/initvars.c
+
+  ( cd $D
+    for x in *.c
+    do
+      CMOC Two -c -I. $x
+    done
+
+    rm -f all.a
+    lwar -c -r all.a $(ls *.o | grep -v '^runtime.runt.o$')
+    CMOC Three -o $T runtime.runt.c all.a
+
+    # New inivars, based on $T.map
+    (
+      echo '#include "___.defs.h"'
+      for x in $(cat $T.map  | awk '/^Symbol: _.*__initvar_[1-9][0-9]* / {print $2}' | tee /dev/tty | sed -e 's/^_//' )
+      do
+        echo "extern void $x();"
+      done
+      echo 'void initvars() {'
+      for x in $(cat $T.map  | awk '/^Symbol: _.*__initvar_[1-9][0-9]* / {print $2}' | tee /dev/tty | sed -e 's/^_//' )
+      do
+        echo "$x();"
+      done
+      echo '}'
+    ) > initvars.c
+
+    CMOC InitVars -c -I. initvars.c
+    lwar -r all.a initvars.o
+    CMOC Five -o $T runtime.runt.c all.a
+    ls -ls $T
+  )
+  
+  #####################
+  cp $D/$T $T.bin
+  ls -l $T.bin
+}
+
+case $2 in
+  *.go ) : good ;;
+  * )
+    echo "Usage:  $0 build filename.go" >&2
+    echo "Usage:  $0 test filename.go" >&2
+    echo "Usage:  $0 run filename.go args..." >&2
+    exit 13
+esac
+
+case $1 in
+  build )
+    COMPILE $2 >&2
+    ;;
+  run )
+    COMPILE $2 >&2
+    bash ../doing_os9/gomar/launch.sh $(basename $2 .go).bin
+    ;;
+  test )
+    echo Sorry, test not supported. >&2
+    exit 13
+    ;;
+  * )
+    echo "Usage:  $0 build filename.go" >&2
+    echo "Usage:  $0 test filename.go" >&2
+    echo "Usage:  $0 run filename.go args..." >&2
+    exit 13
+    ;;
+esac

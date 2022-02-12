@@ -1,6 +1,9 @@
 OLD*/
 RCS/
 *,v
+*.lst
+*.map
+*.link
 *.swp
 *.bin
 a.out

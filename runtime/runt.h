@@ -31,7 +31,8 @@ typedef void (*omarker)();  // TODO: GC
 
 #include <cmoc.h>
 
-#include "../pythonine/v0.1/octet.h"
+// #include "../pythonine/v0.1/octet.h"
+#include "octet.h"
 
 //typedef unsigned char bool;
 //typedef unsigned char byte;
