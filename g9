@@ -18,7 +18,15 @@ function cc() {
   NAME=$1
   shift
   echo "compiler number $NAME"
-  /opt/yak/cmoc/bin/cmoc --check-null --stack-space=200 --os9 -i -I. "$@"
+  (
+    set -x
+    /opt/yak/cmoc/bin/cmoc --check-null --stack-space=200 --os9 -i -I'.' -I'runtime/' -I'../pythonine/v0.1/' "$@"
+  )
+}
+
+function ExtractInitVarsFromMapFile() {
+        awk '/^Symbol: _.*__initvar_[1-9][0-9]* / {print $2}' "$1" |
+        sed -e 's/^_//'
 }
 
 function compile() {
@@ -30,78 +38,109 @@ function compile() {
 
     go run gosub.go < $1 > ___.defs.h 2>___.err || { E=$? ; cat ___.err ; exit $E ; }
     clang-format -i --style=Google ___.*.c || true
-    (
-      echo '#include "___.defs.h"'
-      echo 'void initvars() {'
-      echo '}'
-    ) > ___.initvars.c
+
+    # TRY with ___.runtime.*.c
+    for cf in $RUNTIMES ../pythonine/v0.1/octet.c 
+    do
+      cp $cf ___.runtime.$(basename $cf)
+    done
 
     for x in ___.*.c
     do
-      cc One -c $x
+      cc One:$x -c $x
     done
-    for x in $RUNTIMES
-    do
-      cc Two -c -o ___.runtime.$(basename $x .c).o $x
-    done
+    #for x in $RUNTIMES
+    #do
+    #  cc Two:$x -c -o ___.runtime.$(basename $x .c).o $x
+    #done
     rm -f ___.a
-    lwar -c -r ___.a ___.*.o
-    cc Three -o $T runtime/runt.c ../pythonine/v0.1/octet.c ___.a
-    mv $T $T.bin
-    ls -l $T.bin
+    ( set -x ; lwar -c -r ___.a ___.*.o )
 
     (
       echo '#include "___.defs.h"'
-      for x in $(cat $T.map  | awk '/^Symbol: _.*__initvar_[1-9][0-9]* / {print $2}' | tee /dev/tty | sed -e 's/^_//' )
-      do
-        echo "extern void $x();"
-      done
       echo 'void initvars() {'
-      for x in $(cat $T.map  | awk '/^Symbol: _.*__initvar_[1-9][0-9]* / {print $2}' | tee /dev/tty | sed -e 's/^_//' )
-      do
-        echo "$x();"
-      done
       echo '}'
     ) > ___.initvars.c
 
-    cc Four -c ___.initvars.c
-    lwar -r ___.a ___.initvars.o
-    cc Five -o $T runtime/runt.c ../pythonine/v0.1/octet.c ___.a
+    # cc Three:$T -o $T runtime/runt.c ../pythonine/v0.1/octet.c ___.a
+    cc Three:$T -o $T runtime/runt.c ___.initvars.c  ___.a
     mv $T $T.bin
     ls -l $T.bin
 
+    for ROUND in A B C
+    do 
+      INITVARS=$(ExtractInitVarsFromMapFile $T.map | LC_ALL=C sort)
+      for x in $INITVARS ; do echo $x ; done > ,$T.$ROUND.round
+      (
+        echo '#include "___.defs.h"'
+        for x in $INITVARS
+        do
+          echo "extern void $x();"
+        done
+        echo 'void initvars() {'
+        for x in $INITVARS
+        do
+          echo "$x();"
+        done
+        echo '}'
+      ) > ___.initvars.c
+      ( set -x ; cat -n  ,$T.$ROUND.round )
+      ( set -x ; cat -n  ___.initvars.c )
 
-    sed -e 's/.*[(]\(.*\)[)].*/\1/' $T.map | grep -v '<synthetic>' | LC_ALL=C sort -u | cat -n
-    HIT=
-    MISS=
-    set +x
-    for x in $( sed -e 's/.*[(]\(.*\)[)].*/\1/' $T.map | grep -v '<synthetic>' | LC_ALL=C sort -u )
-    do
-      C=$(basename $x .o).c
-      if test -s $C
-      then
-        HIT="$HIT $C"
-        wc $C
-      else
-        MISS="$MISS $x"
-      fi
-    done
-      echo
-      echo HIT: $HIT
-      echo
-      echo MISS: $MISS
-      echo
-    set -x
+      # cc Four:$ROUND -c ___.initvars.c
+      # ( set -x ; lwar -r ___.a ___.initvars.o )
+      cc Five:$ROUND -o $T runtime/runt.c ___.initvars.c ../pythonine/v0.1/octet.c ___.a
+      mv -v $T $T.bin
+      ls -l $T.bin
+      ( set -x ; : map ; cat -n $T.map )
+      # USED=$(sed -e 's/.*[(]\(___.*\)[)].*/\1/' $T.map | LC_ALL=C sort -u)
+
+      USED=$(tr '()' '||' < $T.map | awk -F'|' '$2 ~ /^___[.].*o$/ { gsub(/o$/, "c", $2) ; print $2 }' | LC_ALL=C sort -u)
+
+      ls -l $USED
+
+      true || (
+        # HIT and MISS don't seem to be used for anything.
+        sed -e 's/.*[(]\(.*\)[)].*/\1/' $T.map | grep -v '<synthetic>' | LC_ALL=C sort -u | cat -n
+        HIT=
+        MISS=
+        set +x
+        for x in $( sed -e 's/.*[(]\(.*\)[)].*/\1/' $T.map | grep -v '<synthetic>' | LC_ALL=C sort -u )
+        do
+          C=$(basename $x .o).c
+          if test -s $C
+          then
+            HIT="$HIT $C"
+            wc $C
+          else
+            MISS="$MISS $x"
+          fi
+        done
+        echo
+        echo HIT: $HIT
+        echo
+        echo MISS: $MISS
+        echo
+      )
+
+    done # ROUND
+    ls -l $USED
 
     wc ../doing_os9/gomar/cmocly/cmocly.go
     # go install ../doing_os9/gomar/cmocly/cmocly.go
     ( cd ../doing_os9/gomar/cmocly/ && go install cmocly.go )
 
-    for cf in runtime/runt.c $RUNTIMES ../pythonine/v0.1/octet.c 
-    do
-      cp $cf ___.runtime.$(basename $cf)
-    done
-    $HOME/go/bin/cmocly  -cmoc /opt/yak/cmoc/bin/cmoc -cmoc_pre='--check-null --stack-space=200 -I. -I./runtime -I../pythonine/v0.1/ '  -o $T ___.runtime.*.c  ___.initvars.c ___.initmods.c ___.func.main__main.c  ___.initmod.*.c  ___.*__init__mod__*.c   # too much
+    ##? cp ../pythonine/v0.1/octet.[ch] .
+    ##? cp ../pythonine/v0.1/standard.[ch] .
+    #### for cf in runtime/runt.c $RUNTIMES ../pythonine/v0.1/octet.c 
+    #### do
+    ####   cp $cf ___.runtime.$(basename $cf)
+    #### done
+
+    cp runtime/runt.c ___.main.c
+    $HOME/go/bin/cmocly  -cmoc /opt/yak/cmoc/bin/cmoc -cmoc_pre='--check-null --stack-space=200 -I. -I./runtime -I../pythonine/v0.1/ '  -o $T ___.main.c $USED  
+
+    # ___.initvars.c ___.initmods.c ___.func.main__main.c  ___.initmod.*.c  ___.*__init__mod__*.c   # too much
 
   ) >&2
   echo $T.bin

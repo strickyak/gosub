@@ -181,6 +181,7 @@ void builtin__println(Slice args) {
           printf("%lu", (unsigned long)*(P_uintptr*)(p[i].pointer));
           break;
         default:
+          printf("\n[[[TYPECODE %d %s]]]\n", p[i].typecode[0], p[i].typecode);
           fprintf(stderr, "builtin__println: typecode `%s` not implemented.\n", p[i].typecode);
           exit(13);
           break;

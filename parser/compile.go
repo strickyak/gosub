@@ -1748,11 +1748,12 @@ func (cm *CMod) VisitGlobals(p *Parser, pr printer) {
 }
 
 type GDef struct {
-	Used    bool
 	CGen    *CGen
 	Package string
 	name    string
 	CName   string
+
+	UsedBy *GDef
 
 	initx Expr // for Const or Var or Type
 	typex Expr // for Const or Var or Func
@@ -1851,7 +1852,7 @@ func NewCGenAndMainCMod(opt *Options, w io.Writer) (*CGen, *CMod) {
 			CName:  "P_" + e.name,
 			istype: e,
 			typeof: TypeTO,
-			Used:   false,
+			UsedBy: nil,
 		}
 	}
 	cg.Prims.Members["nil"] = NIL
@@ -2794,7 +2795,7 @@ func (co *Compiler) VisitAssign(ass *AssignS) {
 		rvalues = append(rvalues, e.VisitExpr(co))
 	}
 
-	// Create local vars, if := is used.
+	// Create local vars, if `:=` is the op.
 	var newLocals []*GDef
 	if ass.Op == ":=" {
 		for i, a := range ass.A {
@@ -3314,63 +3315,8 @@ type ActiveTracker struct {
 	List []*GDef // Reverse Definition Order.
 }
 
-///////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////
-
-type Nando struct {
-	Locals map[string]TypeValue
-}
-
-func (o *Nando) VisitLitInt(x *LitIntX) Value {
-	return nil
-}
-func (o *Nando) VisitLitString(x *LitStringX) Value {
-	return nil
-}
-func (o *Nando) VisitIdent(x *IdentX) Value {
-	return nil
-}
-func (o *Nando) _VisitIdent_(x *IdentX) Value {
-	return nil
-}
-func (o *Nando) VisitBinOp(x *BinOpX) Value {
-	return nil
-}
-func (o *Nando) VisitConstructor(x *ConstructorX) Value {
-	return nil
-}
-func (o *Nando) VisitFunction(x *FunctionX) Value {
-	return nil
-}
-func (o *Nando) VisitCall(x *CallX) Value {
-	return nil
-}
-func (o *Nando) VisitSub(x *SubX) Value {
-	return nil
-}
-func (o *Nando) VisitDot(dotx *DotX) Value {
-	return nil
-}
-
-func (o *Nando) VisitAssign(ass *AssignS) {
-}
-func (o *Nando) VisitReturn(ret *ReturnS) {
-}
-func (o *Nando) VisitWhile(wh *WhileS) {
-}
-func (o *Nando) VisitFor(fors *ForS) {
-}
-func (o *Nando) VisitBreak(sws *BreakS) {
-}
-func (o *Nando) VisitContinue(sws *ContinueS) {
-}
-func (o *Nando) VisitIf(ifs *IfS) {
-}
-func (o *Nando) VisitSwitch(sws *SwitchS) {
-}
-func (o *Nando) VisitBlock(a *Block) {
-}
+/////////////////////////////////////////////////
+/////////////////////////////////////////////////
 
 type VarStack struct {
 	A []NameTV

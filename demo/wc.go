@@ -23,6 +23,7 @@ func main() {
 		Count(onebyte[0])
 	}
 	println(Lines, Words, Bytes)
+	log.Printf("%d %d %d", Lines, Words, Bytes)
 }
 
 var Bytes int

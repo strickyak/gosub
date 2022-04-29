@@ -1,8 +1,9 @@
 #include "___.defs.h"
 
 String FromBytesToString(Slice a) {
+    assert(a.len < INF);
     String z = {
-        oalloc(a.len, C_Bytes), // base
+        oalloc((byte)(a.len), C_Bytes), // base
         0, // offset
         a.len,
         };
