@@ -16,6 +16,7 @@ var Stderr *File = &File{fd: 2}
 func (f *File) Read(p []byte) (n int, err error) {
 	start := unsafe.AddrOfFirstElement(p)
 	cc, errno := low.Read(f.fd, start, len(p))
+	// log.Printf("^Read^%d^%d^", cc, errno)
 	if errno != 0 {
 		return cc, errors.New("cannot read")
 	}
@@ -27,6 +28,7 @@ func (f *File) Read(p []byte) (n int, err error) {
 func (f *File) Write(p []byte) (n int, err error) {
 	start := unsafe.AddrOfFirstElement(p)
 	cc, errno := low.Write(f.fd, start, len(p))
+	// log.Printf("^Write^%d^%d^", cc, errno)
 	if errno != 0 {
 		return cc, errors.New("cannot read")
 	}

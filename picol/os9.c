@@ -90,14 +90,12 @@ PcTraceLoop	ldd #'U'
 	}
 }
 
-#ifndef OMIT_exit
-asm void exit(int status) {
+asm void Os9Exit(int status) {
 	asm {
 		ldd 2,s      ; status code in b.
 		os9 F_Exit
 	}
 }
-#endif
 
 asm int Os9Create(char* path, int mode, int attrs, int* fd) {
 	asm {

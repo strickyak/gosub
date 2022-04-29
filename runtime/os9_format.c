@@ -12,5 +12,5 @@ void low__WriteBuffer(P_int in_fd, P_int *out_count, P_int *out_errno) {
   }
 
   // Write to given fd.
-  *out_errno = Os9Write(in_fd, Buffer, BufferP-Buffer, out_count);
+  *out_errno = Os9Write(in_fd, (const char*)Buffer, BufferP-Buffer, out_count);
 }

@@ -31,6 +31,7 @@ asm int Os9Wait(int* child_id_and_exit_status);
 asm int Os9Fork(const char* program, const char* params, int paramlen, int lang_type, int mem_size, int* child_id);
 asm int Os9Chain(const char* program, const char* params, int paramlen, int lang_type, int mem_size);
 asm int Os9Send(int process_id, int signal_code);
+asm void Os9Exit(int status);
 
 void PrintError(const char* s, const char* filename, int lineno);
 

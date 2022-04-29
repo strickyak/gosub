@@ -31,7 +31,7 @@ void PUTCHAR(byte x) {
   assert (BufferP < BufferEnd);
 }
 
-void PUTSTR(char* s) {
+void PUTSTR(const char* s) {
   for (; *s; s++) {
     PUTCHAR(*s);
   }
@@ -136,6 +136,7 @@ int low__FormatToBuffer(String s, Slice args) {
               String* xp = (String*)a->pointer;
               FormatQ((byte*)(xp->base + xp->offset), xp->len);
             }
+            break;
           case 'z': // case bool
             PUTSTR( (*(P_bool*)a->pointer) ? "true" : "false");
             break;
@@ -153,7 +154,12 @@ int low__FormatToBuffer(String s, Slice args) {
             PUTU((P_uintptr)*(void**)a->pointer);
             break;
           default: // default: Unhandled Type
-            printf("(Type %d at $%lx)", a->typecode[0], (unsigned long)(a->pointer));
+            PUTSTR("(percent "); PUTU(c);
+            PUTSTR(" typecode "); PUTSTR(a->typecode);
+            PUTSTR(" pointer "); PUTU((P_uintptr)a->pointer);
+            PUTSTR(" * "); PUTU(((P_uintptr*)a->pointer)[0]);
+            PUTSTR(" * "); PUTU(((P_uintptr*)a->pointer)[1]);
+            PUTSTR(")");
             break;
         }
       }
