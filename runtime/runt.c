@@ -156,37 +156,7 @@ int SliceLen(Slice a, int size) {
 }
 
 void builtin__println(Slice args) {
-  if (args.base) {
-    for (int i = 0; i * sizeof(P__any_) < args.len; i++) {
-      if (i > 0) putchar(' ');
-
-      P__any_* p = (P__any_*)(args.base + args.offset);
-      switch (p[i].typecode[0]) {
-        case 's':
-          printf("%s", *(char**)(p[i].pointer));
-          break;
-        case 'z':
-          printf("%s", *(P_bool*)(p[i].pointer) ? "true" : "false");
-          break;
-        case 'b':
-          printf("%d", *(P_byte*)(p[i].pointer));
-          break;
-        case 'i':
-          printf("%d", *(P_int*)(p[i].pointer));
-          break;
-        case 'u':
-          printf("%u", *(P_uint*)(p[i].pointer));
-          break;
-        case 'p':
-          printf("%lu", (unsigned long)*(P_uintptr*)(p[i].pointer));
-          break;
-        default:
-          printf("\n[[[TYPECODE %d %s]]]\n", p[i].typecode[0], p[i].typecode);
-          fprintf(stderr, "builtin__println: typecode `%s` not implemented.\n", p[i].typecode);
-          exit(13);
-          break;
-      }
-    }
-  }
-  printf("\n");
+  // TODO -- don't assume exactly 3 args.
+  String percent_v = MakeStringFromC("--- println --- %v --- %v --- %v ---");
+  log__Printf(percent_v, args);
 }
