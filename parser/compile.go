@@ -2582,15 +2582,21 @@ func (co *Compiler) VisitSubSlice(ssx *SubSliceX) Value {
 	z := co.DefineLocalTempC(ser, con.Type(), "")
 	zc := z.ToC()
 
+	co.P("// DEBUG SLICE: con.Type() == %#v", con.Type())
+	co.P("// DEBUG *: con.Type().(SliceTV*) == %#v", con.Type().(*SliceTV))
+	co.P("// DEBUG E: con.Type().(SliceTV*).E == %#v", con.Type().(*SliceTV).E)
+	co.P("// DEBUG ToC: con.Type().(SliceTV*).E == %#v", con.Type().(*SliceTV).E.CType())
+	elementCType := con.Type().(*SliceTV).E.CType()
+
 	var a, b Value
 	var ac, bc string
 	if ssx.a != nil {
 		a = ssx.a.VisitExpr(co)
-		ac = a.ToC()
+		ac = fmt.Sprintf("(%s * sizeof(%s))", a.ToC(), elementCType)
 	}
 	if ssx.b != nil {
 		b = ssx.b.VisitExpr(co)
-		bc = b.ToC()
+		bc = fmt.Sprintf("(%s * sizeof(%s))", b.ToC(), elementCType)
 	}
 
 	if ssx.a == nil {
