@@ -92,8 +92,8 @@ void FormatQ(byte* str, int n) {
         case '"':
         case '\'':
         case '\\':
-        case '(':
-        case ')':
+        case '{':
+        case '}':
           PutCurly(c);
             break;
         default:
