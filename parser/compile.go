@@ -940,27 +940,31 @@ func (r *FuncRec) SignatureStr(daFunc string, addReceiver bool) string {
 	} else {
 		P(&b, "void ")
 	}
+	started := false
 	P(&b, "%s(", daFunc)
 	if addReceiver {
-		b.WriteString("void* receiver, ")
+		b.WriteString("void* receiver ")
+		started = true
 	}
-	for i, nat := range r.Ins {
-		if i > 0 {
+	for _, nat := range r.Ins {
+		if started {
 			b.WriteByte(',')
 			b.WriteByte(' ')
 		}
 		Say(nat)
 		Say(nat.TV.CType())
 		P(&b, "%s in_%s", nat.TV.CType(), SerialIfEmpty(nat.name))
+		started = true
 	}
 	if len(r.Outs) != 1 {
 		for i, nat := range r.Outs {
-			if i > 0 || len(r.Ins) > 0 {
+			if started {
 				b.WriteByte(',')
 				b.WriteByte(' ')
 			}
 			L("out [%d]: %s", i, nat.TV.CType())
 			P(&b, "%s *out_%s", nat.TV.CType(), SerialIfEmpty(nat.name))
+			started = true
 		}
 	}
 	b.WriteByte(')')
