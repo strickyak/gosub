@@ -2606,7 +2606,7 @@ func (co *Compiler) VisitSubSlice(ssx *SubSliceX) Value {
 			co.P("(%s).len = (%s).len;", zc, conc)
 		} else {
 			co.P("assert((%s) >= 0);", bc)
-			co.P("assert((%s) < (%s).len);", bc, conc)
+			co.P("assert((%s) <= (%s).len);", bc, conc)
 			co.P("(%s).base = (%s).base; // L2409", zc, conc)
 			co.P("(%s).offset = (%s).offset;", zc, conc)
 			co.P("(%s).len = (%s);", zc, bc)
@@ -2614,15 +2614,15 @@ func (co *Compiler) VisitSubSlice(ssx *SubSliceX) Value {
 	} else {
 		if ssx.b == nil {
 			co.P("assert((%s) >= 0);", ac)
-			co.P("assert((%s) < (%s).len);", ac, conc)
+			co.P("assert((%s) <= (%s).len);", ac, conc)
 			co.P("(%s).base = (%s).base; // L2409", zc, conc)
 			co.P("(%s).offset = (%s).offset + (%s);", zc, conc, ac)
 			co.P("(%s).len = (%s).len - (%s);", zc, conc, ac)
 		} else {
 			co.P("assert((%s) >= 0);", ac)
 			co.P("assert((%s) >= 0);", bc)
-			co.P("assert((%s) < (%s).len);", ac, conc)
-			co.P("assert((%s) < (%s).len);", bc, conc)
+			co.P("assert((%s) <= (%s).len);", ac, conc)
+			co.P("assert((%s) <= (%s).len);", bc, conc)
 			co.P("assert((%s) <= (%s));", ac, bc)
 			co.P("(%s).base = (%s).base; // L2409", zc, conc)
 			co.P("(%s).offset = (%s).offset + (%s);", zc, conc, ac)
