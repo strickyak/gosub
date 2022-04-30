@@ -11,7 +11,7 @@ func O_RDONLY() uint
 func O_WRONLY() uint
 func O_RDWR() uint
 
-func Exit(status int)
+func Exit(status byte)
 
 // These use an intern static buffer, max 254 bytes.
 func FormatToBuffer(format string, args ...interface{}) (count int)

@@ -11,15 +11,12 @@ void null_marker() {
 }
 
 int main(int argc, const char* argv[]) {
+  printf("(\n");
   oinit((word)Heap, (word)Heap + sizeof Heap, &null_marker);  // noop
-  // oinit(0x2000, 0x6000, &null_marker);  // noop
-  fprintf(stderr, "## Init Vars.\n");
   initvars();
-  fprintf(stderr, "## Init Mods.\n");
   initmods();
-  fprintf(stderr, "## Main.\n");
   main__main();
-  fprintf(stderr, "## Exit.\n");
+  printf(")\n");
   return 0;
 }
 
@@ -157,6 +154,11 @@ int SliceLen(Slice a, int size) {
 
 void builtin__println(Slice args) {
   // TODO -- don't assume exactly 3 args.
-  String percent_v = MakeStringFromC("--- println --- %v --- %v --- %v ---");
-  log__Printf(percent_v, args);
+  String fmt = MakeStringFromC("# --- println --- %v --- %v --- %v ---\n");
+
+  low__FormatToBuffer(fmt, args);
+
+  P_int count, errno;
+	low__WriteBuffer(2, &count, &errno);
+  if (errno) low__Exit(errno);
 }

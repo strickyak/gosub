@@ -1317,7 +1317,9 @@ func CompileToC(r io.Reader, sourceName string, w io.Writer, opt *Options) {
 	pr(``)
 	if !opt.SkipBuiltin {
 		cg.LoadModule("builtin", pr)
+		cg.LoadModule("low", pr)
 		cg.LoadModule("io", pr) // TODO: archive os__File__Read
+		// cg.LoadModule("os", pr)
 	}
 	p := NewParser(r, sourceName)
 	p.ParseModule(cm, cg)
