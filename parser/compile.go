@@ -3361,19 +3361,32 @@ func (co *Compiler) EmitFunc(gd *GDef, justDeclare bool) {
 
 	co.Buf = prevBuf
 	co.P("// Adding LOCALS to Func:")
+	co.P("struct { TOP_FRAME_FIELDS")
 	for name, e := range co.slots {
 		if strings.HasPrefix(e.CName, "in_") || strings.HasPrefix(e.CName, "out_") {
 			// These are declared in the formal params of the C function.
 			continue
 		}
 		co.P("// LOCAL %q IS %v", name, e)
-		co.P("auto %v %v = %s; // DEF LOCAL L2145 Type=%#v", e.typeof.CType(), e.CName, e.typeof.Zero(), e.typeof)
+		//< co.P("auto %v %v = %s; // DEF LOCAL L2145 Type=%#v", e.typeof.CType(), e.CName, e.typeof.Zero(), e.typeof)
+		co.P(" %s fr_%s; // DEF LOCAL L2145 Type=%#v", e.typeof.CType(), e.CName, e.typeof)
+		co.P("#define %s fr.fr_%s", e.CName, e.CName)
 	}
+	co.P("} fr;")
+	co.P("memset(&fr, 0, sizeof(fr));")
+	co.P("fr.fr_shape = \"\"; // TODO")
+	co.P("fr.fr_prev = CurrentFrame;")
+	co.P("CurrentFrame = (struct Frame*) &fr;")
+	co.P("#define RETURN(X) return (CurrentFrame = fr.fr_prev), X")
+	co.P("#define RETURN_NOTHING {CurrentFrame = fr.fr_prev; return;} ")
+
 	co.P("// Added LOCALS to Func.")
 	L("CBODY IS %q", cBody)
 	co.P("\n%s\n", cBody)
 
 	co.FinishScope()
+
+	co.P("CurrentFrame = fr.fr_prev;")
 	co.P("\n}\n")
 }
 

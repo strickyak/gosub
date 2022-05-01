@@ -4,6 +4,7 @@ extern void main__main();
 extern void initmods();
 extern void initvars();
 
+struct Frame* CurrentFrame;
 byte Heap[25000];
 
 void null_marker() {
@@ -167,5 +168,9 @@ void builtin__println(Slice args) {
 
   P_int count, errno;
 	low__WriteBuffer(1, &count, &errno);
-  if (errno) low__Exit(errno);
+  if (errno) {
+    byte berrno = (byte) errno;
+    if (berrno==0) berrno=255;
+    low__Exit(berrno);
+  }
 }

@@ -117,6 +117,16 @@ extern void SlicePut(Slice a, int size, int nth, void* value);
 extern int SliceLen(Slice a, int size);
 extern void builtin__println(Slice args);
 
+// Frames
+#define TOP_FRAME_FIELDS \
+  const char* fr_shape; \
+  struct Frame* fr_prev;
+
+struct Frame {
+  TOP_FRAME_FIELDS
+};
+extern struct Frame* CurrentFrame;
+
 #ifdef unix
 
 #else
