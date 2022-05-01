@@ -163,24 +163,25 @@ case $1 in
     ;;
   run )
     compile $2
+    sh ../doing_os9/gomar/launch.sh "$(basename $2 .go).bin"
 
-    BASE=$(basename $2 .go)
-    DISK=/tmp/emu.dsk
-    HARD=/tmp/sdc.vhd
-    G=../doing_os9/gomar
-    SRC_DISK=/home/strick/6809/hg.code.sf.net/nitros9/level2/coco3/nos96809l2v030300coco3_80d.dsk
-    SRC_HARD=$G/eouBeta610/68SDC.VHD
-
-    cp -fv $G/drive/boot2coco3.orig /tmp/boot2coco3
-    cp -fv $SRC_DISK $DISK
-    cp -fv $SRC_HARD $HARD
-    os9 copy -r $BASE.bin $DISK,cmds/$BASE
-    os9 attr -e -r -w -pe -pr $DISK,cmds/$BASE
-    echo "$BASE #128" | os9 copy -r -l /dev/stdin $DISK,startup
-    # echo "$BASE #128" | os9 copy -r -l /dev/null $DISK,startup
-    ( cd $G && go run -x --tags=level2,coco3,trace gomar.go \
-      --boot /tmp/boot2coco3 --disk $DISK --h0 $HARD \
-      --trigger_os9="(?i:fork.*file=.$BASE)" 2>/tmp/_ )
+#<>#    BASE=$(basename $2 .go)
+#<>#    DISK=/tmp/emu.dsk
+#<>#    HARD=/tmp/sdc.vhd
+#<>#    G=../doing_os9/gomar
+#<>#    SRC_DISK=/home/strick/6809/hg.code.sf.net/nitros9/level2/coco3/nos96809l2v030300coco3_80d.dsk
+#<>#    SRC_HARD=$G/eouBeta610/68SDC.VHD
+#<>#
+#<>#    cp -fv $G/drive/boot2coco3.orig /tmp/boot2coco3
+#<>#    cp -fv $SRC_DISK $DISK
+#<>#    cp -fv $SRC_HARD $HARD
+#<>#    os9 copy -r $BASE.bin $DISK,cmds/$BASE
+#<>#    os9 attr -e -r -w -pe -pr $DISK,cmds/$BASE
+#<>#    echo "$BASE #128" | os9 copy -r -l /dev/stdin $DISK,startup
+#<>#    # echo "$BASE #128" | os9 copy -r -l /dev/null $DISK,startup
+#<>#    ( cd $G && go run -x --tags=level2,coco3,trace gomar.go \
+#<>#      --boot /tmp/boot2coco3 --disk $DISK --h0 $HARD \
+#<>#      --trigger_os9="(?i:fork.*file=.$BASE)" 2>/tmp/_ )
     ;;
   test )
     echo Sorry, test not supported. >&2

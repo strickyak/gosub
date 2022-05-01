@@ -1837,10 +1837,11 @@ type CGen struct {
 	structs map[string]*GDef
 	faces   map[string]*GDef
 
-	classes     []string
-	classNums   map[string]int
-	dmeths      map[string][]string // dsig -> unique interfaces that dispatch it.
-	dynamicDefs []string            // late Dynamic declarations.
+	classes            []string
+	classNums          map[string]int
+	dmeths             map[string][]string // dsig -> unique interfaces that dispatch it.
+	dynamicDefs        []string            // late Dynamic declarations.
+	dispatcherTypedefs map[string]bool
 }
 
 func NewCMod(name string, cg *CGen) *CMod {
@@ -1864,8 +1865,9 @@ func NewCGenAndMainCMod(opt *Options, w io.Writer) (*CGen, *CMod) {
 		classes: []string{
 			"_FREE_", "_BYTES_", "_HANDLES_",
 		},
-		classNums: make(map[string]int),
-		dmeths:    make(map[string][]string),
+		classNums:          make(map[string]int),
+		dmeths:             make(map[string][]string),
+		dispatcherTypedefs: make(map[string]bool),
 	}
 	cg.Prims = &CMod{
 		Package: "", // Use empty package name for Prims.
@@ -2608,7 +2610,10 @@ func (co *Compiler) RegisterDispatchReturnCaller(bm *BoundMethodVal, bmReceiver 
 	}
 
 	retCType := "rt_" + dispatcher
-	dd(F("typedef %s; //L2451", ftv.FuncRec.SignatureStr("(*rt_"+dispatcher+")", true /*addReceiver*/)))
+	if _, exists := co.CGen.dispatcherTypedefs[dispatcher]; !exists {
+		dd(F("typedef %s; //L2451", ftv.FuncRec.SignatureStr("(*"+retCType+")", true /*addReceiver*/)))
+		co.CGen.dispatcherTypedefs[dispatcher] = true
+	}
 	dd(F("extern %s %s(void* p); // L2452", retCType, dispatcher))
 
 	return F("(%s(%s))", dispatcher, bmReceiver.ToC())
