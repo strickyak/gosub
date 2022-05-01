@@ -2,6 +2,8 @@ package main
 
 import "fmt"
 
+// TODO: swap these two interface types, so Stringer result is a forward reference.
+// This is a current limitation that needs to be fixed.
 type Stringer interface {
 	String() string
 }
@@ -43,6 +45,8 @@ func (p *Grape) Frob(x int) Stringer {
 func main() {
 	apple := &Apple{}
 	grape := &Grape{}
+	println(apple.String())
+	println(grape.String())
 	println(apple.Frob(1).String())
 	println(grape.Frob(10).String())
 	var face Frobber
@@ -52,6 +56,9 @@ func main() {
 	println(face.Frob(100).String())
 }
 
-// expect: 2
-// expect: 30
-// expect: 202
+// expect: Apple(0,0)
+// expect: Grape(0,0,0)
+// expect: Apple(1,1)
+// expect: Grape(10,10,10)
+// expect: Apple(101,101)
+// expect: Grape(110,110,110)
