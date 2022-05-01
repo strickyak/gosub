@@ -11,12 +11,12 @@ void null_marker() {
 }
 
 int main(int argc, const char* argv[]) {
-  printf("(\n");
+  // printf("(\n");
   oinit((word)Heap, (word)Heap + sizeof Heap, &null_marker);  // noop
   initvars();
   initmods();
   main__main();
-  printf(")\n");
+  // printf(")\n");
   return 0;
 }
 
@@ -153,12 +153,19 @@ int SliceLen(Slice a, int size) {
 }
 
 void builtin__println(Slice args) {
-  // TODO -- don't assume exactly 3 args.
-  String fmt = MakeStringFromC("# --- println --- %v --- %v --- %v ---\n");
+  String fmt = MakeStringFromC("");
+  P_uintptr n = args.len;
+  bool once = true;
+  while (n > 0) {
+    fmt = StringAdd(fmt, MakeStringFromC(once? "%v" : " %v"));
+    once = false;
+    n -= sizeof(P__any_);
+  }
+  fmt = StringAdd(fmt, MakeStringFromC("\n"));
 
   low__FormatToBuffer(fmt, args);
 
   P_int count, errno;
-	low__WriteBuffer(2, &count, &errno);
+	low__WriteBuffer(1, &count, &errno);
   if (errno) low__Exit(errno);
 }
