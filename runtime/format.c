@@ -37,6 +37,13 @@ void PUTSTR(const char* s) {
   }
 }
 
+void PUTSTRN(const char* s, byte n) {
+  for (byte i=0; i<n; i++) {
+    assert(s[i]);
+    PUTCHAR(s[i]);
+  }
+}
+
 void PUTDEC(P_byte x) {
   assert(x < 10);
   PUTCHAR('0' + x);
@@ -134,7 +141,10 @@ int low__FormatToBuffer(String s, Slice args) {
             case 'S': // case Slice (actually for slice of bytes) pun as String:
               {
                 String* xp = (String*)a->pointer;
-                FormatQ((byte*)(xp->base + xp->offset), xp->len);
+                if (c=='q')
+                  FormatQ((byte*)(xp->base + xp->offset), xp->len);
+                else
+                  PUTSTRN((const char*)(xp->base + xp->offset), xp->len);
               }
               break;
             case 'z': // case bool
