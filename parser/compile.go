@@ -1745,6 +1745,29 @@ func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 	}
 }
 
+func TryADozenTimes(fn func()) {
+	var r interface{}
+	done := false
+	for i := 0; i < 12; i++ {
+		func() {
+			defer func() {
+				r = recover()
+			}()
+			fn()
+			done = true
+		}()
+		if done {
+			return
+		}
+
+	}
+	if r != nil {
+		log.Panicf("TryADozenTimes: %v", r)
+	} else {
+		log.Panicf("TryADozenTimes: Not done, but did not figure out what the panic was")
+	}
+}
+
 func (cm *CMod) VisitGlobals(p *Parser, pr printer) {
 	cm.FirstSlotGlobals(p, pr)
 	cm.SecondBuildGlobals(p, pr)
@@ -1887,6 +1910,13 @@ var FALSE = &GDef{
 func (cm *CMod) VisitTypeExpr(x Expr) TypeValue {
 	L("VisitTypeExpr: %v", x)
 	val := x.VisitExpr(NewCompiler(cm, nil))
+	if gdef, ok := val.(*GDef); ok {
+		if gdef.istype != nil {
+			return gdef.istype
+		} else {
+			log.Panicf("Either global def %q isn't a type, or (LIMITATION) you used it too soon, before it was defined.", gdef.CName)
+		}
+	}
 	if tv, ok := val.ResolveAsTypeValue(); ok {
 		return tv
 	} else {
@@ -2205,10 +2235,26 @@ func (co *Compiler) VisitFunction(funcX *FunctionX) Value {
 
 var IDENTIFIER = regexp.MustCompile("^[A-Za-z_][A-Za-z0-9_]*$")
 
+// Jot writes debugging messages to `/tmp/jot`.
+func Jot(format string, args ...interface{}) {
+	f, err := os.OpenFile("/tmp/jot", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	text := fmt.Sprintf(format+"\n\n", args...)
+	if _, err = f.WriteString(text); err != nil {
+		panic(err)
+	}
+}
+
 func (co *Compiler) Reify(x Value) Value {
+	Jot("// DDT Reify(x): %v", x)
 	return co.ReifyAs(x, x.Type()) // as its own type
 }
 func (co *Compiler) ReifyAs(x Value, as TypeValue) Value {
+	Jot("// DDT ReifyAs(x, as): %v ; %v", x, as)
 	L("ccc x %v", x)
 	L("ccc x.Type %v", x.Type())
 	L("ccc as %v", as)
@@ -2225,12 +2271,15 @@ func (co *Compiler) ReifyAs(x Value, as TypeValue) Value {
 
 	// CASE: types are different.
 	// First, reify as the input type.
+	Jot("// DDT Reify(x,as) BEFORE: %v", x)
 	reifiedX := co.Reify(x)
+	Jot("// DDT Reify(x,as) AFTER: %v", reifiedX)
 
 	// Then convert.
 	ser := Serial("reify_as")
 	y := co.DefineLocalTempC(ser, as, "")
 	co.ConvertTo(reifiedX, y)
+	Jot("// DDT Reify(x,as) ConvertTO: %v ; %v", reifiedX, y)
 	return y
 }
 
@@ -2340,6 +2389,7 @@ func (co *Compiler) VisitPanic(args []Expr) {
 
 func (co *Compiler) VisitCall(callx *CallX) Value {
 	if identx, ok := callx.Func.(*IdentX); ok {
+		// Handle really special methods.
 		switch identx.X {
 		case "make":
 			assert(!callx.HasDotDotDot)
@@ -2407,6 +2457,10 @@ func (co *Compiler) VisitCall(callx *CallX) Value {
 
 			var argVals []Value
 			if bm, _ = funcVal.(*BoundMethodVal); bm != nil {
+				// To avoid double-evaling the receiver (once as receiver,
+				// once as first argument), reify it here.
+				bmReceiver := co.Reify(bm.receiver)
+
 				if bm.isFace {
 					// "bm" gets sent to FormatCall.
 					// We could also add "dm" for dispatched method.
@@ -2418,12 +2472,12 @@ func (co *Compiler) VisitCall(callx *CallX) Value {
 
 					// Prepend receiver as first arg.
 					//< argVals = append(argVals, bm.receiver)
-					argc = append(argc, bm.receiver.ToC())
+					argc = append(argc, bmReceiver.ToC())
 
-					callme = co.RegisterDispatchReturnCaller(bm)
+					callme = co.RegisterDispatchReturnCaller(bm, bmReceiver)
 				} else {
 					// Prepend receiver as first arg.
-					argVals = append(argVals, bm.receiver)
+					argVals = append(argVals, bmReceiver)
 					callme = bm.cmeth
 				}
 			} else {
@@ -2526,9 +2580,9 @@ func AppendUnique(slice []string, a string) []string {
 }
 
 // Returns dispatch function expression.
-func (co *Compiler) RegisterDispatchReturnCaller(bm *BoundMethodVal) (callme string) {
+func (co *Compiler) RegisterDispatchReturnCaller(bm *BoundMethodVal, bmReceiver Value) (callme string) {
 	assert(bm.isFace)
-	face, ok := bm.receiver.Type().(*InterfaceTV)
+	face, ok := bmReceiver.Type().(*InterfaceTV)
 	assert(ok)
 
 	dsig := CName(bm.cmeth, bm.typecode)
@@ -2557,7 +2611,7 @@ func (co *Compiler) RegisterDispatchReturnCaller(bm *BoundMethodVal) (callme str
 	dd(F("typedef %s; //L2451", ftv.FuncRec.SignatureStr("(*rt_"+dispatcher+")", true /*addReceiver*/)))
 	dd(F("extern %s %s(void* p); // L2452", retCType, dispatcher))
 
-	return F("(%s(%s))", dispatcher, bm.receiver.ToC())
+	return F("(%s(%s))", dispatcher, bmReceiver.ToC())
 }
 
 func (co *Compiler) FormatCall(callme string, argc []string) string {
