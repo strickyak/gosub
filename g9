@@ -89,7 +89,7 @@ function compile() {
 
       # cc Four:$ROUND -c ___.initvars.c
       # ( set -x ; lwar -r ___.a ___.initvars.o )
-      cc Five:$ROUND -o $T runtime/runt.c ___.initvars.c ../pythonine/v0.1/octet.c ___.a
+      cc Five:$ROUND -o $T runtime/runt.c ___.initvars.c ___.a
       mv -v $T $T.bin
       ls -l $T.bin
       ( set -x ; : map ; cat -n $T.map )
@@ -182,6 +182,7 @@ case $1 in
 #<>#    ( cd $G && go run -x --tags=level2,coco3,trace gomar.go \
 #<>#      --boot /tmp/boot2coco3 --disk $DISK --h0 $HARD \
 #<>#      --trigger_os9="(?i:fork.*file=.$BASE)" 2>/tmp/_ )
+
     ;;
   test )
     echo Sorry, test not supported. >&2
