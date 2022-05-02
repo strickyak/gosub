@@ -30,13 +30,13 @@ func MkDeepSlices() [][][]string {
 
 func main() {
 	ds := MkDeepSlices()
-	log.Printf("Nando len(ds)=%d T=%T, lenT=%T", len(ds), ds, len(ds))
+	// log.Printf("Nando len(ds)=%d T=%T, lenT=%T", len(ds), ds, len(ds))
 	for i, e := range ds {
-		log.Printf("Nando i, eT = %d, %T", i, e)
+		// log.Printf("Nando i, eT = %d, %T", i, e)
 		for j, f := range e {
-			log.Printf("Nando j, fT = %d, %T", i, e)
+			// log.Printf("Nando j, fT = %d, %T", i, e)
 			for k, g := range f {
-				log.Printf("Nando [%d %d %d] T=%T %v", i, j, k, g, g)
+				// log.Printf("Nando [%d %d %d] T=%T %v", i, j, k, g, g)
 				println(i, j, k, g)
 			}
 		}
