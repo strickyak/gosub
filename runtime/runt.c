@@ -209,6 +209,7 @@ void PutS2(const char* s) {
 
 // This can show the calling functions by Frames.
 void Where() {
+#if 0
   memset(Buffer2, 0, sizeof(Buffer2));
   P2 = Buffer2;
 
@@ -230,5 +231,6 @@ void Where() {
   PutS2("\n");
   P_int count, errno;
 	low__Write(1, (P_uintptr)Buffer2, strlen(Buffer2), &count, &errno);
+#endif
 }
 #endif

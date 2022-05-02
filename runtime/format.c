@@ -136,41 +136,45 @@ int low__FormatToBuffer(String s, Slice args) {
 
           if (c == 0/*EOS*/) goto END;
 
-          switch (a->typecode[0]) {
-            case 's': // case string
-            case 'S': // case Slice (actually for slice of bytes) pun as String:
-              {
-                String* xp = (String*)a->pointer;
-                if (c=='q')
-                  FormatQ((byte*)(xp->base + xp->offset), xp->len);
-                else
-                  PUTSTRN((const char*)(xp->base + xp->offset), xp->len);
-              }
-              break;
-            case 'z': // case bool
-              PUTSTR( (*(P_bool*)a->pointer) ? "true" : "false");
-              break;
-            case 'b':  // case byte
-              PUTU(*(P_byte*)a->pointer);
-              break;
-            case 'i':  // case int
-              PUTI(*(P_int*)a->pointer);
-              break;
-            case 'u': // case uint
-              PUTU(*(P_uint*)a->pointer);
-              break;
-            case 'p': // case pointer
-              PUTSTR( "(*)" );
-              PUTU((P_uintptr)*(void**)a->pointer);
-              break;
-            default: // default: Unhandled Type
-              PUTSTR("(percent "); PUTU(c);
-              PUTSTR(" typecode "); PUTSTR(a->typecode);
-              PUTSTR(" pointer "); PUTU((P_uintptr)a->pointer);
-              PUTSTR(" * "); PUTU(((P_uintptr*)a->pointer)[0]);
-              PUTSTR(" * "); PUTU(((P_uintptr*)a->pointer)[1]);
-              PUTSTR(")");
-              break;
+          if (c == 'T') {
+            PUTSTR(a->typecode);
+          } else {
+            switch (a->typecode[0]) {
+              case 's': // case string
+              case 'S': // case Slice (actually for slice of bytes) pun as String:
+                {
+                  String* xp = (String*)a->pointer;
+                  if (c=='q')
+                    FormatQ((byte*)(xp->base + xp->offset), xp->len);
+                  else
+                    PUTSTRN((const char*)(xp->base + xp->offset), xp->len);
+                }
+                break;
+              case 'z': // case bool
+                PUTSTR( (*(P_bool*)a->pointer) ? "true" : "false");
+                break;
+              case 'b':  // case byte
+                PUTU(*(P_byte*)a->pointer);
+                break;
+              case 'i':  // case int
+                PUTI(*(P_int*)a->pointer);
+                break;
+              case 'u': // case uint
+                PUTU(*(P_uint*)a->pointer);
+                break;
+              case 'p': // case pointer
+                PUTSTR( "(*)" );
+                PUTU((P_uintptr)*(void**)a->pointer);
+                break;
+              default: // default: Unhandled Type
+                PUTSTR("(percent "); PUTU(c);
+                PUTSTR(" typecode "); PUTSTR(a->typecode);
+                PUTSTR(" pointer "); PUTU((P_uintptr)a->pointer);
+                PUTSTR(" * "); PUTU(((P_uintptr*)a->pointer)[0]);
+                PUTSTR(" * "); PUTU(((P_uintptr*)a->pointer)[1]);
+                PUTSTR(")");
+                break;
+            }
           }
       }
       a++;
