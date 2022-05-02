@@ -989,6 +989,7 @@ type StructRec struct {
 	cname  string
 	Fields []NameTV
 	Meths  []NameTV
+	shape  string // GC mark shape: \xFF-terminated.
 }
 
 type InterfaceRec struct {
@@ -1036,6 +1037,26 @@ func (b *Block) Find(name string) *GDef {
 
 func (b *Block) VisitStmt(v StmtVisitor) {
 	v.VisitBlock(b)
+}
+
+type MarkInfo struct {
+	size int  // the size of the field, accumulate for offset.
+	mark bool // this position (before adding the size) has a handle to be marked.
+}
+
+var markInfo = map[byte]*MarkInfo{
+	'z': &MarkInfo{1, false},
+	'b': &MarkInfo{1, false},
+	'i': &MarkInfo{2, false},
+	'u': &MarkInfo{2, false},
+	'k': &MarkInfo{2, false},
+
+	's': &MarkInfo{6, true},
+	'S': &MarkInfo{6, true},
+	'P': &MarkInfo{2, true},
+	'I': &MarkInfo{2, true},
+	'F': &MarkInfo{2, false},
+	't': &MarkInfo{2, false},
 }
 
 /*
@@ -1452,8 +1473,9 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 		// Annotate structs & interfaces with their module.
 		switch t := g.istype.(type) {
 		case *StructTV:
-			cname := CName(cm.Package, t.StructRec.name)
-			t.StructRec.cname = cname
+			rec := t.StructRec
+			cname := CName(cm.Package, rec.name)
+			rec.cname = cname
 			cg := cm.CGen
 			if _, already := cg.classNums[cname]; already {
 				panic(F("struct already defined: %s", cname))
@@ -1463,6 +1485,34 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 			cg.classes = append(cg.classes, cname)
 			pr("#define CLASS_%s %d", cname, num)
 			pr("struct %s; // L1334", cname, cname)
+
+			// Figure out the GC mark shape.
+			// Bytes represent offsets (from start of struct)
+			// to mark points (where Handles are).
+			// The shape will be \xFF-terminated, since 0
+			// is a valid initial offset.
+			// TODO: if we start with offset 1 (but reset
+			// to offset 0), we could 0-terminate.
+			// that's like the initial pointer is the byte
+			// before the struct begins.
+			var shape []byte
+			offset := 0
+			for i, e := range rec.Fields {
+				pr("// [%d] %#v", i, e)
+				tc := e.TV.TypeCode()
+				info := markInfo[tc[0]]
+				if info.mark {
+					assert(offset < 250)
+					shape = append(shape, byte(offset))
+					offset = 0
+				}
+				pr("//     %d: %q", offset, tc)
+				offset += info.size
+			}
+			shape = append(shape, 255) // Termination
+			rec.shape = string(shape)
+			pr("//  =====> %d# %q", len(shape), rec.shape)
+
 		case *InterfaceTV:
 			t.InterfaceRec.cname = CName(cm.Package, t.InterfaceRec.name)
 		}
@@ -2252,11 +2302,11 @@ func Jot(format string, args ...interface{}) {
 }
 
 func (co *Compiler) Reify(x Value) Value {
-	Jot("// DDT Reify(x): %v", x)
+	Jot("// PDQ Reify(x): %v", x)
 	return co.ReifyAs(x, x.Type()) // as its own type
 }
 func (co *Compiler) ReifyAs(x Value, as TypeValue) Value {
-	Jot("// DDT ReifyAs(x, as): %v ; %v", x, as)
+	Jot("// PDQ ReifyAs(x, as): %v ; %v", x, as)
 	L("ccc x %v", x)
 	L("ccc x.Type %v", x.Type())
 	L("ccc as %v", as)
@@ -2273,15 +2323,15 @@ func (co *Compiler) ReifyAs(x Value, as TypeValue) Value {
 
 	// CASE: types are different.
 	// First, reify as the input type.
-	Jot("// DDT Reify(x,as) BEFORE: %v", x)
+	Jot("// PDQ Reify(x,as) BEFORE: %v", x)
 	reifiedX := co.Reify(x)
-	Jot("// DDT Reify(x,as) AFTER: %v", reifiedX)
+	Jot("// PDQ Reify(x,as) AFTER: %v", reifiedX)
 
 	// Then convert.
 	ser := Serial("reify_as")
 	y := co.DefineLocalTempC(ser, as, "")
 	co.ConvertTo(reifiedX, y)
-	Jot("// DDT Reify(x,as) ConvertTO: %v ; %v", reifiedX, y)
+	Jot("// PDQ Reify(x,as) ConvertTO: %v ; %v", reifiedX, y)
 	return y
 }
 
@@ -3318,10 +3368,8 @@ func (co *Compiler) EmitFunc(gd *GDef, justDeclare bool) {
 		}
 		if rec.HasDotDotDot && i == len(rec.Ins)-1 {
 			co.DefineLocal("in", name, in.TV)
-			L("%q DDT_IN #%d name=%v in.TV=%v (DotDotDot)", gd.CName, i, name, in.TV)
 		} else {
 			co.DefineLocal("in", name, in.TV)
-			L("%q DDT_IN #%d name=%v in.TV=%v", gd.CName, i, name, in.TV)
 		}
 	}
 
