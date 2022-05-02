@@ -1863,7 +1863,7 @@ func NewCGenAndMainCMod(opt *Options, w io.Writer) (*CGen, *CMod) {
 		faces:   make(map[string]*GDef),
 
 		classes: []string{
-			"_FREE_", "_BYTES_", "_HANDLES_",
+			"_FREE_", "_BYTES_", "_HANDLES_", "_STRINGS_", "_SLICES_",
 		},
 		classNums:          make(map[string]int),
 		dmeths:             make(map[string][]string),
@@ -3001,14 +3001,15 @@ func (co *Compiler) VisitReturn(ret *ReturnS) {
 
 	switch len(ret.X) {
 	case 0:
-		co.P("  return;")
+		co.P("  Where(); RETURN_NOTHING;")
 	case 1:
 		if len(outs) != 1 {
 			panic(F("L2516: Got 1 return value, but needs %d", len(outs)))
 		}
 		val := ret.X[0].VisitExpr(co)
-		log.Printf("return..... val=%v", val)
-		co.P("  return %s;", val.ToC())
+		reval := co.Reify(val)
+		log.Printf("return..... reval=%v", reval)
+		co.P("  Where(); RETURN %s;", reval.ToC())
 	default:
 		if len(outs) != len(ret.X) {
 			panic(F("L2523: Got %d return values, but needs %d", len(ret.X), len(outs)))
@@ -3020,7 +3021,7 @@ func (co *Compiler) VisitReturn(ret *ReturnS) {
 			r := co.results[i]
 			co.ConvertToCNameType(vx, "*"+r.name, r.TV)
 		}
-		co.P("  return; // L2529: multi")
+		co.P("  Where(); RETURN_NOTHING; // L2529: multi")
 	}
 }
 func (co *Compiler) VisitFor(fors *ForS) {
@@ -3362,32 +3363,92 @@ func (co *Compiler) EmitFunc(gd *GDef, justDeclare bool) {
 	co.Buf = prevBuf
 	co.P("// Adding LOCALS to Func:")
 	co.P("struct { TOP_FRAME_FIELDS")
+
+	// GC only runs on 6809, so use "cmoc" sizes.
+	offset := 6     // Size of TOP_FRAME_FIELDS
+	var marks []int // Mark offsets for GC.
+
 	for name, e := range co.slots {
 		if strings.HasPrefix(e.CName, "in_") || strings.HasPrefix(e.CName, "out_") {
 			// These are declared in the formal params of the C function.
+			// TODO: copy `in_...` variables to struct, and protect them.
 			continue
 		}
 		co.P("// LOCAL %q IS %v", name, e)
 		//< co.P("auto %v %v = %s; // DEF LOCAL L2145 Type=%#v", e.typeof.CType(), e.CName, e.typeof.Zero(), e.typeof)
 		co.P(" %s fr_%s; // DEF LOCAL L2145 Type=%#v", e.typeof.CType(), e.CName, e.typeof)
 		co.P("#define %s fr.fr_%s", e.CName, e.CName)
+
+		tcode := e.typeof.TypeCode()
+		switch tcode[0] {
+		case 's': // string
+			marks = append(marks, offset)
+			offset += 6
+		case 'S': // Slice
+			marks = append(marks, offset)
+			offset += 6
+		case 'a': // Any
+			// Any does not mark against GC.
+			offset += 4
+		case 'F': // Function
+			offset += 2
+		case 'I': // Interface
+			marks = append(marks, offset)
+			offset += 2
+		case 'P': // Pointer
+			marks = append(marks, offset)
+			offset += 2
+		case 'b',
+			'z':
+			offset += 1
+		case 'i',
+			'u',
+			'k',
+			'p':
+			offset += 2
+		default:
+			log.Panicf("Unknown TypeCode: %s", tcode)
+		}
 	}
 	co.P("} fr;")
 	co.P("memset(&fr, 0, sizeof(fr));")
-	co.P("fr.fr_shape = \"\"; // TODO")
-	co.P("fr.fr_prev = CurrentFrame;")
-	co.P("CurrentFrame = (struct Frame*) &fr;")
-	co.P("#define RETURN(X) return (CurrentFrame = fr.fr_prev), X")
-	co.P("#define RETURN_NOTHING {CurrentFrame = fr.fr_prev; return;} ")
 
+	co.P("fr.fr_shape = %q;", CompileMarkOffsets(marks))
+
+	co.P("fr.fr_prev = CurrentFrame;")
+	co.P("fr.fr_name = %q;", gd.CName)
+	co.P("CurrentFrame = (struct Frame*) &fr;")
+
+	//< co.P("#define RETURN   return (CurrentFrame = fr.fr_prev), ")
+	//< co.P("#define RETURN_NOTHING {CurrentFrame = fr.fr_prev; return;} ")
+
+	if true {
+		co.P("Where();")
+	}
 	co.P("// Added LOCALS to Func.")
 	L("CBODY IS %q", cBody)
 	co.P("\n%s\n", cBody)
 
 	co.FinishScope()
 
+	if true {
+		co.P("Where();")
+	}
 	co.P("CurrentFrame = fr.fr_prev;")
 	co.P("\n}\n")
+}
+
+func CompileMarkOffsets(marks []int) []byte {
+	var z []byte
+	prev := 0
+	for _, m := range marks {
+		diff := m - prev
+		assert(diff > 0)
+		assert(diff < 255)
+		z = append(z, byte(diff))
+		prev = m
+	}
+	return append(z, 0)
 }
 
 ///////////////////////////////////////////////////////////

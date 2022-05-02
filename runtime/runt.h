@@ -106,7 +106,7 @@ extern void StringGet(String a, int nth, P_byte* out);
 
 // String & Slice
 String FromBytesToString(Slice a);
-Slice FromStrinToBytes(String a);
+Slice FromStringToBytes(String a);
 
 // Slices
 extern Slice MakeSlice(const char* typecode, int len, int cap, int size);
@@ -120,12 +120,25 @@ extern void builtin__println(Slice args);
 // Frames
 #define TOP_FRAME_FIELDS \
   const char* fr_shape; \
-  struct Frame* fr_prev;
+  struct Frame* fr_prev; \
+  const char* fr_name;
 
 struct Frame {
   TOP_FRAME_FIELDS
 };
 extern struct Frame* CurrentFrame;
+#if 1
+void Where();  // Show calling function frames.
+#endif
+
+#define RETURN return (CurrentFrame = fr.fr_prev),
+
+#define RETURN_NOTHING         \
+  {                            \
+    CurrentFrame = fr.fr_prev; \
+    return;                    \
+  }
+
 
 #ifdef unix
 

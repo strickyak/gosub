@@ -39,7 +39,7 @@ void PUTSTR(const char* s) {
 
 void PUTSTRN(const char* s, byte n) {
   for (byte i=0; i<n; i++) {
-    assert(s[i]);
+    //assert(s[i]);
     PUTCHAR(s[i]);
   }
 }
@@ -125,7 +125,7 @@ int low__FormatToBuffer(String s, Slice args) {
 
   for (; p < p_end; p++) {
     byte c = *p;
-    if (c == 0/*EOS*/) goto RETURN;
+    if (c == 0/*EOS*/) goto END;
     if (c=='%') {
         ++p;
         c = *p;
@@ -134,7 +134,7 @@ int low__FormatToBuffer(String s, Slice args) {
           PUTSTR("<end>");
         } else {
 
-          if (c == 0/*EOS*/) goto RETURN;
+          if (c == 0/*EOS*/) goto END;
 
           switch (a->typecode[0]) {
             case 's': // case string
@@ -179,6 +179,6 @@ int low__FormatToBuffer(String s, Slice args) {
       PUTCHAR(*p);
     }
   }  // next byte *p
-RETURN:
+END:
   return BufferP - Buffer;
 }  // end low__FormatToBuffer

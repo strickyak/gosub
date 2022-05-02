@@ -174,3 +174,61 @@ void builtin__println(Slice args) {
     low__Exit(berrno);
   }
 }
+
+#if 1
+char Buffer2[500];
+char* P2;
+
+void PUT2(int x) {
+  *P2++ = (char)x;
+}
+
+void PUTHEX2(byte x) {
+  assert(x < 16);
+  if (x < 10) {
+    PUT2('0' + x);
+  } else {
+    PUT2('a' + x - 10);
+  }
+}
+
+void PutX2(P_uint x) {
+  if (x > 15) {
+    PutX2(x >> 4);
+    PUTHEX2((byte)(x & 15));
+  } else {
+    PUTHEX2((byte)x);
+  }
+}
+
+void PutS2(const char* s) {
+  int n = strlen(s);
+  memcpy(P2, s, n);
+  P2 += n;
+}
+
+// This can show the calling functions by Frames.
+void Where() {
+  memset(Buffer2, 0, sizeof(Buffer2));
+  P2 = Buffer2;
+
+  PutS2("\nWHERE: ");
+  for (const struct Frame* fp = CurrentFrame; fp; fp = fp->fr_prev) {
+    PutS2(fp->fr_name);
+#ifndef unix
+    PutS2(": ");
+    word mem = (word)fp; // beginning of frame
+    for (const char* s=fp->fr_shape; *s; s++) {
+      mem += (byte)*s;
+      word handle = *(word*)mem;
+      PutX2(handle);
+      PutS2(" ");
+    }
+#endif
+    PutS2(", ");
+  }
+  PutS2("\n");
+  P_int count, errno;
+	low__Write(1, (P_uintptr)Buffer2, strlen(Buffer2), &count, &errno);
+}
+#endif
