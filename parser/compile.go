@@ -1786,6 +1786,39 @@ func (cm *CMod) FifthPrintFunctions(p *Parser, pr printer) {
 		pr("}")
 		fp.Close()
 	}
+
+	if cm.Package == "main" {
+		cgen := cm.CGen
+		// Onto ___.defs.h:
+		pr("#define NUM_CLASSES %d", len(cgen.classes))
+		// Special shapes.
+		pr("#define SHAPE__HANDLES_ \"\\xFF\" ")
+		pr("#define SHAPE__SLICES_ \"\\xFE\" ")
+
+		{
+			fp := NewFilePrinter("___.shapes.c")
+			pr := fp.GetPrinter()
+			pr(`#include "___.defs.h"`)
+
+			pr("const char* ClassNames[] = {")
+			for i, cls := range cgen.classes {
+				pr("  %q, // %d", cls, i)
+			}
+			pr("};")
+
+			pr("const char* ClassMarks[] = {")
+			for i, cls := range cgen.classes {
+				pr("#ifdef SHAPE_%s", cls)
+				pr("  SHAPE_%s, // %d", cls, i)
+				pr("#else")
+				pr("  NULL, // %d", i)
+				pr("#endif")
+			}
+			pr("};")
+
+			fp.Close()
+		}
+	}
 }
 
 func TryADozenTimes(fn func()) {
