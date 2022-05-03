@@ -1487,16 +1487,14 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 			pr("struct %s; // L1334", cname, cname)
 
 			// Figure out the GC mark shape.
-			// Bytes represent offsets (from start of struct)
+			// Bytes represent offsets from 1 byte before
+			// the start of the struct
 			// to mark points (where Handles are).
-			// The shape will be \xFF-terminated, since 0
-			// is a valid initial offset.
-			// TODO: if we start with offset 1 (but reset
-			// to offset 0), we could 0-terminate.
-			// that's like the initial pointer is the byte
-			// before the struct begins.
+			// We start with offset 1 (but reset
+			// to offset 0), so an initial 0 cannot be needed
+			// if the very first byte of the struct is a mark point.
 			var shape []byte
-			offset := 0
+			offset := 1
 			for i, e := range rec.Fields {
 				pr("// [%d] %#v", i, e)
 				tc := e.TV.TypeCode()
@@ -1509,9 +1507,8 @@ func (cm *CMod) SecondBuildGlobals(p *Parser, pr printer) {
 				pr("//     %d: %q", offset, tc)
 				offset += info.size
 			}
-			shape = append(shape, 255) // Termination
 			rec.shape = string(shape)
-			pr("//  =====> %d# %q", len(shape), rec.shape)
+			pr("#define SHAPE_%s %q", cname, rec.shape)
 
 		case *InterfaceTV:
 			t.InterfaceRec.cname = CName(cm.Package, t.InterfaceRec.name)
@@ -1580,15 +1577,11 @@ func (cm *CMod) ThirdDefineGlobals(p *Parser, pr printer) {
 		case *StructTV:
 			cm.CGen.structs[g.CName] = g
 
-			pr("#ifndef DEFINED_%s", g.CName)
 			pr("struct %s {", g.CName)
 			for _, field := range tt.StructRec.Fields {
-				L("omg field %q :: %v", field.name, field.TV)
 				pr("  %s f_%s;", field.TV.CType(), field.name)
 			}
 			pr("}; // struct L1366")
-			pr("#define DEFINED_%s 1", g.CName)
-			pr("#endif")
 		}
 	}
 	for _, g := range p.Vars {
