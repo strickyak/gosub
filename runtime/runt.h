@@ -117,6 +117,11 @@ extern void SlicePut(Slice a, int size, int nth, void* value);
 extern int SliceLen(Slice a, int size);
 extern void builtin__println(Slice args);
 
+// Format
+void low__WriteBuffer(P_int in_fd, P_int *out_count, P_int *out_errno);
+
+extern const char* ClassNames[];
+extern const char* ClassMarks[];
 // Frames
 #define TOP_FRAME_FIELDS \
   const char* fr_shape; \
@@ -127,7 +132,18 @@ struct Frame {
   TOP_FRAME_FIELDS
 };
 extern struct Frame* CurrentFrame;
+
+
+
 #if 1
+// Buffer2 for debugging
+extern char Buffer2[500];
+extern char* P2;
+void PUTHEX2(byte x);
+void PutX2(P_uint x);
+void PutS2(const char* s);
+void Write2();
+
 void Where();  // Show calling function frames.
 #endif
 

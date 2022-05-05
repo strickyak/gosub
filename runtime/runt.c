@@ -7,13 +7,53 @@ extern void initvars();
 struct Frame* CurrentFrame;
 byte Heap[25000];
 
-void null_marker() {
-  panic_s("cannot GC yet");
+#ifndef unix
+void mark_handle(word h);
+
+void mark_with_shape(const char* s, word h) {
+  if (!s) return;
+  const byte* p = (const byte*)s;
+  for (; *p; p++) {
+    h += (*p);
+    mark_handle(*(word*)h);
+  }
+}
+
+void mark_handle(word h) {
+  if (!h) return;
+  byte cls = ocls(h);
+  assert(cls < NUM_CLASSES);
+  {
+    P2 = Buffer2;
+    PutS2("{");
+    PutX2(h);
+    PutS2(".");
+    PutS2(ClassNames[cls]);
+    PutS2("} ");
+  }
+  omark(h);
+  mark_with_shape(ClassMarks[cls], h-1); // because first mark is relative to handle addr less one.
+}
+#endif
+
+void mark_all() {
+#ifndef unix
+  // TODO: global vars
+  
+  // TODO: stack
+  for (struct Frame* fr = CurrentFrame; fr; fr=fr->fr_prev) {
+    word h = (word)fr;
+    for (const byte* s = (const byte*)fr->fr_shape; *s; s++) {
+      h += (*s);
+      mark_handle(*(word*)h);
+    }
+  }
+#endif
 }
 
 int main(int argc, const char* argv[]) {
   // printf("(\n");
-  oinit((word)Heap, (word)Heap + sizeof Heap, &null_marker);  // noop
+  oinit((word)Heap, (word)Heap + sizeof Heap, mark_all);
   initvars();
   initmods();
   main__main();
@@ -207,6 +247,11 @@ void PutS2(const char* s) {
   P2 += n;
 }
 
+void Write2() {
+  P_int count, errno;
+	low__Write(2, (P_uintptr)Buffer2, strlen(Buffer2), &count, &errno);
+}
+
 // This can show the calling functions by Frames.
 void Where() {
 #if 0
@@ -229,8 +274,11 @@ void Where() {
     PutS2(", ");
   }
   PutS2("\n");
+  /*
   P_int count, errno;
 	low__Write(1, (P_uintptr)Buffer2, strlen(Buffer2), &count, &errno);
+  */
+  Write2();
 #endif
 }
 #endif
