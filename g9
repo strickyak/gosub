@@ -29,6 +29,10 @@ function ExtractInitVarsFromMapFile() {
         sed -e 's/^_//'
 }
 
+function ExtractMarkVarsFromMapFile() {
+        awk -F. '/___[.]var[.]/ { print $3 }' "$1" | sort -u
+}
+
 function compile() {
   T=$(basename $1 .go)
   (
@@ -60,6 +64,8 @@ function compile() {
       echo '#include "___.defs.h"'
       echo 'void initvars() {'
       echo '}'
+      echo 'void markvars() {'
+      echo '}'
     ) > ___.initvars.c
 
     # cc Three:$T -o $T runtime/runt.c ../pythonine/v0.1/octet.c ___.a
@@ -70,6 +76,7 @@ function compile() {
     for ROUND in A B C
     do 
       INITVARS=$(ExtractInitVarsFromMapFile $T.map | LC_ALL=C sort)
+      MARKVARS=$(ExtractMarkVarsFromMapFile $T.map)
       for x in $INITVARS ; do echo $x ; done > ,$T.$ROUND.round
       (
         echo '#include "___.defs.h"'
@@ -81,6 +88,12 @@ function compile() {
         for x in $INITVARS
         do
           echo "$x();"
+        done
+        echo '}'
+        echo 'void markvars() {'
+        for x in $MARKVARS
+        do
+          echo "  omark( &($x) );"
         done
         echo '}'
       ) > ___.initvars.c

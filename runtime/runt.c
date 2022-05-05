@@ -36,11 +36,13 @@ void mark_handle(word h) {
 }
 #endif
 
+extern void markvars();
 void mark_all() {
 #ifndef unix
-  // TODO: global vars
+  // Mark global vars.
+  markvars();
   
-  // TODO: stack
+  // Mark stack.
   for (struct Frame* fr = CurrentFrame; fr; fr=fr->fr_prev) {
     word h = (word)fr;
     for (const byte* s = (const byte*)fr->fr_shape; *s; s++) {
@@ -52,12 +54,13 @@ void mark_all() {
 }
 
 int main(int argc, const char* argv[]) {
-  // printf("(\n");
+  printf("(\r");
   oinit((word)Heap, (word)Heap + sizeof Heap, mark_all);
+  printf("oinit: %x# %x:%x\r", sizeof Heap, (word)Heap, (word)Heap + sizeof Heap);
   initvars();
   initmods();
   main__main();
-  // printf(")\n");
+  printf(")\r");
   return 0;
 }
 
