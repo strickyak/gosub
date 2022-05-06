@@ -54,13 +54,23 @@ void mark_all() {
 }
 
 int main(int argc, const char* argv[]) {
+#ifdef COCOTALK
   printf("(\r");
+#endif
   oinit((word)Heap, (word)Heap + sizeof Heap, mark_all);
+#ifdef COCOTALK
+#ifdef unix
+  printf("oinit: %lx# %llx:%llx\r", (unsigned long)sizeof Heap, (unsigned long long)Heap, (unsigned long long)Heap + sizeof Heap);
+#else
   printf("oinit: %x# %x:%x\r", sizeof Heap, (word)Heap, (word)Heap + sizeof Heap);
+#endif
+#endif
   initvars();
   initmods();
   main__main();
+#ifdef COCOTALK
   printf(")\r");
+#endif
   return 0;
 }
 
