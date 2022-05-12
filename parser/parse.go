@@ -79,12 +79,18 @@ func (o *Parser) ParsePrim() Expr {
 			elemX := o.ParseType()
 			return &PointerTX{o.ExprToNameTX(elemX)}
 		}
+		if false {
+			// WAS TRYING TO FIX interface defn meths with multiple returns, but broke stuff.
+			if o.Word == "(" {
+				o.Next()
+				ex := o.ParseExpr()
+				o.TakePunc(")")
+				return ex
+			}
+		}
 		if o.Word == "[" {
 			o.Next()
-			if o.Word != "]" {
-				panic(F("for slice type, after [ expected ], got %v", o.Word))
-			}
-			o.Next()
+			o.TakePunc("]")
 			elemX := o.ParseType()
 			return &SliceTX{o.ExprToNameTX(elemX)}
 		}
@@ -94,7 +100,8 @@ func (o *Parser) ParsePrim() Expr {
 			return o.ParseConstructor(typeX)
 		}
 	}
-	panic("bad ParsePrim")
+	log.Panicf("bad ParsePrim: %q", o.Word)
+	panic(0)
 }
 
 func (o *Parser) ParseConstructor(typeX Expr) Expr {
