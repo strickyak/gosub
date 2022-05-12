@@ -79,14 +79,11 @@ func (o *Parser) ParsePrim() Expr {
 			elemX := o.ParseType()
 			return &PointerTX{o.ExprToNameTX(elemX)}
 		}
-		if false {
-			// WAS TRYING TO FIX interface defn meths with multiple returns, but broke stuff.
-			if o.Word == "(" {
-				o.Next()
-				ex := o.ParseExpr()
-				o.TakePunc(")")
-				return ex
-			}
+		if o.Word == "(" {
+			o.Next()
+			ex := o.ParseExpr()
+			o.TakePunc(")")
+			return ex
 		}
 		if o.Word == "[" {
 			o.Next()
