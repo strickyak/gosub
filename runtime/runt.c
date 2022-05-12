@@ -1,11 +1,15 @@
 #include "___.defs.h"
+#include "os9.h"
+#include "os9errno.h"
 
 extern void main__main();
 extern void initmods();
 extern void initvars();
 
 struct Frame* CurrentFrame;
+#if unix
 byte Heap[25000];
+#endif
 
 #ifndef unix
 void mark_handle(word h);
@@ -51,27 +55,6 @@ void mark_all() {
     }
   }
 #endif
-}
-
-int main(int argc, const char* argv[]) {
-#ifdef COCOTALK
-  printf("(\r");
-#endif
-  oinit((word)Heap, (word)Heap + sizeof Heap, mark_all);
-#ifdef COCOTALK
-#ifdef unix
-  printf("oinit: %lx# %llx:%llx\r", (unsigned long)sizeof Heap, (unsigned long long)Heap, (unsigned long long)Heap + sizeof Heap);
-#else
-  printf("oinit: %x# %x:%x\r", sizeof Heap, (word)Heap, (word)Heap + sizeof Heap);
-#endif
-#endif
-  initvars();
-  initmods();
-  main__main();
-#ifdef COCOTALK
-  printf(")\r");
-#endif
-  return 0;
 }
 
 void panic_s(const char* why) {
@@ -293,5 +276,123 @@ void Where() {
   */
   Write2();
 #endif
+}
+
+#ifndef STACK_GAP
+#define STACK_GAP 2000
+#endif
+
+void defs_init(void (*marker_fn)()) {
+#if unix
+  #define MEMSIZE 32000u
+  #define data 10u
+  #define data_end (data + MEMSIZE)
+  printf("oinit: start=$%04x end=$%04x\n", data, data_end);
+#else
+  word stack_ptr;
+  asm {
+    sts stack_ptr
+  }
+  word bss_max;
+  asm {
+    IMPORT l_bss
+    ldd #l_bss
+    std bss_max
+  }
+
+  word data = 0xFFFC & (bss_max + 8);
+  word data_end = 0xFFFC & (stack_ptr - STACK_GAP);
+  printf("oinit: size=%d. start=$%04x end=$%04x\n", (data_end - data), data, data_end);
+#endif
+  oinit(data, data_end, marker_fn);
+  // odump(0, 0, 0, 0);
+}
+
+
+int main2() {
+#ifdef COCOTALK
+  printf("(\r");
+#endif
+  // oinit((word)Heap, (word)Heap + sizeof Heap, mark_all);
+  defs_init(mark_all);
+#ifdef COCOTALK
+#ifdef unix
+  printf("oinit: %lx# %llx:%llx\r", (unsigned long)sizeof Heap, (unsigned long long)Heap, (unsigned long long)Heap + sizeof Heap);
+#else
+  // printf("oinit: %x# %x:%x\r", sizeof Heap, (word)Heap, (word)Heap + sizeof Heap);
+#endif
+#endif
+  initvars();
+  initmods();
+  main__main();
+#ifdef COCOTALK
+  printf(")\r");
+#endif
+  return 0;
+}
+
+int main(int argc, char* argv[]) {
+#if !unix
+  word old_size = 0;
+  word wanted_size = 0x4000;
+  word got_size = 0x4000;
+  word new_size = 0;
+  byte err = 0;
+  word stack_pointer = 0;
+
+  for (int i =0; i<5; i++) {
+
+  asm {
+    sts stack_pointer
+
+    leay 0,y  ; sets Z flag.  Zero means Level 2 OS-9.
+    beq IsLevel2
+
+    ldb #E_BMODE   ; Cannot work on Level 1 OS-9.
+    bra ReSizeError
+
+IsLevel2
+    clra  ; non means query
+    clrb
+    pshs y,u
+    swi2
+    fcb   F_MEM
+    puls y,u
+    bcs ReSizeError
+    std old_size
+
+    ldd wanted_size  ; nonzero means desire.
+    pshs y,u
+    swi2
+    fcb   F_MEM
+    puls y,u
+    bcs ReSizeError
+    std new_size
+    bra ReSizeOk
+
+ReSizeError
+    stb err
+ReSizeOk
+  }
+  printf("err %d. old %x new %x\n", (int)err, old_size, new_size);
+
+  if (err==0) got_size = new_size;
+
+  wanted_size += 0x2000;
+  }
+  printf("got %x\n", got_size);
+
+  asm {
+    tfr y,d     ; zero in D, X, and Y
+    lds got_size
+    pshs d,y
+    pshs d,y
+    tfr s,u     ; Start new high frame pointer
+    pshs d,y
+    pshs d,y
+  }
+#endif
+  main2();
+  return 0;
 }
 #endif
