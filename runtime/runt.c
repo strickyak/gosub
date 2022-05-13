@@ -309,7 +309,7 @@ void defs_init(void (*marker_fn)()) {
 }
 
 
-int main2() {
+void main2() {
 #ifdef COCOTALK
   printf("(\r");
 #endif
@@ -328,7 +328,7 @@ int main2() {
 #ifdef COCOTALK
   printf(")\r");
 #endif
-  return 0;
+  exit(0);  // don't return, the stack has been moved.
 }
 
 int main(int argc, char* argv[]) {
@@ -374,16 +374,16 @@ ReSizeError
     stb err
 ReSizeOk
   }
-  printf("err %d. old %x new %x\n", (int)err, old_size, new_size);
+  // printf("err %d. old %x new %x\n", (int)err, old_size, new_size);
 
   if (err==0) got_size = new_size;
 
   wanted_size += 0x2000;
   }
-  printf("got %x\n", got_size);
+  // printf("got %x\n", got_size);
 
   asm {
-    tfr y,d     ; zero in D, X, and Y
+    tfr y,d     ; zero in D and Y
     lds got_size
     pshs d,y
     pshs d,y
@@ -393,6 +393,7 @@ ReSizeOk
   }
 #endif
   main2();
+  exit(0);
   return 0;
 }
 #endif
