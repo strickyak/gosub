@@ -176,7 +176,7 @@ case $1 in
     ;;
   run )
     compile $2
-    sh ../doing_os9/gomar/launch.sh "$(basename $2 .go).bin"
+    sh ../doing_os9/gomar/launch.sh  --map="$(basename $2 .go).map"  "$(basename $2 .go).bin" gosub.go
 
 #<>#    BASE=$(basename $2 .go)
 #<>#    DISK=/tmp/emu.dsk
