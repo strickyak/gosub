@@ -200,10 +200,10 @@ void builtin__println(Slice args) {
   }
   fmt = StringAdd(fmt, MakeStringFromC("\n"));
 
-  low__FormatToBuffer(fmt, args);
+  low__FormatToStaticBuffer(fmt, args);
 
   P_int count, errno;
-	low__WriteBuffer(1, &count, &errno);
+  low__WriteStaticBuffer(1, &count, &errno);
   if (errno) {
     byte berrno = (byte) errno;
     if (berrno==0) berrno=255;

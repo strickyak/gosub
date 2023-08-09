@@ -1,13 +1,13 @@
 #include "___.defs.h"
 
-byte Guard0[16];
-byte Buffer[256];
-byte Guard1[16];
+byte Guard0[8];  // unchecked, delete me later.
+byte StaticBuffer[256];
+byte Guard1[8];  // unchecked, delete me later.
 byte* BufferP;
 byte* BufferEnd;
 
-String low__BufferToString() {
-  int len = BufferP - Buffer;
+String low__StaticBufferToString() {
+  int len = BufferP - StaticBuffer;
   assert(len >= 0);
   assert(len < INF);
 
@@ -17,7 +17,7 @@ String low__BufferToString() {
         len,
         };
 
-    byte* src = Buffer;
+    byte* src = StaticBuffer;
     byte* dest = (byte*)z.base;
     for (int i = 0; i < len; i++) {
         *dest++ = *src++;
@@ -113,9 +113,9 @@ void FormatQ(byte* str, int n) {
   PUTCHAR('"');
 }
 
-int low__FormatToBuffer(String s, Slice args) {
-  BufferP = Buffer;
-  BufferEnd = Buffer + sizeof(Buffer);
+int low__FormatToStaticBuffer(String s, Slice args) {
+  BufferP = StaticBuffer;
+  BufferEnd = StaticBuffer + sizeof(StaticBuffer);
 
   P__any_* a = (P__any_*)(args.base + args.offset);
   P__any_* a_end = a + (args.len / sizeof(*a));
@@ -184,5 +184,5 @@ int low__FormatToBuffer(String s, Slice args) {
     }
   }  // next byte *p
 END:
-  return BufferP - Buffer;
+  return BufferP - StaticBuffer;
 }  // end low__FormatToBuffer

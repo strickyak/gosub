@@ -47,6 +47,7 @@ typedef void (*omarker)();  // TODO: GC
 #define P_true 1
 #define P_false 0
 #define NIL ((word)0)
+#define P_nil ((void*)0)
 
 #define Slice_(T) Slice
 #define Map_(K, V) Map

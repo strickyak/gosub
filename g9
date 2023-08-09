@@ -46,7 +46,7 @@ function compile() {
     # TRY with ___.runtime.*.c
     for cf in $RUNTIMES ../pythonine/v0.1/octet.c 
     do
-      cp $cf ___.runtime.$(basename $cf)
+      cp -v $cf ___.runtime.$(basename $cf)
     done
 
     for x in ___.*.c
@@ -143,14 +143,14 @@ function compile() {
     # go install ../doing_os9/gomar/cmocly/cmocly.go
     ( cd ../doing_os9/gomar/cmocly/ && go install cmocly.go )
 
-    ##? cp ../pythonine/v0.1/octet.[ch] .
-    ##? cp ../pythonine/v0.1/standard.[ch] .
+    ##? cp -v ../pythonine/v0.1/octet.[ch] .
+    ##? cp -v ../pythonine/v0.1/standard.[ch] .
     #### for cf in runtime/runt.c $RUNTIMES ../pythonine/v0.1/octet.c 
     #### do
-    ####   cp $cf ___.runtime.$(basename $cf)
+    ####   cp -v $cf ___.runtime.$(basename $cf)
     #### done
 
-    cp runtime/runt.c ___.main.c
+    cp -v runtime/runt.c ___.main.c
     $HOME/go/bin/cmocly  -cmoc /opt/yak/cmoc/bin/cmoc -cmoc_pre='--check-null --stack-space=200 -I. -I./runtime -I../pythonine/v0.1/ '  -o $T ___.main.c $USED  
 
     # ___.initvars.c ___.initmods.c ___.func.main__main.c  ___.initmod.*.c  ___.*__init__mod__*.c   # too much
