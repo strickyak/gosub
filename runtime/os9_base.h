@@ -14,6 +14,7 @@ asm void exit(int status);
 asm char* gets(char* buf);
 asm void puts(const char* s);
 
+#if 0
 asm int Os9Create(char* path, int mode, int attrs, int* fd);
 asm int Os9Open(char* path, int mode, int* fd);
 asm int Os9Delete(char* path);
@@ -32,6 +33,7 @@ asm int Os9Fork(const char* program, const char* params, int paramlen, int lang_
 asm int Os9Chain(const char* program, const char* params, int paramlen, int lang_type, int mem_size);
 asm int Os9Send(int process_id, int signal_code);
 asm void Os9Exit(int status);
+#endif
 
 void PrintError(const char* s, const char* filename, int lineno);
 

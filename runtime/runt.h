@@ -29,10 +29,13 @@ typedef void (*omarker)();  // TODO: GC
 
 #else /* if not unix */
 
-#include <cmoc.h>
+/* #include <cmoc.h> */
 
 // #include "../pythonine/v0.1/octet.h"
-#include "octet.h"
+#include "frob3/octet/octet2.h"
+
+#include "frob3/froblib.h"
+#include "frob3/frobos9.h"
 
 //typedef unsigned char bool;
 //typedef unsigned char byte;
@@ -161,6 +164,27 @@ void Where();  // Show calling function frames.
 #else
 
 #include "os9_base.h"
+
+// 2023-07 {{{
+
+#define assert Assert
+#define INF 255 /* stop using this */
+#define BASENAME __FILE__
+
+// was in decb/std4gcc.h {{{
+#if 0
+void abort(void);
+void exit(int status);
+void* memcpy(void* dest, const void* src, size_t n);
+void* memset(void* dest, int ch, size_t n);
+char *strcpy(char *dest, const char *src);
+char *strncpy(char *dest, const char *src, size_t n);
+size_t strlen(const char *str);
+int strcmp(const char* a, const char* b);
+int atoi(const char* s);
+#endif
+// was in decb/std4gcc.h }}}
+// 2023-07 }}}
 
 #endif
 

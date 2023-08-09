@@ -1,5 +1,9 @@
 #include "___.defs.h"
 
+//#define assert(C) Assert(C)
+//#define BASENAME "format"
+#define INF 255 /* is this necessary? */
+
 byte Guard0[16];
 byte Buffer[256];
 byte Guard1[16];
@@ -7,19 +11,17 @@ byte* BufferP;
 byte* BufferEnd;
 
 String low__BufferToString() {
-  int len = BufferP - Buffer;
-  assert(len >= 0);
-  assert(len < INF);
+  word len = BufferP - Buffer;
 
   String z = {
-        oalloc((byte)(len), C_Bytes), // base
+        (word) oalloc(len, C_Bytes), // base
         0, // offset
         len,
         };
 
     byte* src = Buffer;
     byte* dest = (byte*)z.base;
-    for (int i = 0; i < len; i++) {
+    for (word i = 0; i < len; i++) {
         *dest++ = *src++;
     }
     return z;

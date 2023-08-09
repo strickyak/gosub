@@ -10,7 +10,7 @@ function CMOC() {
   NAME=$1
   shift
   echo "CMOC phase: $NAME"
-  /opt/yak/cmoc/bin/cmoc --check-null --stack-space=200 --os9 -i -I. "$@"
+  /opt/yak/cmoc/bin/cmoc --check-null --stack-space=200 --os9 -i -I. -I/$HOME/coco-shelf/frobio "$@"
 }
 
 function COMPILE() {
@@ -47,7 +47,7 @@ function COMPILE() {
   ( cd $D
     for x in *.c
     do
-      CMOC Two -c -I. $x
+      CMOC Two -c -I. -I/$HOME/coco-shelf/frobio $x
     done
 
     rm -f all.a
@@ -69,7 +69,7 @@ function COMPILE() {
       echo '}'
     ) > initvars.c
 
-    CMOC InitVars -c -I. initvars.c
+    CMOC InitVars -c -I. -I/$HOME/coco-shelf/frobio initvars.c
     lwar -r all.a initvars.o
     CMOC Five -o $T runtime.runt.c all.a
     ls -ls $T
